@@ -12,9 +12,9 @@ const GLASS = {
 }
 
 // Soccer has draws; basketball/baseball/football do not
-const HAS_DRAW = { mls: true, bbl: true }
+const HAS_DRAW = { mls: true, epl: true, bbl: true }
 
-const LEAGUE_NAME = { mlb: 'MLB', nba: 'NBA', nfl: 'NFL', mls: 'MLS', bbl: 'BBL' }
+const LEAGUE_NAME = { mlb: 'MLB', nba: 'NBA', nfl: 'NFL', mls: 'MLS', epl: 'EPL', bbl: 'BBL' }
 
 // ─── Player leaders fetchers per league ───────────────────────────────────────
 
@@ -67,10 +67,12 @@ async function fetchNBALeaders() {
   }]
 }
 
-async function fetchMLSLeaders() {
-  const year = new Date().getFullYear()
-  const res = await fetch(
-    `https://site.api.espn.com/apis/site/v2/sports/soccer/usa.1/statistics?season=${year}&seasontype=2`
+async function fetchSoccerLeaders(slug) {
+  const now    = new Date()
+  const season = now.getMonth() >= 7 ? now.getFullYear() : now.getFullYear() - 1
+  const year   = slug === 'usa.1' ? now.getFullYear() : season
+  const res    = await fetch(
+    `https://site.api.espn.com/apis/site/v2/sports/soccer/${slug}/statistics?season=${year}&seasontype=2`
   )
   if (!res.ok) return []
   const data = await res.json()
@@ -86,7 +88,12 @@ async function fetchMLSLeaders() {
   })).filter(c => c.leaders.length > 0)
 }
 
-const FETCHERS = { mlb: fetchMLBLeaders, nba: fetchNBALeaders, mls: fetchMLSLeaders }
+const FETCHERS = {
+  mlb: fetchMLBLeaders,
+  nba: fetchNBALeaders,
+  mls: () => fetchSoccerLeaders('usa.1'),
+  epl: () => fetchSoccerLeaders('eng.1'),
+}
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
 

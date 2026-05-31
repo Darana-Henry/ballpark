@@ -1,16 +1,110 @@
-# React + Vite
+# Ballpark 🏟️
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+A personal sports tracker for following live scores, results, and watched game history across five leagues.
 
-Currently, two official plugins are available:
+## Stack
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+- **React 19** + **Vite 8** — fast dev server and optimised builds
+- **Tailwind CSS v4** — CSS-first config via `@import "tailwindcss"`
+- **Firebase Firestore** — real-time watched game sync
+- **Firebase Authentication** — Google Sign-In, single-user access
+- **gh-pages** — deploys to GitHub Pages
 
-## React Compiler
+## Leagues
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+| League | Scope | Data Source |
+|--------|-------|-------------|
+| MLB ⚾ | Dodgers + all playoffs | MLB Stats API |
+| NBA 🏀 | Lakers + all playoffs | ESPN API |
+| NFL 🏈 | All teams + playoffs | ESPN API |
+| BBL 🏏 | All games + playoffs | CricAPI |
+| MLS ⚽ | All games | ESPN API |
 
-## Expanding the ESLint configuration
+## Features
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
+- Live scores, schedules, and results per league
+- Mark games as watched — synced to Firestore in real-time
+- Stats dashboard with per-league watched counts and W/L records
+- Home view aggregating live and upcoming games across all leagues
+- Responsive: sidebar on desktop, bottom tab bar on mobile
+
+## Getting Started
+
+### 1. Install dependencies
+
+```bash
+npm install
+```
+
+### 2. Configure Firebase
+
+Copy `.env.example` to `.env.qa` and fill in your Firebase project credentials:
+
+```bash
+cp .env.example .env.qa
+```
+
+Get the values from **Firebase Console → Project Settings → Your apps**.
+
+### 3. Configure Firebase Authentication
+
+In the Firebase Console:
+- Enable **Authentication → Google** sign-in provider
+- Add your GitHub Pages domain to **Authorized domains**
+
+### 4. Set Firestore security rules
+
+```
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /{document=**} {
+      allow read, write: if request.auth != null;
+    }
+  }
+}
+```
+
+### 5. Run locally
+
+```bash
+npm run dev
+# → http://localhost:5173/ballpark/
+```
+
+## Deployment
+
+```bash
+npm run deploy
+```
+
+Builds and pushes to the `gh-pages` branch. Make sure `homepage` in `package.json` points to your GitHub Pages URL before deploying.
+
+## Project Structure
+
+```
+src/
+  App.jsx                  Main layout + routing
+  firebase.js              Firebase init (credentials via env vars)
+  api/
+    mlb.js                 MLB Stats API
+    espn.js                ESPN — NBA, NFL, MLS
+    bbl.js                 CricAPI — BBL
+  components/
+    AuthGate.jsx           Google Sign-In gate, wraps the entire app
+    GameCard.jsx           Score card with watched toggle
+    Sidebar.jsx            Desktop navigation
+    MobileNav.jsx          Mobile bottom tab bar
+  views/
+    HomeView.jsx           Live + upcoming games across all leagues
+    MLBView.jsx
+    NBAView.jsx
+    NFLView.jsx
+    BBLView.jsx
+    MLSView.jsx
+    StatsView.jsx          Watched counts + W/L records
+  hooks/
+    useWatchedGames.js     Firestore real-time sync + toggle
+  contexts/
+    WatchedContext.jsx     React context for watched state
+```

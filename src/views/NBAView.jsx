@@ -53,6 +53,55 @@ function buildNBABracket(seeds, games, isProcessed) {
   return { s1, s2, s3, s4, s5, s6, s7, s8, r1a, r1b, r1c, r1d, w1a, w1b, w1c, w1d, r2a, r2b, w2a, w2b, r3, confChamp }
 }
 
+// Correct seeds 5-8 using actual first-round playoff matchups (handles play-in swaps and tiebreakers)
+function adjustSeedsFromBracket(seeds, games, confTeamIds) {
+  const [s1, s2, s3, s4] = seeds
+  if (!s1 || !s2 || !s3 || !s4) return seeds
+
+  const confPlayoffGames = games.filter(g =>
+    g.gameType !== 'Regular Season' && g.gameType !== 'Play-In' &&
+    confTeamIds.has(g.homeTeam.id) && confTeamIds.has(g.awayTeam.id)
+  )
+  if (!confPlayoffGames.length) return seeds
+
+  const top4Ids = new Set([s1.teamId, s2.teamId, s3.teamId, s4.teamId])
+
+  const getOpponent = (seedId) => {
+    const g = confPlayoffGames.find(x =>
+      (x.homeTeam.id === seedId || x.awayTeam.id === seedId) &&
+      !top4Ids.has(x.homeTeam.id === seedId ? x.awayTeam.id : x.homeTeam.id)
+    )
+    return g ? (g.homeTeam.id === seedId ? g.awayTeam.id : g.homeTeam.id) : null
+  }
+
+  const actual8Id = getOpponent(s1.teamId)
+  const actual7Id = getOpponent(s2.teamId)
+  const actual6Id = getOpponent(s3.teamId)
+  const actual5Id = getOpponent(s4.teamId)
+
+  if (!actual5Id || !actual6Id || !actual7Id || !actual8Id) return seeds
+
+  const getTeamObj = (teamId) => {
+    const existing = seeds.find(s => s.teamId === teamId)
+    if (existing) return existing
+    for (const g of games) {
+      if (g.homeTeam.id === teamId)
+        return { teamId, teamName: g.homeTeam.name, abbreviation: g.homeTeam.abbreviation, logo: g.homeTeam.logo }
+      if (g.awayTeam.id === teamId)
+        return { teamId, teamName: g.awayTeam.name, abbreviation: g.awayTeam.abbreviation, logo: g.awayTeam.logo }
+    }
+    return null
+  }
+
+  const t5 = getTeamObj(actual5Id)
+  const t6 = getTeamObj(actual6Id)
+  const t7 = getTeamObj(actual7Id)
+  const t8 = getTeamObj(actual8Id)
+
+  if (!t5 || !t6 || !t7 || !t8) return seeds
+  return [s1, s2, s3, s4, { ...t5, seed: 5 }, { ...t6, seed: 6 }, { ...t7, seed: 7 }, { ...t8, seed: 8 }]
+}
+
 // ─── My Queue ─────────────────────────────────────────────────────────────────
 
 function QueueTab({ games }) {
@@ -144,7 +193,7 @@ function AllGamesTab({ games }) {
   const [filter, setFilter] = useState('all')
   const filtered = useMemo(() => {
     const sorted = [...games].sort((a, b) => b.gameDate - a.gameDate)
-    if (filter === 'playoffs') return sorted.filter(g => g.gameType === 'Playoffs' || g.gameType?.toLowerCase().includes('playoff'))
+    if (filter === 'playoffs') return sorted.filter(g => g.gameType === 'Playoffs' || g.gameType === 'Play-In' || g.gameType?.toLowerCase().includes('playoff'))
     if (filter === 'regular')  return sorted.filter(g => g.gameType === 'Regular Season')
     return sorted
   }, [games, filter])
@@ -580,13 +629,33 @@ function NBABracketTab({ games }) {
 
   const isProcessed = useCallback(id => isWatched(id, 'nba') || isDismissed(id, 'nba'), [isWatched, isDismissed])
 
+  const eastTeamIds = useMemo(() => new Set(
+    (standings?.divisions || [])
+      .filter(d => d.league === 'East')
+      .flatMap(d => d.teams.map(t => t.teamId))
+  ), [standings])
+
+  const westTeamIds = useMemo(() => new Set(
+    (standings?.divisions || [])
+      .filter(d => d.league === 'West')
+      .flatMap(d => d.teams.map(t => t.teamId))
+  ), [standings])
+
+  const eastSeeds = useMemo(() =>
+    standings ? adjustSeedsFromBracket(standings.eastSeeds, games, eastTeamIds) : null,
+    [standings, games, eastTeamIds])
+
+  const westSeeds = useMemo(() =>
+    standings ? adjustSeedsFromBracket(standings.westSeeds, games, westTeamIds) : null,
+    [standings, games, westTeamIds])
+
   const eastBracket = useMemo(() =>
-    standings ? buildNBABracket(standings.eastSeeds, games, isProcessed) : null,
-    [standings, games, isProcessed])
+    eastSeeds ? buildNBABracket(eastSeeds, games, isProcessed) : null,
+    [eastSeeds, games, isProcessed])
 
   const westBracket = useMemo(() =>
-    standings ? buildNBABracket(standings.westSeeds, games, isProcessed) : null,
-    [standings, games, isProcessed])
+    westSeeds ? buildNBABracket(westSeeds, games, isProcessed) : null,
+    [westSeeds, games, isProcessed])
 
   const eastChamp = eastBracket?.confChamp
   const westChamp = westBracket?.confChamp

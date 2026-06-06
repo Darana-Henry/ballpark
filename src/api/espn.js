@@ -22,7 +22,7 @@ function normalizeEvent(event, league) {
 
   const gameTypeNote = comp.notes?.find(n => n.type === 'event')?.headline
     || comp.notes?.[0]?.headline
-    || (event.season?.type === 3 ? 'Playoffs' : 'Regular Season')
+    || (event.season?.type === 3 ? 'Playoffs' : event.season?.type === 5 ? 'Play-In' : 'Regular Season')
 
   return {
     id: event.id,

@@ -1,124 +1,199 @@
+import { useState } from 'react'
 import { useWatched } from '../contexts/WatchedContext'
-import { LEAGUES, LEAGUE_MAP } from '../constants/leagues'
+import { LEAGUES } from '../constants/leagues'
 import { isFirebaseConfigured } from '../firebase'
 
-function StatCard({ label, value, sub }) {
+const FEATURED_TEAM_IDS = {
+  mlb: '119',
+  nba: '13',
+  nfl: null,
+  bbl: null,
+  mls: '20232',
+  epl: '360',
+}
+
+function LeagueLogo({ league, size = 36 }) {
+  const [err, setErr] = useState(false)
+  if (!league.logoUrl || err) {
+    return (
+      <div
+        className={`rounded-full flex items-center justify-center text-sm shrink-0 ${league.iconBg}`}
+        style={{ width: size, height: size }}
+      >
+        {league.emoji}
+      </div>
+    )
+  }
   return (
-    <div className="rounded-xl bg-[#161622] border border-slate-800 p-4">
-      <p className="text-xs text-slate-500 uppercase tracking-wide mb-1">{label}</p>
-      <p className="text-2xl font-bold text-slate-100">{value}</p>
-      {sub && <p className="text-xs text-slate-600 mt-0.5">{sub}</p>}
+    <img
+      src={league.logoUrl}
+      alt={league.name}
+      width={size}
+      height={size}
+      className={`rounded-full object-contain p-0.5 shrink-0 ${league.iconBg}`}
+      onError={() => setErr(true)}
+    />
+  )
+}
+
+function WinBar({ wins, losses, accentColor }) {
+  const total = wins + losses
+  if (total === 0) return null
+  const pct = Math.round((wins / total) * 100)
+  return (
+    <div className="flex items-center gap-2">
+      <div className="flex-1 h-1.5 rounded-full overflow-hidden" style={{ background: 'rgba(255,255,255,0.07)' }}>
+        <div
+          className="h-full rounded-full transition-all duration-500"
+          style={{ width: `${pct}%`, background: accentColor }}
+        />
+      </div>
+      <span className="text-xs font-bold tabular-nums text-slate-300 w-9 text-right">{pct}%</span>
     </div>
   )
 }
 
-function LeagueStats({ league }) {
+function RecentGameRow({ game, league }) {
+  const hasScore = game.homeScore !== null && game.awayScore !== null
+  return (
+    <div className="flex items-center justify-between gap-3 py-2 border-b border-white/[0.05] last:border-0">
+      <div className="flex items-center gap-2 min-w-0">
+        <span className="w-1 h-1 rounded-full shrink-0" style={{ background: league.accentColor }} />
+        <span className="text-xs text-slate-400 truncate">{game.awayTeam} @ {game.homeTeam}</span>
+      </div>
+      {hasScore && (
+        <span
+          className="text-xs font-bold tabular-nums px-2 py-0.5 rounded-md shrink-0"
+          style={{
+            background: `${league.accentColor}18`,
+            color: league.accentColor,
+            border: `1px solid ${league.accentColor}30`,
+          }}
+        >
+          {game.awayScore}–{game.homeScore}
+        </span>
+      )}
+    </div>
+  )
+}
+
+function LeagueSection({ league }) {
   const { watchedForLeague } = useWatched()
   const watched = watchedForLeague(league.id)
-
   const finalGames = watched.filter(g => g.status === 'final' && g.homeScore !== null && g.awayScore !== null)
 
-  // Determine wins/losses based on the "home" team perspective isn't reliable
-  // So track by the featured teams (Dodgers/Lakers) or just show total watched
   let wins = 0, losses = 0
+  const featuredId = FEATURED_TEAM_IDS[league.id]
   finalGames.forEach(g => {
+    if (!featuredId) return
     const homeWon = g.homeScore > g.awayScore
-    // For MLB/NBA we can check if the featured team is home or away
-    // and whether they won
-    const featuredTeamIds = {
-      mlb: '119', // Dodgers
-      nba: '13',  // Lakers (ESPN id)
-      nfl: null,  // All teams
-      bbl: null,
-    }
-    const featuredId = featuredTeamIds[league.id]
-    if (featuredId) {
-      if (g.homeTeamId === featuredId) {
-        homeWon ? wins++ : losses++
-      } else if (g.awayTeamId === featuredId) {
-        homeWon ? losses++ : wins++
-      }
-    }
+    if (g.homeTeamId === featuredId) homeWon ? wins++ : losses++
+    else if (g.awayTeamId === featuredId) homeWon ? losses++ : wins++
   })
 
-  const totalWatched = watched.length
-  const avgHomeScore = finalGames.length
-    ? (finalGames.reduce((s, g) => s + g.homeScore, 0) / finalGames.length).toFixed(1)
-    : '—'
-
   return (
-    <div className="rounded-xl border border-slate-800 bg-[#111118] p-4">
-      <div className="flex items-center gap-2 mb-4">
-        <span className="text-2xl">{league.emoji}</span>
-        <div>
-          <p className="font-semibold text-slate-200">{league.name}</p>
-          <p className="text-xs text-slate-600">{league.description}</p>
+    <div
+      className="rounded-xl overflow-hidden"
+      style={{
+        background: 'rgba(255,255,255,0.03)',
+        backdropFilter: 'blur(12px)',
+        WebkitBackdropFilter: 'blur(12px)',
+        border: '1px solid rgba(255,255,255,0.07)',
+        borderLeft: `4px solid ${league.accentColor}`,
+      }}
+    >
+      {/* League header row */}
+      <div className="flex items-center gap-3 px-4 py-3 border-b border-white/[0.05]">
+        <LeagueLogo league={league} size={36} />
+        <div className="flex-1 min-w-0">
+          <p className={`font-semibold text-sm ${league.textClass}`}>{league.name}</p>
+          <p className="text-xs text-slate-600 truncate">{league.description}</p>
         </div>
+        <span
+          className="text-xs font-bold px-2.5 py-1 rounded-full shrink-0"
+          style={{
+            background: `${league.accentColor}18`,
+            color: league.accentColor,
+            border: `1px solid ${league.accentColor}30`,
+          }}
+        >
+          {watched.length} watched
+        </span>
       </div>
 
-      {totalWatched === 0 ? (
-        <p className="text-sm text-slate-600">No watched games yet.</p>
+      {watched.length === 0 ? (
+        <p className="px-4 py-5 text-sm text-slate-600 text-center">No watched games yet.</p>
       ) : (
-        <div className="grid grid-cols-3 gap-3">
-          <div className="rounded-lg bg-slate-900 p-3">
-            <p className="text-xs text-slate-600 mb-1">Watched</p>
-            <p className="text-xl font-bold text-slate-100">{totalWatched}</p>
-          </div>
-          {(league.id === 'mlb' || league.id === 'nba') && wins + losses > 0 && (
+        <div className="p-4 flex flex-col gap-4">
+          {/* W/L metrics */}
+          {featuredId && wins + losses > 0 && (
             <>
-              <div className="rounded-lg bg-slate-900 p-3">
-                <p className="text-xs text-slate-600 mb-1">Record</p>
-                <p className="text-xl font-bold text-slate-100">{wins}–{losses}</p>
+              <div className="grid grid-cols-3 gap-3">
+                <div className="rounded-lg p-3" style={{ background: 'rgba(255,255,255,0.04)' }}>
+                  <p className="text-[10px] text-slate-600 uppercase tracking-wide mb-1">Wins</p>
+                  <p className={`text-xl font-bold tabular-nums ${league.textClass}`}>{wins}</p>
+                </div>
+                <div className="rounded-lg p-3" style={{ background: 'rgba(255,255,255,0.04)' }}>
+                  <p className="text-[10px] text-slate-600 uppercase tracking-wide mb-1">Losses</p>
+                  <p className="text-xl font-bold tabular-nums text-slate-400">{losses}</p>
+                </div>
+                <div className="rounded-lg p-3" style={{ background: 'rgba(255,255,255,0.04)' }}>
+                  <p className="text-[10px] text-slate-600 uppercase tracking-wide mb-1">Win %</p>
+                  <p className={`text-xl font-bold tabular-nums ${league.textClass}`}>
+                    {Math.round((wins / (wins + losses)) * 100)}%
+                  </p>
+                </div>
               </div>
-              <div className="rounded-lg bg-slate-900 p-3">
-                <p className="text-xs text-slate-600 mb-1">Win %</p>
-                <p className="text-xl font-bold text-slate-100">
-                  {wins + losses > 0 ? Math.round((wins / (wins + losses)) * 100) + '%' : '—'}
-                </p>
-              </div>
+              <WinBar wins={wins} losses={losses} accentColor={league.accentColor} />
             </>
           )}
-        </div>
-      )}
 
-      {totalWatched > 0 && (
-        <div className="mt-3 pt-3 border-t border-slate-800">
-          <p className="text-xs text-slate-600">Recent watched games:</p>
-          <div className="mt-2 flex flex-col gap-1">
-            {watched.slice(0, 5).map(g => (
-              <div key={`${g.league}_${g.gameId}`} className="flex items-center justify-between text-xs">
-                <span className="text-slate-400 truncate">{g.awayTeam} @ {g.homeTeam}</span>
-                {g.homeScore !== null && (
-                  <span className="text-slate-500 shrink-0 ml-2">
-                    {g.awayScore}–{g.homeScore}
-                  </span>
-                )}
-              </div>
-            ))}
+          {/* Recent watched games */}
+          <div>
+            <p className="text-[10px] font-bold uppercase tracking-widest text-slate-600 mb-1">Recent Watched</p>
+            <div>
+              {watched.slice(0, 5).map(g => (
+                <RecentGameRow key={`${g.league}_${g.gameId}`} game={g} league={league} />
+              ))}
+            </div>
           </div>
         </div>
       )}
+    </div>
+  )
+}
+
+function Header() {
+  return (
+    <div className="flex items-center gap-4">
+      <div className="flex items-center shrink-0">
+        {LEAGUES.slice(0, 4).map((l, i) => (
+          <div
+            key={l.id}
+            className="rounded-full ring-2 ring-[#0d0d14]"
+            style={{ marginLeft: i === 0 ? 0 : -10, zIndex: i }}
+          >
+            <LeagueLogo league={l} size={44} />
+          </div>
+        ))}
+      </div>
+      <div>
+        <h2 className="text-2xl font-bold text-slate-100 leading-tight">Stats</h2>
+        <p className="text-sm text-slate-500 mt-0.5">From your watched games</p>
+      </div>
     </div>
   )
 }
 
 export default function StatsView() {
-  const { watchedGames, loading } = useWatched()
+  const { watchedGames } = useWatched()
   const totalWatched = Object.values(watchedGames).filter(g => g.watched).length
 
   if (!isFirebaseConfigured) {
     return (
-      <div className="p-4 md:p-6 max-w-3xl mx-auto">
-        <div className="mb-6">
-          <div className="flex items-center gap-3">
-            <span className="text-3xl">📊</span>
-            <div>
-              <h2 className="text-xl font-bold text-slate-100">Stats</h2>
-              <p className="text-sm text-slate-500">From watched games</p>
-            </div>
-          </div>
-        </div>
-        <div className="rounded-xl bg-amber-900/20 border border-amber-800 p-6 text-center">
+      <div className="p-4 md:p-6">
+        <Header />
+        <div className="rounded-xl bg-amber-900/20 border border-amber-800 p-6 text-center max-w-lg">
           <p className="text-amber-400 font-medium mb-2">Firebase not configured</p>
           <p className="text-sm text-slate-500">
             Connect Firebase to start tracking watched games and see your stats here.
@@ -130,30 +205,59 @@ export default function StatsView() {
   }
 
   return (
-    <div className="p-4 md:p-6 max-w-3xl mx-auto">
-      <div className="mb-6">
-        <div className="flex items-center gap-3">
-          <span className="text-3xl">📊</span>
-          <div>
-            <h2 className="text-xl font-bold text-slate-100">Stats</h2>
-            <p className="text-sm text-slate-500">From watched games only</p>
-          </div>
+    <div className="p-4 md:p-6">
+      {/* Header + total hero side-by-side on wide screens */}
+      <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4 mb-8">
+        <Header />
+        <div
+          className="rounded-2xl px-6 py-4 lg:shrink-0 lg:min-w-[200px]"
+          style={{
+            background: 'linear-gradient(135deg, rgba(255,255,255,0.07) 0%, rgba(255,255,255,0.03) 100%)',
+            backdropFilter: 'blur(16px)',
+            WebkitBackdropFilter: 'blur(16px)',
+            border: '1px solid rgba(255,255,255,0.1)',
+            boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.08)',
+          }}
+        >
+          <p className="text-[10px] font-bold uppercase tracking-widest text-slate-500 mb-1">Total Watched</p>
+          <p className="text-5xl font-bold text-slate-100 tabular-nums">{totalWatched}</p>
+          <p className="text-sm text-slate-600 mt-1">across all leagues</p>
         </div>
       </div>
 
-      {/* Summary row */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
-        <StatCard label="Total Watched" value={totalWatched} sub="across all leagues" />
-        {LEAGUES.map(l => {
-          const count = Object.values(watchedGames).filter(g => g.league === l.id && g.watched).length
-          return <StatCard key={l.id} label={l.name} value={count} sub="games watched" />
+      {/* Per-league summary cards — all 6 in one row on xl */}
+      <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3 mb-8">
+        {LEAGUES.map(league => {
+          const count = Object.values(watchedGames).filter(g => g.league === league.id && g.watched).length
+          return (
+            <div
+              key={league.id}
+              className="rounded-xl p-4 relative overflow-hidden"
+              style={{
+                background: 'rgba(255,255,255,0.04)',
+                backdropFilter: 'blur(12px)',
+                WebkitBackdropFilter: 'blur(12px)',
+                border: '1px solid rgba(255,255,255,0.07)',
+              }}
+            >
+              <div className="absolute top-3 right-3 opacity-15">
+                <LeagueLogo league={league} size={38} />
+              </div>
+              <p className={`text-[10px] font-bold uppercase tracking-widest mb-1 ${league.textClass}`}>
+                {league.name}
+              </p>
+              <p className="text-3xl font-bold text-slate-100 tabular-nums">{count}</p>
+              <p className="text-xs text-slate-600 mt-0.5">watched</p>
+            </div>
+          )
         })}
       </div>
 
-      {/* Per-league breakdown */}
-      <div className="flex flex-col gap-4">
+      {/* Per-league breakdown — 2 columns on lg+ */}
+      <p className="text-[10px] font-bold uppercase tracking-widest text-slate-600 mb-3">Per League</p>
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
         {LEAGUES.map(league => (
-          <LeagueStats key={league.id} league={league} />
+          <LeagueSection key={league.id} league={league} />
         ))}
       </div>
     </div>

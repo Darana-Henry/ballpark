@@ -7,6 +7,8 @@ import GameCard from '../components/GameCard'
 import { useWatched } from '../contexts/WatchedContext'
 import { LEAGUE_MAP } from '../constants/leagues'
 
+const ENV_BBL_KEY = import.meta.env.VITE_CRICAPI_KEY || ''
+
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 const LEAGUE_LABELS = {
@@ -313,7 +315,7 @@ export default function HomeView() {
   const { isWatched, isDismissed, watchedGames } = useWatched()
 
   const [states, setStates] = useState(() => {
-    const hasBBL = !!localStorage.getItem('cricapi_key')
+    const hasBBL = !!(ENV_BBL_KEY || localStorage.getItem('cricapi_key'))
     const ids = [...FETCH_ORDER, ...(hasBBL ? ['bbl'] : [])]
     return Object.fromEntries(ids.map(id => [id, { games: [], loading: true, error: null }]))
   })
@@ -321,14 +323,17 @@ export default function HomeView() {
   useEffect(() => {
     function load(id, promise) {
       promise
-        .then(games => setStates(s => ({ ...s, [id]: { games, loading: false, error: null } })))
+        .then(result => {
+          const games = Array.isArray(result) ? result : (result?.games ?? [])
+          setStates(s => ({ ...s, [id]: { games, loading: false, error: null } }))
+        })
         .catch(err  => setStates(s => ({ ...s, [id]: { games: [], loading: false, error: err.message } })))
     }
     load('mlb', fetchMLBGames())
     load('nba', fetchNBAGames())
     load('nfl', fetchNFLGames())
     load('mls', fetchMLSGames())
-    const bblKey = localStorage.getItem('cricapi_key')
+    const bblKey = ENV_BBL_KEY || localStorage.getItem('cricapi_key')
     if (bblKey) load('bbl', fetchBBLGames(bblKey))
   }, [])
 

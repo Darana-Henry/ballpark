@@ -1,3 +1,6 @@
+import { doc, getDoc, setDoc } from 'firebase/firestore'
+import { db, isFirebaseConfigured } from '../firebase'
+
 const BASE = 'https://api.cricapi.com/v1'
 
 const BBL_TEAMS = new Set([
@@ -6,113 +9,241 @@ const BBL_TEAMS = new Set([
   'Sydney Sixers', 'Sydney Thunder',
 ])
 
-// Abbreviation map for display
 const ABBR = {
-  'Adelaide Strikers': 'STR', 'Brisbane Heat': 'HEA', 'Hobart Hurricanes': 'HUR',
-  'Melbourne Renegades': 'REN', 'Melbourne Stars': 'STA', 'Perth Scorchers': 'SCO',
-  'Sydney Sixers': 'SIX', 'Sydney Thunder': 'THU',
+  'Adelaide Strikers':   'STR', 'Brisbane Heat':       'HEA',
+  'Hobart Hurricanes':   'HUR', 'Melbourne Renegades': 'REN',
+  'Melbourne Stars':     'STA', 'Perth Scorchers':     'SCO',
+  'Sydney Sixers':       'SIX', 'Sydney Thunder':      'THU',
 }
 
-// Team logo URLs from ESPN Cricinfo (by searching their cricket team pages)
-const LOGOS = {
-  'Adelaide Strikers':   'https://a.espncdn.com/i/teamlogos/cricket/500/strikers.png',
-  'Brisbane Heat':       'https://a.espncdn.com/i/teamlogos/cricket/500/heat.png',
-  'Hobart Hurricanes':   'https://a.espncdn.com/i/teamlogos/cricket/500/hurricanes.png',
-  'Melbourne Renegades': 'https://a.espncdn.com/i/teamlogos/cricket/500/renegades.png',
-  'Melbourne Stars':     'https://a.espncdn.com/i/teamlogos/cricket/500/stars.png',
-  'Perth Scorchers':     'https://a.espncdn.com/i/teamlogos/cricket/500/scorchers.png',
-  'Sydney Sixers':       'https://a.espncdn.com/i/teamlogos/cricket/500/sixers.png',
-  'Sydney Thunder':      'https://a.espncdn.com/i/teamlogos/cricket/500/thunder.png',
+const FALLBACK_LOGOS = {
+  'Adelaide Strikers':   'https://g.cricapi.com/iapi/113-637877085901698892.webp?w=96',
+  'Brisbane Heat':       'https://g.cricapi.com/iapi/128-637957474274254899.webp?w=96',
+  'Hobart Hurricanes':   'https://g.cricapi.com/iapi/178-637945148636541193.webp?w=96',
+  'Melbourne Renegades': 'https://g.cricapi.com/iapi/221-637940203193119640.webp?w=96',
+  'Melbourne Stars':     'https://g.cricapi.com/iapi/222-637940204119809081.webp?w=96',
+  'Perth Scorchers':     'https://g.cricapi.com/iapi/248-637940202614777832.webp?w=96',
+  'Sydney Sixers':       'https://g.cricapi.com/iapi/282-637935045702671726.png?w=96',
+  'Sydney Thunder':      'https://g.cricapi.com/iapi/283-637935045529865505.png?w=96',
 }
 
-function isBBL(match) {
-  const name = (match.name || '').toLowerCase()
-  const teams = match.teams || []
-  return (
-    name.includes('big bash') ||
-    name.includes(' bbl') ||
-    name.includes('bbl ') ||
-    teams.some(t => BBL_TEAMS.has(t))
-  )
+// ─── Session cache ────────────────────────────────────────────────────────────
+// Avoids redundant Firestore reads when navigating back to the BBL tab.
+// sessionStorage clears automatically when the tab is closed.
+
+const SESSION_KEY = 'ballpark_bbl_session_v1'
+const SESSION_TTL = 10 * 60 * 1000
+
+function readSession() {
+  try {
+    const c = JSON.parse(sessionStorage.getItem(SESSION_KEY) || 'null')
+    if (!c || Date.now() - c.ts >= SESSION_TTL) return null
+    return {
+      games:     c.games.map(g => ({ ...g, gameDate: new Date(g.gameDate) })),
+      updatedAt: c.updatedAt ? new Date(c.updatedAt) : null,
+    }
+  } catch { return null }
+}
+function writeSession({ games, updatedAt }) {
+  try { sessionStorage.setItem(SESSION_KEY, JSON.stringify({ ts: Date.now(), games, updatedAt })) } catch {}
+}
+function clearSession() {
+  try { sessionStorage.removeItem(SESSION_KEY) } catch {}
+}
+
+// ─── Firestore ────────────────────────────────────────────────────────────────
+
+async function loadFromFirestore() {
+  if (!isFirebaseConfigured) return null
+  try {
+    const snap = await getDoc(doc(db, 'bblCache', 'current'))
+    if (!snap.exists()) return null
+    const { games = [], seriesId = null, updatedAt } = snap.data()
+    return {
+      seriesId,
+      updatedAt: updatedAt?.toDate?.() ?? null,
+      games: games.map(g => ({
+        ...g,
+        gameDate: g.gameDate?.toDate ? g.gameDate.toDate() : new Date(g.gameDate),
+      })),
+    }
+  } catch { return null }
+}
+
+async function saveToFirestore(games, seriesId) {
+  if (!isFirebaseConfigured) return
+  try {
+    await setDoc(doc(db, 'bblCache', 'current'), {
+      games: games.map(g => ({
+        ...g,
+        gameDate: g.gameDate instanceof Date ? g.gameDate : new Date(g.gameDate),
+      })),
+      seriesId,
+      updatedAt: new Date(),
+    })
+  } catch (e) { console.warn('BBL Firestore write failed:', e.message) }
+}
+
+// ─── API helpers ──────────────────────────────────────────────────────────────
+
+async function apiGet(path, apiKey) {
+  const res = await fetch(`${BASE}/${path}&apikey=${apiKey}`)
+  if (!res.ok) throw new Error(`CricAPI HTTP ${res.status}`)
+  const json = await res.json()
+  if (json.status === 'failure') throw new Error(json.reason || json.message || 'CricAPI error — check your API key')
+  return json.data ?? []
+}
+
+async function findBBLSeriesId(apiKey) {
+  const isBBLSeries = s => {
+    const n = (s.name || '').toLowerCase()
+    return n.includes('big bash league') || (n.includes('bbl') && n.includes('2'))
+  }
+  const searchBatch = async offsets => {
+    const results = await Promise.allSettled(offsets.map(o => apiGet(`series?offset=${o}`, apiKey)))
+    for (const r of results) {
+      if (r.status !== 'fulfilled') continue
+      const hit = r.value.find(isBBLSeries)
+      if (hit) return hit.id
+    }
+    return null
+  }
+  let id = await searchBatch([0, 25, 50, 125, 150, 175])
+  if (!id) id = await searchBatch([75, 100, 200, 225])
+  return id
+}
+
+// ─── Normalize ────────────────────────────────────────────────────────────────
+
+function isBBLMatch(match) {
+  return (match.teams || []).some(t => BBL_TEAMS.has(t))
+}
+
+function logoFromTeamInfo(teamInfo, teamName) {
+  const info = (teamInfo || []).find(t => t.name === teamName)
+  const url = info?.img || FALLBACK_LOGOS[teamName] || null
+  return url ? url.replace('?w=48', '?w=96') : null
 }
 
 function parseScore(scoreArr, teamName) {
   if (!scoreArr?.length) return null
-  // CricAPI score: [{ r, w, o, inning: "Team Inning 1" }]
-  const inning = scoreArr.find(s => (s.inning || '').toLowerCase().includes(teamName.toLowerCase().split(' ')[0]))
-  return inning ? parseInt(inning.r) || 0 : null
+  const key = teamName.toLowerCase().split(' ')[0]
+  const inning = scoreArr.find(s => (s.inning || '').toLowerCase().includes(key))
+  return inning != null ? (parseInt(inning.r) || 0) : null
 }
 
 function normalizeMatch(match) {
   const teams = match.teams || []
-  if (teams.length < 2) return null
+  if (teams.length < 2 || !isBBLMatch(match)) return null
   const [home, away] = teams
 
-  if (!BBL_TEAMS.has(home) && !BBL_TEAMS.has(away)) return null
-
-  const isLive = match.matchStarted && !match.matchEnded
-  const isFinal = match.matchEnded
-
-  const homeScore = isFinal || isLive ? parseScore(match.score, home) : null
-  const awayScore = isFinal || isLive ? parseScore(match.score, away) : null
-
-  const dateStr = match.dateTimeGMT || match.date
-  const gameDate = dateStr ? new Date(dateStr) : new Date()
+  const isLive  = match.matchStarted && !match.matchEnded
+  const isFinal = !!match.matchEnded
 
   return {
-    id: match.id,
-    league: 'bbl',
+    id:       match.id,
+    league:   'bbl',
     homeTeam: {
-      id: home,
-      name: home,
+      id:           home,
+      name:         home,
       abbreviation: ABBR[home] || home.slice(0, 3).toUpperCase(),
-      logo: LOGOS[home] || null,
+      logo:         logoFromTeamInfo(match.teamInfo, home),
     },
     awayTeam: {
-      id: away,
-      name: away,
+      id:           away,
+      name:         away,
       abbreviation: ABBR[away] || away.slice(0, 3).toUpperCase(),
-      logo: LOGOS[away] || null,
+      logo:         logoFromTeamInfo(match.teamInfo, away),
     },
-    homeScore,
-    awayScore,
-    status: isLive ? 'live' : isFinal ? 'final' : 'scheduled',
+    homeScore:    (isLive || isFinal) ? parseScore(match.score, home) : null,
+    awayScore:    (isLive || isFinal) ? parseScore(match.score, away) : null,
+    status:       isLive ? 'live' : isFinal ? 'final' : 'scheduled',
     statusDetail: match.status || (isLive ? 'Live' : isFinal ? 'Final' : 'Scheduled'),
-    gameDate,
-    gameType: 'Big Bash League',
-    highlightUrl: null,
-    venue: match.venue || null,
+    gameDate:     new Date(match.dateTimeGMT || match.date || Date.now()),
+    gameType:     'Big Bash League',
+    highlightUrl: isFinal
+      ? `https://www.youtube.com/results?search_query=${encodeURIComponent(`${away} vs ${home} BBL highlights`)}`
+      : null,
+    venue:        match.venue || null,
   }
 }
 
-export async function fetchBBLGames(apiKey) {
-  // Fetch current/recent matches and recent completed matches in parallel
-  const [currentRes, matchesRes] = await Promise.allSettled([
-    fetch(`${BASE}/currentMatches?apikey=${apiKey}&offset=0`).then(r => r.json()),
-    fetch(`${BASE}/matches?apikey=${apiKey}&offset=0`).then(r => r.json()),
-  ])
+// ─── Core fetch ───────────────────────────────────────────────────────────────
+// Incremental: reuses already-scored games from Firestore, only calls
+// match_info for new completed matches. First-ever fetch hydrates all of them.
 
-  const all = []
-  for (const res of [currentRes, matchesRes]) {
-    if (res.status === 'fulfilled') {
-      const data = res.value
-      if (data.status !== 'success') {
-        // Surface the first meaningful error
-        throw new Error(data.message || data.reason || 'CricAPI error — check your API key')
-      }
-      all.push(...(data.data || []))
-    }
+async function fetchFromAPI(apiKey, { cachedSeriesId = null, existingGames = [] } = {}) {
+  const scoredMap = {}
+  for (const g of existingGames) {
+    if (g.status === 'final') scoredMap[g.id] = g
   }
 
-  // Deduplicate and filter to BBL only
+  const seriesId = cachedSeriesId || await findBBLSeriesId(apiKey)
+  if (!seriesId) throw new Error('BBL series not found — CricAPI may be rate-limited. Try again in a few minutes.')
+
+  const [liveData, seriesData] = await Promise.all([
+    apiGet('currentMatches?offset=0', apiKey).catch(() => []),
+    apiGet(`series_info?id=${seriesId}`, apiKey),
+  ])
+
+  const fixtures = Array.isArray(seriesData) ? seriesData : (seriesData?.matchList || [])
+  const liveMap  = Object.fromEntries(liveData.filter(isBBLMatch).map(m => [m.id, m]))
+
+  // Only fetch match_info for completed matches not already in Firestore
+  const needsHydration = fixtures.filter(m => m.matchEnded && !scoredMap[m.id])
+  const hydrated = {}
+  const BATCH = 10
+  for (let i = 0; i < needsHydration.length; i += BATCH) {
+    const batch = needsHydration.slice(i, i + BATCH)
+    const results = await Promise.allSettled(batch.map(m => apiGet(`match_info?id=${m.id}`, apiKey)))
+    results.forEach((r, j) => { if (r.status === 'fulfilled') hydrated[batch[j].id] = r.value })
+  }
+
   const seen = new Set()
-  return all
-    .filter(m => {
-      if (seen.has(m.id)) return false
-      seen.add(m.id)
-      return isBBL(m)
+  const games = fixtures
+    .filter(m => m?.id && !seen.has(m.id) && seen.add(m.id))
+    .map(m => {
+      if (scoredMap[m.id]) return scoredMap[m.id]                   // reuse from Firestore
+      return normalizeMatch(liveMap[m.id] || hydrated[m.id] || m)  // fresh from API
     })
-    .map(normalizeMatch)
     .filter(Boolean)
     .sort((a, b) => b.gameDate - a.gameDate)
+
+  await saveToFirestore(games, seriesId)
+  return { games, seriesId, fetched: needsHydration.length }
+}
+
+// ─── Public API ───────────────────────────────────────────────────────────────
+
+// Returns { games: Game[], updatedAt: Date | null }
+export async function fetchBBLGames(apiKey) {
+  const session = readSession()
+  if (session) return session
+
+  const cached = await loadFromFirestore()
+  if (cached?.games?.length) {
+    const result = { games: cached.games, updatedAt: cached.updatedAt }
+    writeSession(result)
+    return result
+  }
+
+  // No Firestore data — hit the API (first ever load)
+  const { games } = await fetchFromAPI(apiKey)
+  const result = { games, updatedAt: new Date() }
+  writeSession(result)
+  return result
+}
+
+// Always fetches fresh data, reusing existing Firestore scores where possible.
+// Returns { games: Game[], updatedAt: Date }
+export async function refreshBBLGames(apiKey) {
+  const existing = await loadFromFirestore()
+  const { games, fetched } = await fetchFromAPI(apiKey, {
+    cachedSeriesId: existing?.seriesId ?? null,
+    existingGames:  existing?.games ?? [],
+  })
+  const result = { games, updatedAt: new Date(), fetched }
+  clearSession()
+  writeSession(result)
+  return result
 }

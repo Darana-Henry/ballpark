@@ -172,12 +172,182 @@ function WatchedTab({ games }) {
   )
 }
 
+// ─── Standings helpers ────────────────────────────────────────────────────────
+
+function parseWinner(statusDetail, homeTeam, awayTeam) {
+  if (!statusDetail) return null
+  const d = statusDetail.toLowerCase()
+  if (d.includes('no result') || d.includes('abandoned') || d.includes('cancelled')) return 'nr'
+  if (d.includes(' tied') || d === 'match tied' || d === 'tied') return 'tie'
+  const m = statusDetail.match(/^(.+?)\s+won\s+by/i)
+  if (!m) return null
+  const w = m[1].trim().toLowerCase()
+  if (homeTeam.toLowerCase() === w || homeTeam.toLowerCase().includes(w)) return 'home'
+  if (awayTeam.toLowerCase() === w || awayTeam.toLowerCase().includes(w)) return 'away'
+  return null
+}
+
+function buildStandings(games) {
+  const t = {}
+  const ensure = (name, logo) => {
+    if (!t[name]) t[name] = { name, logo, P: 0, W: 0, L: 0, NR: 0, Pts: 0, rf: 0, ra: 0 }
+  }
+  for (const g of games) {
+    if (g.status !== 'final') continue
+    const h = g.homeTeam.name, a = g.awayTeam.name
+    ensure(h, g.homeTeam.logo); ensure(a, g.awayTeam.logo)
+    t[h].P++; t[a].P++
+    const result = parseWinner(g.statusDetail, h, a)
+    if (result === 'home')      { t[h].W++; t[h].Pts += 2; t[a].L++ }
+    else if (result === 'away') { t[a].W++; t[a].Pts += 2; t[h].L++ }
+    else                        { t[h].NR++; t[h].Pts += 1; t[a].NR++; t[a].Pts += 1 }
+    if (g.homeScore != null) { t[h].rf += g.homeScore; t[h].ra += (g.awayScore ?? 0) }
+    if (g.awayScore != null) { t[a].rf += g.awayScore; t[a].ra += (g.homeScore ?? 0) }
+  }
+  return Object.values(t).sort((a, b) => b.Pts - a.Pts || (b.rf - b.ra) - (a.rf - a.ra))
+}
+
+// ─── Standings + Bracket tabs ─────────────────────────────────────────────────
+
+function MatchupCard({ label, seed1, team1, seed2, team2, note, dimmed }) {
+  return (
+    <div className={`rounded-xl p-3 flex flex-col gap-2 transition-opacity ${dimmed ? 'opacity-35' : ''}`}
+      style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)' }}>
+      <p className="text-[10px] font-bold uppercase tracking-widest text-amber-500/70">{label}</p>
+      {[{ seed: seed1, team: team1 }, { seed: seed2, team: team2 }].map(({ seed, team }, i) => (
+        <div key={i} className="flex items-center gap-2">
+          <span className="text-[10px] text-slate-600 w-3 shrink-0 tabular-nums">{seed}</span>
+          {team.logo
+            ? <img src={team.logo} alt={team.name} className="w-5 h-5 object-contain shrink-0" />
+            : <div className="w-5 h-5 rounded-full shrink-0" style={{ background: 'rgba(255,255,255,0.08)' }} />
+          }
+          <span className={`text-sm font-medium truncate ${dimmed ? 'text-slate-500' : 'text-slate-200'}`}>{team.name}</span>
+        </div>
+      ))}
+      {note && <p className="text-[10px] text-slate-600 mt-0.5">{note}</p>}
+    </div>
+  )
+}
+
+function BBLBracket({ top4 }) {
+  const [s1, s2, s3, s4] = top4
+  return (
+    <div className="rounded-2xl overflow-hidden" style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)' }}>
+      <div className="px-4 py-3 border-b border-white/[0.06]">
+        <h3 className="text-sm font-semibold text-slate-300">Finals Bracket <span className="text-slate-600 font-normal">· projected from standings</span></h3>
+      </div>
+      <div className="p-4 flex flex-col gap-3">
+        <div className="grid grid-cols-2 gap-3">
+          <MatchupCard label="Qualifier 1" seed1="1" team1={s1} seed2="2" team2={s2} note="Winner → straight to Final" />
+          <MatchupCard label="Eliminator" seed1="3" team1={s3} seed2="4" team2={s4} note="Loser eliminated" />
+        </div>
+        <div className="grid grid-cols-2 gap-3">
+          <MatchupCard label="Qualifier 2" seed1="" team1={{ name: 'Q1 Loser', logo: null }} seed2="" team2={{ name: 'Elim Winner', logo: null }} note="Winner → Final" dimmed />
+          <MatchupCard label="BBL Final" seed1="" team1={{ name: 'Q1 Winner', logo: null }} seed2="" team2={{ name: 'Q2 Winner', logo: null }} dimmed />
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function StandingsTab({ games }) {
+  const { watchedForLeague } = useWatched()
+  const watchedIds = useMemo(
+    () => new Set(watchedForLeague('bbl').map(g => g.gameId)),
+    [watchedForLeague]
+  )
+  const watchedGames = useMemo(
+    () => games.filter(g => watchedIds.has(g.id) && g.status === 'final'),
+    [games, watchedIds]
+  )
+  const standings = useMemo(() => buildStandings(watchedGames), [watchedGames])
+
+  if (watchedGames.length === 0) {
+    return <EmptyState emoji="📊" title="No watched matches yet"
+      message="Mark matches as watched from My Queue to build your personal points table." />
+  }
+
+  return (
+    <div className="flex flex-col gap-6">
+      <div className="rounded-2xl overflow-hidden" style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)' }}>
+        <div className="px-4 py-3 border-b border-white/[0.06] flex items-center justify-between">
+          <h3 className="text-sm font-semibold text-slate-300">Points Table</h3>
+          <span className="text-[10px] text-slate-600">{watchedGames.length} watched match{watchedGames.length !== 1 ? 'es' : ''}</span>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="text-[10px] font-bold uppercase tracking-widest text-slate-600">
+                <th className="text-left px-4 py-2 w-6">#</th>
+                <th className="text-left px-4 py-2">Team</th>
+                <th className="text-center px-3 py-2">P</th>
+                <th className="text-center px-3 py-2">W</th>
+                <th className="text-center px-3 py-2">L</th>
+                <th className="text-center px-3 py-2">NR</th>
+                <th className="text-center px-3 py-2 text-amber-500">Pts</th>
+              </tr>
+            </thead>
+            <tbody>
+              {standings.map((team, i) => (
+                <tr key={team.name}
+                  className={`border-t border-white/[0.04] ${i < 4 ? 'text-slate-200' : 'text-slate-500'}`}
+                  style={i === 3 ? { borderBottom: '1px solid rgba(245,158,11,0.15)' } : {}}>
+                  <td className="px-4 py-3 text-slate-600 text-xs">{i + 1}</td>
+                  <td className="px-4 py-3">
+                    <div className="flex items-center gap-2">
+                      {team.logo && <img src={team.logo} alt={team.name} className="w-6 h-6 object-contain" />}
+                      <span className="font-medium">{team.name}</span>
+                      {i < 4 && <span className="text-[9px] px-1.5 py-0.5 rounded font-bold tracking-wide" style={{ background: 'rgba(245,158,11,0.15)', color: 'rgb(245,158,11)' }}>Q</span>}
+                    </div>
+                  </td>
+                  <td className="text-center px-3 py-3 text-slate-400">{team.P}</td>
+                  <td className="text-center px-3 py-3 text-emerald-400 font-medium">{team.W}</td>
+                  <td className="text-center px-3 py-3 text-red-400">{team.L}</td>
+                  <td className="text-center px-3 py-3 text-slate-500">{team.NR}</td>
+                  <td className="text-center px-3 py-3 font-bold text-amber-400">{team.Pts}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        {standings.length < 8 && (
+          <p className="px-4 py-3 text-[11px] text-slate-600 border-t border-white/[0.04]">
+            Watch more matches to see all 8 teams in the table
+          </p>
+        )}
+      </div>
+
+      {standings.length >= 4 && <BBLBracket top4={standings.slice(0, 4)} />}
+    </div>
+  )
+}
+
+// ─── Stats tab ────────────────────────────────────────────────────────────────
+
+function StatsTab() {
+  const { watchedForLeague } = useWatched()
+  const watchedCount = watchedForLeague('bbl').length
+  return (
+    <div className="flex flex-col items-center text-center gap-3 py-16">
+      <span className="text-4xl">📈</span>
+      <p className="text-slate-300 font-medium">Player stats coming soon</p>
+      <p className="text-sm text-slate-500 max-w-sm">
+        The next <span className="text-amber-400 font-medium">Update</span> will store full match scorecards.
+        After that, this tab shows top 5 run scorers and wicket takers across your
+        {watchedCount > 0 ? <> <span className="text-slate-300 font-medium">{watchedCount}</span> watched</> : ' watched'} matches.
+      </p>
+    </div>
+  )
+}
+
 // ─── Main ─────────────────────────────────────────────────────────────────────
 
 const TABS = [
-  { id: 'queue',   label: 'My Queue'  },
-  { id: 'all',     label: 'All Games' },
-  { id: 'watched', label: 'Watched'   },
+  { id: 'queue',     label: 'My Queue'  },
+  { id: 'all',       label: 'All Games' },
+  { id: 'watched',   label: 'Watched'   },
+  { id: 'standings', label: 'Standings' },
+  { id: 'stats',     label: 'Stats'     },
 ]
 
 const ENV_KEY = import.meta.env.VITE_CRICAPI_KEY || ''
@@ -334,9 +504,11 @@ export default function BBLView() {
         </div>
       )}
 
-      {!loading && !error && games.length > 0 && tab === 'queue'   && <QueueTab games={games} />}
-      {!loading && !error && games.length > 0 && tab === 'all'     && <AllGamesTab games={games} />}
-      {!loading && !error && games.length > 0 && tab === 'watched' && <WatchedTab games={games} />}
+      {!loading && !error && games.length > 0 && tab === 'queue'     && <QueueTab games={games} />}
+      {!loading && !error && games.length > 0 && tab === 'all'       && <AllGamesTab games={games} />}
+      {!loading && !error && games.length > 0 && tab === 'watched'   && <WatchedTab games={games} />}
+      {!loading && !error && games.length > 0 && tab === 'standings' && <StandingsTab games={games} />}
+      {!loading && !error && games.length > 0 && tab === 'stats'     && <StatsTab />}
     </div>
   )
 }

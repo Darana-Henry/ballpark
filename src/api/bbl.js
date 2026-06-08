@@ -227,11 +227,8 @@ export async function fetchBBLGames(apiKey) {
     return result
   }
 
-  // No Firestore data — hit the API (first ever load)
-  const { games } = await fetchFromAPI(apiKey)
-  const result = { games, updatedAt: new Date() }
-  writeSession(result)
-  return result
+  // No Firestore data — return empty; user must click Update to fetch
+  return { games: [], updatedAt: null }
 }
 
 // Always fetches fresh data, reusing existing Firestore scores where possible.

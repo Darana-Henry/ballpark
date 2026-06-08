@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from 'react'
-import { fetchBBLGames } from '../api/bbl'
+import { fetchBBLGames, refreshBBLGames } from '../api/bbl'
 import GameCard from '../components/GameCard'
 import SeasonStatsPanel from '../components/SeasonStatsPanel'
 import LoadingSpinner from '../components/LoadingSpinner'
@@ -181,22 +181,58 @@ const TABS = [
   { id: 'watched', label: 'Watched'   },
 ]
 
+const ENV_KEY = import.meta.env.VITE_CRICAPI_KEY || ''
+
+function timeAgo(date) {
+  if (!date) return null
+  const mins = Math.floor((Date.now() - date.getTime()) / 60000)
+  if (mins < 1) return 'just now'
+  if (mins < 60) return `${mins}m ago`
+  const hrs = Math.floor(mins / 60)
+  if (hrs < 24) return `${hrs}h ago`
+  return `${Math.floor(hrs / 24)}d ago`
+}
+
 export default function BBLView() {
-  const [apiKey, setApiKey] = useState(() => localStorage.getItem('cricapi_key') || '')
-  const [games, setGames]   = useState([])
+  const [apiKey, setApiKey]   = useState(() => ENV_KEY || localStorage.getItem('cricapi_key') || '')
+  const [games, setGames]     = useState([])
   const [loading, setLoading] = useState(false)
-  const [error, setError]   = useState(null)
-  const [tab, setTab]       = useState('queue')
+  const [error, setError]     = useState(null)
+  const [tab, setTab]         = useState('queue')
+  const [updatedAt, setUpdatedAt]   = useState(null)
+  const [refreshing, setRefreshing] = useState(false)
+  const [refreshSummary, setRefreshSummary] = useState(null)
 
   useEffect(() => {
     if (!apiKey) return
     setLoading(true)
     setError(null)
     fetchBBLGames(apiKey)
-      .then(setGames)
+      .then(({ games, updatedAt }) => { setGames(games); setUpdatedAt(updatedAt) })
       .catch(err => setError(err.message))
       .finally(() => setLoading(false))
   }, [apiKey])
+
+  async function handleRefresh() {
+    if (!apiKey || refreshing) return
+    setRefreshing(true)
+    setError(null)
+    setRefreshSummary(null)
+    try {
+      const { games, updatedAt, fetched } = await refreshBBLGames(apiKey)
+      setGames(games)
+      setUpdatedAt(updatedAt)
+      setRefreshSummary(
+        fetched > 0
+          ? `${games.length} matches loaded · ${fetched} new score${fetched !== 1 ? 's' : ''} fetched from API`
+          : `${games.length} matches loaded · all scores already cached`
+      )
+    } catch (err) {
+      setError(err.message)
+    } finally {
+      setRefreshing(false)
+    }
+  }
 
   if (!apiKey) return (
     <div className="p-4 md:p-6">
@@ -217,12 +253,38 @@ export default function BBLView() {
         <div className="w-[72px] h-[72px] rounded-full bg-amber-950/40 border border-amber-900/40 flex items-center justify-center text-3xl shrink-0">🏏</div>
         <div className="flex-1">
           <h2 className="text-2xl font-bold text-slate-100 leading-tight">BBL</h2>
-          <p className="text-sm text-slate-500 mt-0.5">Big Bash League · All teams · powered by CricAPI</p>
+          <p className="text-sm text-slate-500 mt-0.5">Big Bash League · All teams</p>
         </div>
-        <button onClick={() => { localStorage.removeItem('cricapi_key'); setApiKey(''); setGames([]) }}
-          className="text-xs text-slate-600 hover:text-slate-400 transition-colors">
-          Change key
-        </button>
+        <div className="flex flex-col items-end gap-1.5 shrink-0">
+          <button
+            onClick={handleRefresh}
+            disabled={refreshing || loading}
+            className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg border border-amber-800/50 bg-amber-950/30 text-amber-400 hover:bg-amber-900/40 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+          >
+            {refreshing ? (
+              <>
+                <span className="w-3 h-3 border border-amber-500/30 border-t-amber-400 rounded-full animate-spin" />
+                Updating…
+              </>
+            ) : (
+              <>
+                <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                </svg>
+                Update
+              </>
+            )}
+          </button>
+          {updatedAt && (
+            <span className="text-[10px] text-slate-600">Updated {timeAgo(updatedAt)}</span>
+          )}
+          {!ENV_KEY && (
+            <button onClick={() => { localStorage.removeItem('cricapi_key'); setApiKey(''); setGames([]) }}
+              className="text-[10px] text-slate-700 hover:text-slate-500 transition-colors">
+              Change key
+            </button>
+          )}
+        </div>
       </div>
 
       <div className="flex mb-6 rounded-2xl p-1 overflow-x-auto gap-0.5"
@@ -237,14 +299,24 @@ export default function BBLView() {
         ))}
       </div>
 
-      {loading && <LoadingSpinner message="Loading BBL matches from CricAPI..." />}
+      {refreshSummary && !error && (
+        <div className="flex items-center gap-2 mb-4 px-4 py-2.5 rounded-xl text-sm text-emerald-400"
+          style={{ background: 'rgba(34,197,94,0.08)', border: '1px solid rgba(34,197,94,0.2)' }}>
+          <svg className="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+          </svg>
+          {refreshSummary}
+        </div>
+      )}
+
+      {loading && <LoadingSpinner message="Loading BBL matches…" />}
       {error && (
         <div className="rounded-xl bg-red-900/20 border border-red-800 p-4 text-red-400 text-sm flex items-start gap-3">
           <span className="shrink-0">⚠</span>
           <div>
             <p className="font-medium mb-1">Failed to load BBL</p>
             <p>{error}</p>
-            <button onClick={() => { localStorage.removeItem('cricapi_key'); setApiKey('') }}
+            <button onClick={() => { localStorage.removeItem('cricapi_key'); setApiKey(''); setRefreshSummary(null) }}
               className="mt-2 text-xs text-red-400/70 hover:text-red-300 underline">
               Clear key and try again
             </button>

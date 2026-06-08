@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo } from 'react'
 import { fetchBBLGames, refreshBBLGames } from '../api/bbl'
 import GameCard from '../components/GameCard'
+import BoundaryTracker from '../components/BoundaryTracker'
 import SeasonStatsPanel from '../components/SeasonStatsPanel'
 import LoadingSpinner from '../components/LoadingSpinner'
 import EmptyState from '../components/EmptyState'
@@ -49,9 +50,27 @@ function ApiKeyGate({ onKeyReady }) {
   )
 }
 
+// ─── Trackable card wrapper ───────────────────────────────────────────────────
+
+function TrackableCard({ game, onTrack, isUpNext, ...props }) {
+  return (
+    <div className="relative">
+      <GameCard game={game} isUpNext={isUpNext} {...props} />
+      <button
+        onClick={() => onTrack(game)}
+        title="Open boundary tracker"
+        className="absolute top-2 right-2 opacity-50 hover:opacity-100 transition-opacity flex items-center gap-1 text-[10px] font-bold px-2 py-1 rounded-lg text-amber-400 z-10"
+        style={{ background: 'rgba(245,158,11,0.15)', border: '1px solid rgba(245,158,11,0.3)' }}
+      >
+        🏏 Track
+      </button>
+    </div>
+  )
+}
+
 // ─── Tabs ─────────────────────────────────────────────────────────────────────
 
-function QueueTab({ games }) {
+function QueueTab({ games, onTrack }) {
   const { isWatched, isDismissed } = useWatched()
   const [showWatched, setShowWatched] = useState(false)
 
@@ -84,7 +103,7 @@ function QueueTab({ games }) {
         <>
           <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Up Next For You</p>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <GameCard game={upNext} isUpNext showDismissAction />
+            <TrackableCard game={upNext} isUpNext showDismissAction onTrack={onTrack} />
             <SeasonStatsPanel league="bbl" trackedTeamId={null} />
           </div>
         </>
@@ -97,7 +116,7 @@ function QueueTab({ games }) {
         </div>
       )}
       <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-3">
-        {unwatched.map(g => <GameCard key={g.id} game={g} showDismissAction />)}
+        {unwatched.map(g => <TrackableCard key={g.id} game={g} showDismissAction onTrack={onTrack} />)}
       </div>
       {watched.length > 0 && (
         <div className="mt-2">
@@ -109,7 +128,7 @@ function QueueTab({ games }) {
           </button>
           {showWatched && (
             <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-3 mt-2">
-              {watched.map(g => <GameCard key={g.id} game={g} />)}
+              {watched.map(g => <TrackableCard key={g.id} game={g} onTrack={onTrack} />)}
             </div>
           )}
         </div>
@@ -118,16 +137,16 @@ function QueueTab({ games }) {
   )
 }
 
-function AllGamesTab({ games }) {
+function AllGamesTab({ games, onTrack }) {
   const sorted = useMemo(() => [...games].sort((a, b) => b.gameDate - a.gameDate), [games])
   return (
     <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-3">
-      {sorted.map(g => <GameCard key={g.id} game={g} />)}
+      {sorted.map(g => <TrackableCard key={g.id} game={g} onTrack={onTrack} />)}
     </div>
   )
 }
 
-function WatchedTab({ games }) {
+function WatchedTab({ games, onTrack }) {
   const { isWatched, isDismissed } = useWatched()
   const [showSkipped, setShowSkipped] = useState(false)
 
@@ -149,7 +168,7 @@ function WatchedTab({ games }) {
             </div>
           </div>
           <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-3">
-            {watched.map(g => <GameCard key={g.id} game={g} />)}
+            {watched.map(g => <TrackableCard key={g.id} game={g} onTrack={onTrack} />)}
           </div>
         </>
       )}
@@ -163,7 +182,7 @@ function WatchedTab({ games }) {
           </button>
           {showSkipped && (
             <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-3 mt-2">
-              {skipped.map(g => <GameCard key={g.id} game={g} showDismissAction />)}
+              {skipped.map(g => <TrackableCard key={g.id} game={g} showDismissAction onTrack={onTrack} />)}
             </div>
           )}
         </div>
@@ -371,6 +390,7 @@ export default function BBLView() {
   const [updatedAt, setUpdatedAt]   = useState(null)
   const [refreshing, setRefreshing] = useState(false)
   const [refreshSummary, setRefreshSummary] = useState(null)
+  const [trackedGame, setTrackedGame] = useState(null)
 
   useEffect(() => {
     if (!apiKey) return
@@ -504,11 +524,15 @@ export default function BBLView() {
         </div>
       )}
 
-      {!loading && !error && games.length > 0 && tab === 'queue'     && <QueueTab games={games} />}
-      {!loading && !error && games.length > 0 && tab === 'all'       && <AllGamesTab games={games} />}
-      {!loading && !error && games.length > 0 && tab === 'watched'   && <WatchedTab games={games} />}
+      {!loading && !error && games.length > 0 && tab === 'queue'     && <QueueTab games={games} onTrack={setTrackedGame} />}
+      {!loading && !error && games.length > 0 && tab === 'all'       && <AllGamesTab games={games} onTrack={setTrackedGame} />}
+      {!loading && !error && games.length > 0 && tab === 'watched'   && <WatchedTab games={games} onTrack={setTrackedGame} />}
       {!loading && !error && games.length > 0 && tab === 'standings' && <StandingsTab games={games} />}
       {!loading && !error && games.length > 0 && tab === 'stats'     && <StatsTab />}
+
+      {trackedGame && (
+        <BoundaryTracker game={trackedGame} onClose={() => setTrackedGame(null)} />
+      )}
     </div>
   )
 }

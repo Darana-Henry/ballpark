@@ -4,6 +4,7 @@ import { fetchNBAGames, fetchNFLGames } from '../api/espn'
 import { fetchMLSGames } from '../api/mls'
 import { fetchBBLGames } from '../api/bbl'
 import GameCard from '../components/GameCard'
+import BoundaryTracker from '../components/BoundaryTracker'
 import { useWatched } from '../contexts/WatchedContext'
 import { LEAGUE_MAP } from '../constants/leagues'
 
@@ -313,6 +314,7 @@ function Ticker({ league, items }) {
 
 export default function HomeView() {
   const { isWatched, isDismissed, watchedGames } = useWatched()
+  const [trackedGame, setTrackedGame] = useState(null)
 
   const [states, setStates] = useState(() => {
     const hasBBL = !!(ENV_BBL_KEY || localStorage.getItem('cricapi_key'))
@@ -412,12 +414,23 @@ export default function HomeView() {
             </div>
           )}
           {hero ? (
-            <GameCard
-              game={hero.game}
-              isUpNext
-              showDismissAction
-              trackedTeamId={hero.trackedTeamId}
-            />
+            <div className="relative">
+              <GameCard
+                game={hero.game}
+                isUpNext
+                showDismissAction
+                trackedTeamId={hero.trackedTeamId}
+              />
+              {hero.league === 'bbl' && (
+                <button
+                  onClick={() => setTrackedGame(hero.game)}
+                  className="absolute top-2 right-2 opacity-50 hover:opacity-100 transition-opacity flex items-center gap-1 text-[10px] font-bold px-2 py-1 rounded-lg text-amber-400 z-10"
+                  style={{ background: 'rgba(245,158,11,0.15)', border: '1px solid rgba(245,158,11,0.3)' }}
+                >
+                  🏏 Track
+                </button>
+              )}
+            </div>
           ) : allLoading ? (
             <div className="rounded-2xl h-56 animate-pulse" style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)' }} />
           ) : (
@@ -457,12 +470,23 @@ export default function HomeView() {
             {rest.map(({ game, league, trackedTeamId }) => (
               <div key={game.id} className="flex flex-col h-full">
                 <LeagueBadge league={league} />
-                <GameCard
-                  game={game}
-                  showDismissAction
-                  trackedTeamId={trackedTeamId}
-                  className="flex-1 h-full"
-                />
+                <div className="relative flex-1 flex flex-col">
+                  <GameCard
+                    game={game}
+                    showDismissAction
+                    trackedTeamId={trackedTeamId}
+                    className="flex-1 h-full"
+                  />
+                  {league === 'bbl' && (
+                    <button
+                      onClick={() => setTrackedGame(game)}
+                      className="absolute top-2 right-2 opacity-50 hover:opacity-100 transition-opacity flex items-center gap-1 text-[10px] font-bold px-2 py-1 rounded-lg text-amber-400 z-10"
+                      style={{ background: 'rgba(245,158,11,0.15)', border: '1px solid rgba(245,158,11,0.3)' }}
+                    >
+                      🏏 Track
+                    </button>
+                  )}
+                </div>
               </div>
             ))}
             {!allDone && stillLoading
@@ -508,6 +532,9 @@ export default function HomeView() {
         </p>
       )}
 
+      {trackedGame && (
+        <BoundaryTracker game={trackedGame} onClose={() => setTrackedGame(null)} />
+      )}
     </div>
   )
 }

@@ -78,8 +78,7 @@ function QueueTab({ games }) {
   return (
     <div className="flex flex-col gap-3">
       {!upNext && unwatched.length === 0 && watched.length === 0 && (
-        <EmptyState emoji="🏏" title="No BBL matches found"
-          message="The Big Bash League runs Dec–Feb. Check back during the Australian summer, or the current season may not be in CricAPI yet." />
+        <EmptyState emoji="✅" title="All caught up" message="No unwatched BBL matches in your queue." />
       )}
       {upNext && (
         <>
@@ -287,7 +286,7 @@ export default function BBLView() {
         </div>
       </div>
 
-      <div className="flex mb-6 rounded-2xl p-1 overflow-x-auto gap-0.5"
+      {games.length > 0 && <div className="flex mb-6 rounded-2xl p-1 overflow-x-auto gap-0.5"
         style={{ background: 'rgba(255,255,255,0.05)', backdropFilter: 'blur(16px)', WebkitBackdropFilter: 'blur(16px)', border: '1px solid rgba(255,255,255,0.08)' }}>
         {TABS.map(t => (
           <button key={t.id} onClick={() => setTab(t.id)}
@@ -297,7 +296,7 @@ export default function BBLView() {
             {tab === t.id && <span className="absolute bottom-1.5 left-1/2 -translate-x-1/2 w-6 h-0.5 bg-amber-500 rounded-full" />}
           </button>
         ))}
-      </div>
+      </div>}
 
       {refreshSummary && !error && (
         <div className="flex items-center gap-2 mb-4 px-4 py-2.5 rounded-xl text-sm text-emerald-400"
@@ -324,9 +323,20 @@ export default function BBLView() {
         </div>
       )}
 
-      {!loading && !error && tab === 'queue'   && <QueueTab games={games} />}
-      {!loading && !error && tab === 'all'     && <AllGamesTab games={games} />}
-      {!loading && !error && tab === 'watched' && <WatchedTab games={games} />}
+      {!loading && !error && games.length === 0 && (
+        <div className="flex flex-col items-center text-center gap-3 py-16">
+          <span className="text-4xl">🏏</span>
+          <p className="text-slate-300 font-medium">No BBL data loaded yet</p>
+          <p className="text-sm text-slate-500 max-w-xs">
+            Click <span className="text-amber-400 font-medium">Update</span> above to fetch matches from CricAPI.
+            Data is cached in Firestore so subsequent loads are free.
+          </p>
+        </div>
+      )}
+
+      {!loading && !error && games.length > 0 && tab === 'queue'   && <QueueTab games={games} />}
+      {!loading && !error && games.length > 0 && tab === 'all'     && <AllGamesTab games={games} />}
+      {!loading && !error && games.length > 0 && tab === 'watched' && <WatchedTab games={games} />}
     </div>
   )
 }

@@ -34,7 +34,12 @@ function RealLifeStatus({ status, detail }) {
     )
   }
   if (status === 'final') {
-    return <span className="text-xs font-semibold text-slate-400 uppercase tracking-wide">Final</span>
+    const meaningful = detail && detail.toLowerCase() !== 'final'
+    return (
+      <span className={`text-xs font-semibold ${meaningful ? 'text-slate-300' : 'text-slate-400 uppercase tracking-wide'}`}>
+        {meaningful ? detail : 'Final'}
+      </span>
+    )
   }
   return <span className="text-xs text-slate-500">{detail || 'Scheduled'}</span>
 }
@@ -119,8 +124,8 @@ export default function GameCard({ game, isUpNext = false, resultColor = null, s
   const canDismiss = showDismissAction && isFirebaseConfigured && game.status !== 'live' && !watched
   const showHighlight = !dismissed && game.status === 'final' && game.highlightUrl
 
-  const homeWon = showScore && game.status === 'final' && game.homeScore > game.awayScore
-  const awayWon = showScore && game.status === 'final' && game.awayScore > game.homeScore
+  const homeWon = game.homeWon ?? (showScore && game.status === 'final' && game.homeScore > game.awayScore)
+  const awayWon = game.awayWon ?? (showScore && game.status === 'final' && game.awayScore > game.homeScore)
 
   async function handleToggle() {
     if (!canToggle || toggling) return
@@ -202,15 +207,17 @@ export default function GameCard({ game, isUpNext = false, resultColor = null, s
               <span className="text-xs text-slate-500 text-center leading-tight">{game.statusDetail}</span>
             )}
             {showScore && game.status !== 'scheduled' && (
-              <div className="flex items-center gap-2 mt-1">
-                <span className={`text-lg font-bold tabular-nums ${awayWon ? 'text-slate-100' : 'text-slate-500'}`}>
-                  {game.awayScore}
-                </span>
-                <span className="text-slate-700">–</span>
-                <span className={`text-lg font-bold tabular-nums ${homeWon ? 'text-slate-100' : 'text-slate-500'}`}>
-                  {game.homeScore}
-                </span>
-              </div>
+              game.homeScoreStr || game.awayScoreStr
+                ? <p className="text-center text-xs font-medium text-slate-300 mt-1 px-1">{game.statusDetail}</p>
+                : <div className="flex items-center gap-2 mt-1">
+                    <span className={`text-lg font-bold tabular-nums ${awayWon ? 'text-slate-100' : 'text-slate-500'}`}>
+                      {game.awayScore}
+                    </span>
+                    <span className="text-slate-700">–</span>
+                    <span className={`text-lg font-bold tabular-nums ${homeWon ? 'text-slate-100' : 'text-slate-500'}`}>
+                      {game.homeScore}
+                    </span>
+                  </div>
             )}
           </div>
 
@@ -297,7 +304,7 @@ export default function GameCard({ game, isUpNext = false, resultColor = null, s
 
         <div className="flex-1 flex items-center justify-end gap-2 min-w-0">
           <span className="text-xs text-slate-500 truncate">{formatGameDate(game.gameDate)}</span>
-          {!dismissed && <RealLifeStatus status={game.status} detail={game.statusDetail} />}
+          {!dismissed && <RealLifeStatus status={game.status} detail={showScore ? game.statusDetail : null} />}
         </div>
 
         {canDismiss && (
@@ -311,8 +318,8 @@ export default function GameCard({ game, isUpNext = false, resultColor = null, s
       {/* Teams + scores */}
       <div className="flex flex-col gap-2 mb-3">
         {[
-          { team: game.awayTeam, score: game.awayScore, won: awayWon, label: 'Away' },
-          { team: game.homeTeam, score: game.homeScore, won: homeWon, label: 'Home' },
+          { team: game.awayTeam, score: game.awayScoreStr ?? game.awayScore, won: awayWon, label: 'Away' },
+          { team: game.homeTeam, score: game.homeScoreStr ?? game.homeScore, won: homeWon, label: 'Home' },
         ].map(({ team, score, won, label }) => (
           <div key={team.id} className="flex items-center justify-between gap-3">
             <div className="flex items-center gap-3 min-w-0">
@@ -326,7 +333,7 @@ export default function GameCard({ game, isUpNext = false, resultColor = null, s
             </div>
             {game.status !== 'scheduled' && (
               showScore
-                ? <span className={`text-2xl font-bold tabular-nums ${won ? 'text-slate-100' : 'text-slate-500'}`}>{score}</span>
+                ? <span className={`font-bold tabular-nums ${typeof score === 'string' ? 'text-sm text-right max-w-[90px]' : 'text-2xl'} ${won ? 'text-slate-100' : 'text-slate-500'}`}>{score}</span>
                 : <span className="text-slate-700 text-xl font-bold select-none" title={dismissed ? 'Skipped' : 'Watch first'}>—</span>
             )}
           </div>

@@ -200,8 +200,10 @@ function normalizeMatch(match, seriesName) {
   const img = t => t.img ? t.img.replace('?w=48', '?w=96') : null
 
   const matchLabel = match.name || `${home} vs ${away}`
+  const dateStr    = new Date(match.dateTimeGMT || match.date || Date.now())
+    .toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
   const highlightUrl = isFinal
-    ? `https://www.youtube.com/results?search_query=${encodeURIComponent(`${matchLabel} highlights`)}`
+    ? `https://www.youtube.com/results?search_query=${encodeURIComponent(`${matchLabel} highlights ${dateStr}`)}`
     : null
 
   return {

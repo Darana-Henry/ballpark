@@ -16,6 +16,17 @@ const ABBR = {
   'Sydney Sixers':       'SIX', 'Sydney Thunder':      'THU',
 }
 
+const COLORS = {
+  'Adelaide Strikers':   '#1d79e0',
+  'Brisbane Heat':       '#ef4444',
+  'Hobart Hurricanes':   '#a855f7',
+  'Melbourne Renegades': '#dc2626',
+  'Melbourne Stars':     '#10b981',
+  'Perth Scorchers':     '#fb923c',
+  'Sydney Sixers':       '#ec4899',
+  'Sydney Thunder':      '#84cc16',
+}
+
 const FALLBACK_LOGOS = {
   'Adelaide Strikers':   'https://g.cricapi.com/iapi/113-637877085901698892.webp?w=96',
   'Brisbane Heat':       'https://g.cricapi.com/iapi/128-637957474274254899.webp?w=96',
@@ -148,12 +159,14 @@ function normalizeMatch(match) {
       name:         home,
       abbreviation: ABBR[home] || home.slice(0, 3).toUpperCase(),
       logo:         logoFromTeamInfo(match.teamInfo, home),
+      color:        COLORS[home] || null,
     },
     awayTeam: {
       id:           away,
       name:         away,
       abbreviation: ABBR[away] || away.slice(0, 3).toUpperCase(),
       logo:         logoFromTeamInfo(match.teamInfo, away),
+      color:        COLORS[away] || null,
     },
     homeScore:    (isLive || isFinal) ? parseScore(match.score, home) : null,
     awayScore:    (isLive || isFinal) ? parseScore(match.score, away) : null,

@@ -10,6 +10,18 @@ const WTC_ABBR = {
   'Bangladesh':   'BAN', 'Sri Lanka':   'SL',  'West Indies': 'WI',
 }
 
+const WTC_COLORS = {
+  'India':        '#4d90d3',
+  'England':      '#3b82f6',
+  'Australia':    '#f5a623',
+  'South Africa': '#16a34a',
+  'New Zealand':  '#9ca3af',
+  'Pakistan':     '#15803d',
+  'Bangladesh':   '#0d9488',
+  'Sri Lanka':    '#6366f1',
+  'West Indies':  '#dc2626',
+}
+
 // WTC 2025-27 series IDs discovered via API probe (June 2026)
 const WTC_SERIES = [
   // 2025 (completed)
@@ -200,12 +212,14 @@ function normalizeMatch(match, seriesName) {
       name:         home,
       abbreviation: WTC_ABBR[home] || homeInfo.shortname || home.slice(0, 3).toUpperCase(),
       logo:         img(homeInfo),
+      color:        WTC_COLORS[home] || null,
     },
     awayTeam: {
       id:           away,
       name:         away,
       abbreviation: WTC_ABBR[away] || awayInfo.shortname || away.slice(0, 3).toUpperCase(),
       logo:         img(awayInfo),
+      color:        WTC_COLORS[away] || null,
     },
     homeScore:    null,
     awayScore:    null,

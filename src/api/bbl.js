@@ -151,6 +151,9 @@ function normalizeMatch(match) {
   const isLive  = match.matchStarted && !match.matchEnded
   const isFinal = !!match.matchEnded
 
+  const gameDate = new Date(match.dateTimeGMT || match.date || Date.now())
+  const dateStr  = gameDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+
   return {
     id:       match.id,
     league:   'bbl',
@@ -172,10 +175,10 @@ function normalizeMatch(match) {
     awayScore:    (isLive || isFinal) ? parseScore(match.score, away) : null,
     status:       isLive ? 'live' : isFinal ? 'final' : 'scheduled',
     statusDetail: match.status || (isLive ? 'Live' : isFinal ? 'Final' : 'Scheduled'),
-    gameDate:     new Date(match.dateTimeGMT || match.date || Date.now()),
+    gameDate,
     gameType:     'Big Bash League',
     highlightUrl: isFinal
-      ? `https://www.youtube.com/results?search_query=${encodeURIComponent(`${away} vs ${home} BBL highlights`)}`
+      ? `https://www.youtube.com/results?search_query=${encodeURIComponent(`${away} vs ${home} BBL highlights ${dateStr}`)}`
       : null,
     venue:        match.venue || null,
   }

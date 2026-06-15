@@ -410,7 +410,7 @@ export default function BoundaryTracker({ game, onClose }) {
                           }}
                         >
                           {!hasHome && !hasAway && (
-                            <span className="text-[10px] text-slate-700 font-mono tabular-nums select-none">
+                            <span className="text-[12px] text-slate-400 font-mono tabular-nums select-none">
                               {o}.{b + 1}
                             </span>
                           )}

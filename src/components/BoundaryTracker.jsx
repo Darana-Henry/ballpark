@@ -72,7 +72,7 @@ function BoundaryDot({ color }) {
   )
 }
 
-function DiffGraph({ grid, homeAbbr, awayAbbr, homeColor, awayColor }) {
+function DiffGraph({ grid, homeAbbr, awayAbbr, homeColor, awayColor, currentOver }) {
   const uid = useId().replace(/:/g, '')
 
   // Cumulative diff (home - away) after each over
@@ -168,6 +168,21 @@ function DiffGraph({ grid, homeAbbr, awayAbbr, homeColor, awayColor }) {
 
       {/* Line */}
       <polyline points={linePts} fill="none" stroke="rgba(255,255,255,0.55)" strokeWidth={1.5} strokeLinejoin="round" />
+
+      {/* Current-over marker */}
+      {currentOver <= lastOver && (() => {
+        const cx = xOf(currentOver)
+        return (
+          <g>
+            <line x1={cx} y1={padT} x2={cx} y2={padT + plotH}
+              stroke="rgba(255,255,255,0.55)" strokeWidth={1} strokeDasharray="3 3" />
+            <text x={cx} y={padT - 4} textAnchor="middle"
+              fontSize={8} fill="rgba(255,255,255,0.5)" fontFamily="monospace">
+              {currentOver}
+            </text>
+          </g>
+        )
+      })()}
 
       {/* Dots */}
       {pts.map((v, i) => (
@@ -410,8 +425,8 @@ export default function BoundaryTracker({ game, onClose }) {
                           }}
                         >
                           {!hasHome && !hasAway && (
-                            <span className="text-[10px] text-slate-700 font-mono tabular-nums select-none">
-                              {o}.{b + 1}
+                            <span className="text-[12px] text-slate-400 font-mono tabular-nums select-none">
+                              {b === 5 ? `${o + 1}.0` : `${o}.${b + 1}`}
                             </span>
                           )}
                           {hasHome && !hasAway && <BoundaryDot color={HOME} />}
@@ -465,6 +480,7 @@ export default function BoundaryTracker({ game, onClose }) {
                   awayAbbr={awayAbbr}
                   homeColor={HOME}
                   awayColor={AWAY}
+                  currentOver={focused.over}
                 />
               </div>
             </div>

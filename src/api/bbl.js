@@ -73,10 +73,17 @@ async function loadFromFirestore() {
     return {
       seriesId,
       updatedAt: updatedAt?.toDate?.() ?? null,
-      games: games.map(g => ({
-        ...g,
-        gameDate: g.gameDate?.toDate ? g.gameDate.toDate() : new Date(g.gameDate),
-      })),
+      games: games.map(g => {
+        const gameDate = g.gameDate?.toDate ? g.gameDate.toDate() : new Date(g.gameDate)
+        const dateStr = gameDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+        return {
+          ...g,
+          gameDate,
+          highlightUrl: g.status === 'final'
+            ? `https://www.youtube.com/results?search_query=${encodeURIComponent(`${g.awayTeam.name} vs ${g.homeTeam.name} BBL highlights ${dateStr}`)}`
+            : null,
+        }
+      }),
     }
   } catch { return null }
 }
@@ -219,7 +226,14 @@ async function fetchFromAPI(apiKey, { cachedSeriesId = null, existingGames = [] 
   const games = fixtures
     .filter(m => m?.id && !seen.has(m.id) && seen.add(m.id))
     .map(m => {
-      if (scoredMap[m.id]) return scoredMap[m.id]                   // reuse from Firestore
+      if (scoredMap[m.id]) {
+        const g = scoredMap[m.id]
+        const dateStr = g.gameDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+        return {
+          ...g,
+          highlightUrl: `https://www.youtube.com/results?search_query=${encodeURIComponent(`${g.awayTeam.name} vs ${g.homeTeam.name} BBL highlights ${dateStr}`)}`,
+        }
+      }
       return normalizeMatch(liveMap[m.id] || hydrated[m.id] || m)  // fresh from API
     })
     .filter(Boolean)

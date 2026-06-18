@@ -74,7 +74,7 @@ function QueueTab({ games, onTrack }) {
   const { isWatched, isDismissed } = useWatched()
   const [showWatched, setShowWatched] = useState(false)
 
-  const { upNext, unwatched, watched } = useMemo(() => {
+  const { upNext, nextScheduled, unwatched, watched } = useMemo(() => {
     const live = games.filter(g => g.status === 'live' && !isDismissed(g.id, 'bbl'))
     const finalUnwatched = games
       .filter(g => g.status === 'final' && !isWatched(g.id, 'bbl') && !isDismissed(g.id, 'bbl'))
@@ -91,8 +91,9 @@ function QueueTab({ games, onTrack }) {
       ...live.filter(g => g.id !== upNextId),
       ...scheduled.filter(g => g.id !== upNextId),
     ]
-    return { upNext, unwatched: remaining, watched: watchedList }
+    return { upNext, nextScheduled: scheduled[0] ?? null, unwatched: remaining, watched: watchedList }
   }, [games, isWatched, isDismissed])
+
 
   return (
     <div className="flex flex-col gap-3">

@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { LEAGUE_MAP } from '../constants/leagues'
 import { useWatched } from '../contexts/WatchedContext'
 import { isFirebaseConfigured } from '../firebase'
+import { useCountdown } from '../hooks/useCountdown'
 
 function TeamLogo({ src, alt, size = 40 }) {
   const [err, setErr] = useState(false)
@@ -118,6 +119,7 @@ export default function GameCard({ game, isUpNext = false, resultColor = null, s
   const league = LEAGUE_MAP[game.league]
   const [toggling, setToggling] = useState(false)
   const [dismissing, setDismissing] = useState(false)
+  const countdown = useCountdown(game.status === 'scheduled' ? game.gameDate : null)
 
   const showScore = !dismissed && (watched || game.status === 'live')
   const canToggle = isFirebaseConfigured && game.status === 'final' && !dismissed
@@ -178,9 +180,17 @@ export default function GameCard({ game, isUpNext = false, resultColor = null, s
         </div>
 
         {/* Date */}
-        <p className="text-center text-sm text-slate-400 mt-1 mb-5">
+        <p className="text-center text-sm text-slate-400 mt-1 mb-3">
           {formatGameDate(game.gameDate)}
         </p>
+
+        {/* Countdown — scheduled games only */}
+        {countdown && (
+          <div className="flex items-center justify-center mb-5">
+            <span className="text-sm tabular-nums tracking-wide text-slate-100" style={{ fontFamily: "'Bebas Neue', sans-serif" }}>{countdown}</span>
+          </div>
+        )}
+        {!countdown && <div className="mb-5" />}
 
         {/* Teams — horizontal layout */}
         <div className="flex items-center px-4 mb-3">
@@ -339,6 +349,13 @@ export default function GameCard({ game, isUpNext = false, resultColor = null, s
           </div>
         ))}
       </div>
+
+      {/* Countdown — scheduled games only */}
+      {!dismissed && countdown && (
+        <div className="flex items-center justify-center mb-3">
+          <span className="text-xs tabular-nums tracking-wide text-slate-400" style={{ fontFamily: "'Bebas Neue', sans-serif" }}>{countdown}</span>
+        </div>
+      )}
 
       {/* Starting pitchers */}
       {hasPitchers && (

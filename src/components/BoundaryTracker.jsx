@@ -56,6 +56,14 @@ function teamTotals(grid, side) {
   return count
 }
 
+function segmentTotals(grid, fromOver, toOver, side) {
+  let count = 0
+  for (let o = fromOver; o <= toOver; o++)
+    for (let b = 0; b < BALLS; b++)
+      if (grid[o][b][side]) count++
+  return count
+}
+
 function BoundaryDot({ color }) {
   return (
     <span
@@ -204,13 +212,27 @@ function DiffGraph({ grid, homeAbbr, awayAbbr, homeColor, awayColor, currentOver
         )
       })}
 
-      {/* Corner labels */}
-      <text x={padL + 4} y={padT + 11} fontSize={9} fill={homeColor + 'bb'} fontFamily="sans-serif">
-        {homeAbbr} ahead
-      </text>
-      <text x={padL + 4} y={padT + plotH - 4} fontSize={9} fill={awayColor + 'bb'} fontFamily="sans-serif">
-        {awayAbbr} ahead
-      </text>
+      {/* Centered watermark labels */}
+      {zeroY > padT + 10 && (
+        <text
+          x={padL + plotW / 2} y={(padT + zeroY) / 2}
+          textAnchor="middle" dominantBaseline="middle"
+          fontSize={52} fontFamily="Impact, Haettenschweiler, 'Arial Narrow Bold', sans-serif"
+          fill={homeColor} opacity={0.15} letterSpacing={6}
+        >
+          {homeAbbr}
+        </text>
+      )}
+      {zeroY < padT + plotH - 10 && (
+        <text
+          x={padL + plotW / 2} y={(zeroY + padT + plotH) / 2}
+          textAnchor="middle" dominantBaseline="middle"
+          fontSize={52} fontFamily="Impact, Haettenschweiler, 'Arial Narrow Bold', sans-serif"
+          fill={awayColor} opacity={0.15} letterSpacing={6}
+        >
+          {awayAbbr}
+        </text>
+      )}
     </svg>
   )
 }
@@ -278,21 +300,28 @@ export default function BoundaryTracker({ game, onClose }) {
         e.preventDefault()
         const side = awayMode ? 'away' : 'home'
         markCell(over, ball, side)
-        advance(over, ball)
         return
       }
 
       if (e.key === 'Backspace' || e.key === 'Delete') { clearCell(over, ball); return }
 
-      if (e.key === 'ArrowRight') { e.preventDefault(); advance(over, ball) }
+      if (e.key === 'ArrowRight') {
+        e.preventDefault()
+        if (e.ctrlKey) setFocused({ over, ball: BALLS - 1 })
+        else advance(over, ball)
+      }
       if (e.key === 'ArrowLeft') {
         e.preventDefault()
-        let pb = ball - 1, po = over
-        if (pb < 0) { pb = BALLS - 1; po = Math.max(over - 1, 0) }
-        setFocused({ over: po, ball: pb })
+        if (e.ctrlKey) {
+          setFocused({ over, ball: 0 })
+        } else {
+          let pb = ball - 1, po = over
+          if (pb < 0) { pb = BALLS - 1; po = Math.max(over - 1, 0) }
+          setFocused({ over: po, ball: pb })
+        }
       }
-      if (e.key === 'ArrowDown') { e.preventDefault(); setFocused({ over: Math.min(over + 1, OVERS - 1), ball }) }
-      if (e.key === 'ArrowUp')   { e.preventDefault(); setFocused({ over: Math.max(over - 1, 0), ball }) }
+      if (e.key === 'ArrowDown') { e.preventDefault(); setFocused({ over: e.ctrlKey ? OVERS - 1 : Math.min(over + 1, OVERS - 1), ball }) }
+      if (e.key === 'ArrowUp')   { e.preventDefault(); setFocused({ over: e.ctrlKey ? 0 : Math.max(over - 1, 0), ball }) }
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
@@ -487,7 +516,7 @@ export default function BoundaryTracker({ game, onClose }) {
 
             {/* Bottom half — team info, scales with box height via cqh */}
             <div
-              className="flex-1 min-h-0 rounded-2xl p-4 flex flex-col justify-between"
+              className="flex-1 min-h-0 rounded-2xl p-4 flex flex-col gap-3"
               style={{
                 border: '1px solid rgba(255,255,255,0.08)',
                 background: 'rgba(255,255,255,0.03)',
@@ -495,7 +524,7 @@ export default function BoundaryTracker({ game, onClose }) {
               }}
             >
               {/* Teams row */}
-              <div className="flex items-center justify-between flex-1" style={{ gap: '2cqh' }}>
+              <div className="flex items-center justify-between shrink-0" style={{ gap: '2cqh' }}>
 
                 {/* Home */}
                 <div className="flex items-center" style={{ gap: '2.5cqh' }}>
@@ -537,9 +566,64 @@ export default function BoundaryTracker({ game, onClose }) {
 
               </div>
 
+              {/* Segment breakdown */}
+              <div className="flex-1 min-h-0 flex flex-col justify-center gap-2">
+                {[
+                  { short: 'PP',    from: 0,  to: 5  },
+                  { short: 'MID',   from: 6,  to: 14 },
+                  { short: 'DEATH', from: 15, to: 19 },
+                ].map(({ short, from, to }) => {
+                  const h = segmentTotals(grid, from, to, 'home')
+                  const a = segmentTotals(grid, from, to, 'away')
+                  const total = h + a
+                  const homePct = total > 0 ? (h / total) * 100 : 50
+                  const awayPct = total > 0 ? (a / total) * 100 : 50
+                  const homeWins = h > a
+                  const awayWins = a > h
+                  return (
+                    <div key={short} className="flex items-center gap-2">
+                      {/* Phase label */}
+                      <span className="text-[9px] font-bold uppercase tracking-widest shrink-0 w-10 text-right"
+                        style={{ color: 'rgba(100,116,139,0.7)' }}>
+                        {short}
+                      </span>
+                      {/* Bar with numbers inside */}
+                      <div className="flex-1 flex rounded-md overflow-hidden" style={{ height: '28px', background: 'rgba(255,255,255,0.05)' }}>
+                        {total > 0 ? (
+                          <>
+                            <div
+                              className="flex items-center justify-center transition-all duration-300"
+                              style={{ width: `${homePct}%`, background: HOME, opacity: homeWins ? 0.75 : 0.32 }}
+                            >
+                              {h > 0 && (
+                                <span className="text-[12px] font-bold tabular-nums select-none"
+                                  style={{ color: 'rgba(255,255,255,0.9)', textShadow: '0 1px 3px rgba(0,0,0,0.6)' }}>
+                                  {h}
+                                </span>
+                              )}
+                            </div>
+                            <div
+                              className="flex items-center justify-center transition-all duration-300"
+                              style={{ width: `${awayPct}%`, background: AWAY, opacity: awayWins ? 0.75 : 0.32 }}
+                            >
+                              {a > 0 && (
+                                <span className="text-[12px] font-bold tabular-nums select-none"
+                                  style={{ color: 'rgba(255,255,255,0.9)', textShadow: '0 1px 3px rgba(0,0,0,0.6)' }}>
+                                  {a}
+                                </span>
+                              )}
+                            </div>
+                          </>
+                        ) : null}
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+
               {/* Keyboard hints */}
               <p className="text-slate-700 text-center shrink-0" style={{ fontSize: 'max(8px, 1.8cqh)' }}>
-                Shift+Q close · Ctrl+Z undo · Space boundary · ⌫ clear · ↑↓←→ move
+                Shift+Q close · Ctrl+Z undo · Space boundary · ⌫ clear · ↑↓←→ move · Ctrl+↑↓←→ jump
               </p>
             </div>
 

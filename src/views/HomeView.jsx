@@ -310,10 +310,40 @@ function Ticker({ league, items }) {
   )
 }
 
+// ─── BBL standings — mirrors BBLView's buildStandings/parseWinner exactly ─────
+
+function bblParseWinner(statusDetail, homeTeam, awayTeam) {
+  if (!statusDetail) return null
+  const d = statusDetail.toLowerCase()
+  if (d.includes('no result') || d.includes('abandoned') || d.includes('cancelled')) return 'nr'
+  if (d.includes(' tied') || d === 'match tied' || d === 'tied') return 'tie'
+  const m = statusDetail.match(/^(.+?)\s+won\s+by/i)
+  if (!m) return null
+  const w = m[1].trim().toLowerCase()
+  if (homeTeam.toLowerCase() === w || homeTeam.toLowerCase().includes(w)) return 'home'
+  if (awayTeam.toLowerCase() === w || awayTeam.toLowerCase().includes(w)) return 'away'
+  return null
+}
+
+function computeBBLStandings(games, watchedIds) {
+  const pts = {}
+  for (const g of games) {
+    if (g.status !== 'final' || !watchedIds.has(g.id)) continue
+    const h = g.homeTeam.name, a = g.awayTeam.name
+    pts[h] ??= 0; pts[a] ??= 0
+    const result = bblParseWinner(g.statusDetail, h, a)
+    if (result === 'home')      { pts[h] += 2 }
+    else if (result === 'away') { pts[a] += 2 }
+    else                        { pts[h] += 1; pts[a] += 1 }
+  }
+  const sorted = Object.keys(pts).sort((a, b) => pts[b] - pts[a])
+  return Object.fromEntries(sorted.map((team, i) => [team, i + 1]))
+}
+
 // ─── Main ─────────────────────────────────────────────────────────────────────
 
 export default function HomeView() {
-  const { isWatched, isDismissed, watchedGames } = useWatched()
+  const { isWatched, isDismissed, watchedGames, watchedForLeague } = useWatched()
   const [trackedGame, setTrackedGame] = useState(null)
 
   const [states, setStates] = useState(() => {
@@ -338,6 +368,11 @@ export default function HomeView() {
     const bblKey = ENV_BBL_KEY || localStorage.getItem('cricapi_key')
     if (bblKey) load('bbl', fetchBBLGames(bblKey))
   }, [])
+
+  const bblStandings = useMemo(() => {
+    const watchedIds = new Set(watchedForLeague('bbl').map(g => g.gameId))
+    return computeBBLStandings(states.bbl?.games ?? [], watchedIds)
+  }, [states.bbl?.games, watchedForLeague])
 
   // One card per league, sorted by game date
   const cards = useMemo(() =>
@@ -533,7 +568,7 @@ export default function HomeView() {
       )}
 
       {trackedGame && (
-        <BoundaryTracker game={trackedGame} onClose={() => setTrackedGame(null)} />
+        <BoundaryTracker game={trackedGame} standings={bblStandings} onClose={() => setTrackedGame(null)} />
       )}
     </div>
   )

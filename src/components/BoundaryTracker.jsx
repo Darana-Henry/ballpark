@@ -237,7 +237,7 @@ function DiffGraph({ grid, homeAbbr, awayAbbr, homeColor, awayColor, currentOver
   )
 }
 
-export default function BoundaryTracker({ game, onClose }) {
+export default function BoundaryTracker({ game, standings = {}, onClose }) {
   const [grid, setGrid]         = useState(emptyGrid)
   const [focused, setFocused]   = useState({ over: 0, ball: 0 })
   const [awayMode, setAwayMode] = useState(false)
@@ -247,6 +247,8 @@ export default function BoundaryTracker({ game, onClose }) {
   const AWAY     = teamColor(game.awayTeam, '#2dd4bf')
   const homeAbbr = abbr(game.homeTeam)
   const awayAbbr = abbr(game.awayTeam)
+  const homePos  = standings[game.homeTeam.name]
+  const awayPos  = standings[game.awayTeam.name]
 
   function pushHistory(grid, over, ball) {
     const { home, away } = grid[over][ball]
@@ -534,7 +536,7 @@ export default function BoundaryTracker({ game, onClose }) {
                       className="object-contain rounded-full bg-slate-800/50 p-0.5 shrink-0" />
                   )}
                   <div>
-                    <p className="font-bold leading-tight" style={{ color: HOME, fontSize: '6cqh' }}>{homeAbbr}</p>
+                    <p className="font-bold leading-tight" style={{ color: HOME, fontSize: '6cqh' }}>{homeAbbr}{homePos != null ? ` (${homePos})` : ''}</p>
                     <p className="text-slate-500" style={{ fontSize: 'max(9px, 2.2cqh)' }}>{game.homeTeam.name}</p>
                   </div>
                   <div className="flex items-baseline" style={{ gap: '0.8cqh' }}>
@@ -555,7 +557,7 @@ export default function BoundaryTracker({ game, onClose }) {
                       className="object-contain rounded-full bg-slate-800/50 p-0.5 shrink-0" />
                   )}
                   <div className="text-right">
-                    <p className="font-bold leading-tight" style={{ color: AWAY, fontSize: '6cqh' }}>{awayAbbr}</p>
+                    <p className="font-bold leading-tight" style={{ color: AWAY, fontSize: '6cqh' }}>{awayAbbr}{awayPos != null ? ` (${awayPos})` : ''}</p>
                     <p className="text-slate-500" style={{ fontSize: 'max(9px, 2.2cqh)' }}>{game.awayTeam.name}</p>
                   </div>
                   <div className="flex items-baseline flex-row-reverse" style={{ gap: '0.8cqh' }}>

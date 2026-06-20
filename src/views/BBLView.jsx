@@ -393,6 +393,14 @@ export default function BBLView() {
   const [refreshSummary, setRefreshSummary] = useState(null)
   const [trackedGame, setTrackedGame] = useState(null)
 
+  const { watchedForLeague } = useWatched()
+  const bblStandings = useMemo(() => {
+    const watchedIds = new Set(watchedForLeague('bbl').map(g => g.gameId))
+    const watched = games.filter(g => watchedIds.has(g.id) && g.status === 'final')
+    const table = buildStandings(watched)
+    return Object.fromEntries(table.map((team, i) => [team.name, i + 1]))
+  }, [games, watchedForLeague])
+
   useEffect(() => {
     if (!apiKey) return
     setLoading(true)
@@ -532,7 +540,7 @@ export default function BBLView() {
       {!loading && !error && games.length > 0 && tab === 'stats'     && <StatsTab />}
 
       {trackedGame && (
-        <BoundaryTracker game={trackedGame} onClose={() => setTrackedGame(null)} />
+        <BoundaryTracker game={trackedGame} standings={bblStandings} onClose={() => setTrackedGame(null)} />
       )}
     </div>
   )

@@ -219,7 +219,7 @@ function SeriesTab({ games }) {
   const bySeries = useMemo(() => {
     const map = new Map()
     for (const g of filtered) {
-      const key = g.seriesLabel || 'International Cricket'
+      const key = g.seriesLabel || 'Cricket'
       if (!map.has(key)) map.set(key, [])
       map.get(key).push(g)
     }
@@ -299,7 +299,7 @@ function MatchesTab({ games, onTrack }) {
             <TrackableGameCard game={upNext} isUpNext showDismissAction onTrack={onTrack} />
             <div className="rounded-2xl p-5 flex flex-col gap-2"
               style={{ background: 'rgba(6,182,212,0.05)', border: '1px solid rgba(6,182,212,0.15)' }}>
-              <p className="text-cyan-400 font-semibold text-sm">International Cricket</p>
+              <p className="text-cyan-400 font-semibold text-sm">Cricket</p>
               <p className="text-slate-500 text-xs leading-relaxed">
                 All formats — Tests, ODIs, and T20Is — between the 12 Full Member nations.
                 Tests are split into one row per day, so you can watch and check them off without spoilers.
@@ -350,7 +350,7 @@ function WatchedTab({ games }) {
   const bySeries = useMemo(() => {
     const map = new Map()
     for (const g of watchedFlat) {
-      const key = g.seriesLabel || 'International Cricket'
+      const key = g.seriesLabel || 'Cricket'
       if (!map.has(key)) map.set(key, [])
       map.get(key).push(g)
     }
@@ -686,7 +686,7 @@ export default function IntlCricketView() {
       <div className="flex items-center gap-4 mb-7">
         <div className="w-[72px] h-[72px] rounded-full bg-cyan-950/40 border border-cyan-900/40 flex items-center justify-center text-3xl shrink-0">🏏</div>
         <div>
-          <h2 className="text-2xl font-bold text-slate-100 leading-tight">International Cricket</h2>
+          <h2 className="text-2xl font-bold text-slate-100 leading-tight">Cricket</h2>
           <p className="text-sm text-slate-500 mt-0.5">Tests · ODIs · T20Is · All 12 nations</p>
         </div>
       </div>
@@ -727,7 +727,7 @@ export default function IntlCricketView() {
       <div className="flex items-center gap-4 mb-7">
         <div className="w-[72px] h-[72px] rounded-full bg-cyan-950/40 border border-cyan-900/40 flex items-center justify-center text-3xl shrink-0">🏏</div>
         <div className="flex-1">
-          <h2 className="text-2xl font-bold text-slate-100 leading-tight">International Cricket</h2>
+          <h2 className="text-2xl font-bold text-slate-100 leading-tight">Cricket</h2>
           <p className="text-sm text-slate-500 mt-0.5">Tests · ODIs · T20Is · 12 Full Member nations</p>
         </div>
         <div className="flex flex-col items-end gap-1.5 shrink-0">

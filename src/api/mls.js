@@ -1,3 +1,5 @@
+import { getDifficultyRating } from '../utils/difficulty'
+
 const BASE_SOCCER = 'https://site.api.espn.com/apis/site/v2/sports/soccer'
 export const INTER_MIAMI_ID = '20232'
 
@@ -6,7 +8,7 @@ function youtubeUrl(awayName, homeName, date, competition) {
   return `https://www.youtube.com/results?search_query=${encodeURIComponent(`${awayName} vs ${homeName} highlights ${dateStr} ${competition}`)}`
 }
 
-function normalizeEvent(event, overrideGameType) {
+function normalizeEvent(event, overrideGameType, teamStandingsMap) {
   const comp = event.competitions?.[0]
   if (!comp) return null
 
@@ -20,6 +22,18 @@ function normalizeEvent(event, overrideGameType) {
 
   const seasonType = event.season?.type ?? 2
   const gameType   = overrideGameType ?? (seasonType === 3 ? 'MLS Cup Playoffs' : 'MLS Regular Season')
+
+  // Difficulty is the opponent's points-per-game (3 pts/win is the standard
+  // soccer convention), normalized to the same 0-1 scale win-pct uses
+  // elsewhere — only meaningful when the opponent is in MLS's own standings
+  // and has actually played games (cup opponents from other confederations
+  // won't be, and correctly get no rating).
+  const trackedTeam = home.team.id === INTER_MIAMI_ID ? 'home' : away.team.id === INTER_MIAMI_ID ? 'away' : null
+  const oppId = trackedTeam === 'home' ? away.team.id : trackedTeam === 'away' ? home.team.id : null
+  const oppRow = oppId ? teamStandingsMap?.get(oppId) : null
+  const gamesPlayed = oppRow ? parseInt(oppRow.gamesPlayed) || 0 : 0
+  const oppScore = oppRow && gamesPlayed > 0 ? parseInt(oppRow.points) / (gamesPlayed * 3) : null
+  const isPlayoff = gameType === 'MLS Cup Playoffs'
 
   return {
     id: event.id,
@@ -42,6 +56,7 @@ function normalizeEvent(event, overrideGameType) {
     statusDetail: event.status?.type?.shortDetail ?? '',
     gameDate:     new Date(event.date),
     gameType,
+    difficulty:   oppScore != null ? getDifficultyRating(oppScore, isPlayoff) : null,
     highlightUrl: isFinal
       ? youtubeUrl(away.team.displayName, home.team.displayName, event.date, gameType)
       : isLive ? `https://www.espn.com/soccer/match/_/gameId/${event.id}` : null,
@@ -49,14 +64,14 @@ function normalizeEvent(event, overrideGameType) {
   }
 }
 
-async function fetchGamesForSlug(slug, startDate, endDate, overrideGameType = null) {
+async function fetchGamesForSlug(slug, startDate, endDate, overrideGameType = null, teamStandingsMap = null) {
   try {
     const res  = await fetch(`${BASE_SOCCER}/${slug}/scoreboard?dates=${startDate}-${endDate}&limit=300`)
     if (!res.ok) return []
     const data = await res.json()
     return (data.events ?? [])
       .filter(e => e.competitions?.[0]?.competitors?.some(c => c.team?.id === INTER_MIAMI_ID))
-      .map(e => normalizeEvent(e, overrideGameType))
+      .map(e => normalizeEvent(e, overrideGameType, teamStandingsMap))
       .filter(Boolean)
   } catch {
     return []
@@ -66,14 +81,19 @@ async function fetchGamesForSlug(slug, startDate, endDate, overrideGameType = nu
 export async function fetchMLSGames() {
   const year = new Date().getFullYear()
 
+  const standings = await fetchMLSStandings().catch(() => [])
+  const teamStandingsMap = new Map(
+    standings.flatMap(conf => conf.entries).map(e => [e.teamId, e])
+  )
+
   const results = await Promise.allSettled([
     // MLS regular season + playoffs in two chunks to avoid API result limits
-    fetchGamesForSlug('usa.1', `${year}0201`, `${year}0630`),
-    fetchGamesForSlug('usa.1', `${year}0701`, `${year}1130`),
+    fetchGamesForSlug('usa.1', `${year}0201`, `${year}0630`, null, teamStandingsMap),
+    fetchGamesForSlug('usa.1', `${year}0701`, `${year}1130`, null, teamStandingsMap),
     // Domestic & international cup competitions
-    fetchGamesForSlug('usa.open',            `${year}0401`, `${year}0930`, 'US Open Cup'),
-    fetchGamesForSlug('concacaf.champions',  `${year}0101`, `${year}0630`, 'CONCACAF Champions Cup'),
-    fetchGamesForSlug('concacaf.leagues.cup',`${year}0601`, `${year}0930`, 'Leagues Cup'),
+    fetchGamesForSlug('usa.open',            `${year}0401`, `${year}0930`, 'US Open Cup', teamStandingsMap),
+    fetchGamesForSlug('concacaf.champions',  `${year}0101`, `${year}0630`, 'CONCACAF Champions Cup', teamStandingsMap),
+    fetchGamesForSlug('concacaf.leagues.cup',`${year}0601`, `${year}0930`, 'Leagues Cup', teamStandingsMap),
   ])
 
   const seen = new Set()

@@ -30,7 +30,7 @@ function RealLifeStatus({ status, detail }) {
     return (
       <span className="flex items-center gap-1.5 text-xs font-semibold text-red-400">
         <span className="w-1.5 h-1.5 rounded-full bg-red-400 live-pulse" />
-        LIVE · {detail}
+        LIVE{detail ? ` · ${detail}` : ''}
       </span>
     )
   }
@@ -121,10 +121,13 @@ export default function GameCard({ game, isUpNext = false, resultColor = null, s
   const [dismissing, setDismissing] = useState(false)
   const countdown = useCountdown(game.status === 'scheduled' ? game.gameDate : null)
 
-  const showScore = !dismissed && (watched || game.status === 'live')
+  // Never reveal a score — live or final — until the user has marked the
+  // game watched. They watch on delay and don't want anything spoiled.
+  const showScore = !dismissed && watched
   const canToggle = isFirebaseConfigured && game.status === 'final' && !dismissed
   const canDismiss = showDismissAction && isFirebaseConfigured && game.status !== 'live' && !watched
   const showHighlight = !dismissed && game.status === 'final' && game.highlightUrl
+  const hasPitchers = !dismissed && (game.probablePitchers?.away || game.probablePitchers?.home)
 
   const homeWon = game.homeWon ?? (showScore && game.status === 'final' && game.homeScore > game.awayScore)
   const awayWon = game.awayWon ?? (showScore && game.status === 'final' && game.awayScore > game.homeScore)
@@ -244,6 +247,15 @@ export default function GameCard({ game, isUpNext = false, resultColor = null, s
           </div>
         </div>
 
+        {/* Starting pitchers */}
+        {hasPitchers && (
+          <p className="text-center text-xs pb-1 px-6">
+            <span className="text-slate-400">{game.probablePitchers.away?.lastName ?? '?'}</span>
+            <span className="text-slate-700 mx-1.5">vs</span>
+            <span className="text-slate-400">{game.probablePitchers.home?.lastName ?? '?'}</span>
+          </p>
+        )}
+
         {/* Venue */}
         {game.venue && !dismissed && (
           <p className="text-center text-xs text-slate-500 pb-4 px-6">{game.venue}</p>
@@ -287,8 +299,6 @@ export default function GameCard({ game, isUpNext = false, resultColor = null, s
     : watched
     ? undefined // .watched-card handles it
     : { background: 'rgba(255,255,255,0.04)', backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)', border: '1px solid rgba(255,255,255,0.08)', boxShadow: '0 4px 16px rgba(0,0,0,0.3)' }
-
-  const hasPitchers = !dismissed && (game.probablePitchers?.away || game.probablePitchers?.home)
 
   return (
     <div

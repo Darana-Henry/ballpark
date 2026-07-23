@@ -6,7 +6,10 @@ import LoadingSpinner from '../components/LoadingSpinner'
 import EmptyState from '../components/EmptyState'
 import { useWatched } from '../contexts/WatchedContext'
 
-function getResult(game) {
+// isWatched guarded internally — never derive a result for a game the user
+// hasn't watched, even if a future caller forgets to pre-filter.
+function getResult(game, isWatched) {
+  if (!isWatched(game.id, 'epl')) return null
   if (game.homeScore === null || game.awayScore === null) return null
   const isUnitedHome = game.homeTeam.id === MAN_UNITED_ID
   const isUnitedAway = game.awayTeam.id === MAN_UNITED_ID
@@ -148,9 +151,9 @@ function WatchedTab({ games }) {
     return <EmptyState emoji="🔴" title="No watched matches yet" message="Mark matches as watched from My Queue." />
   }
 
-  const wins   = watched.filter(g => getResult(g) === 'win').length
-  const losses = watched.filter(g => getResult(g) === 'loss').length
-  const draws  = watched.filter(g => getResult(g) === 'draw').length
+  const wins   = watched.filter(g => getResult(g, isWatched) === 'win').length
+  const losses = watched.filter(g => getResult(g, isWatched) === 'loss').length
+  const draws  = watched.filter(g => getResult(g, isWatched) === 'draw').length
 
   return (
     <div className="flex flex-col gap-3">
@@ -170,7 +173,7 @@ function WatchedTab({ games }) {
             <p className="text-xs text-slate-600">{watched.length} match{watched.length !== 1 ? 'es' : ''} watched</p>
           </div>
           <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-3">
-            {watched.map(g => <GameCard key={g.id} game={g} resultColor={getResult(g) === 'draw' ? null : getResult(g)} trackedTeamId={MAN_UNITED_ID} />)}
+            {watched.map(g => <GameCard key={g.id} game={g} resultColor={getResult(g, isWatched) === 'draw' ? null : getResult(g, isWatched)} trackedTeamId={MAN_UNITED_ID} />)}
           </div>
         </>
       )}

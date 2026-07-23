@@ -1,3 +1,5 @@
+import { getDifficultyRating } from '../utils/difficulty'
+
 const BASE = 'https://site.api.espn.com/apis/site/v2/sports'
 
 async function fetchESPN(path, params = {}) {
@@ -63,36 +65,6 @@ function nbaYoutubeUrl(awayName, homeName, gameDate) {
   return `https://www.youtube.com/results?search_query=${encodeURIComponent(`${away} ${home} highlights ${date} NBA`)}`
 }
 
-function getNBADifficulty(oppWinPct, isPlayoff) {
-  const score = oppWinPct + (isPlayoff ? 0.08 : 0)
-  if (score >= 0.580) return { label: 'Extreme',    cls: 'text-red-400    bg-red-500/10    border-red-500/30' }
-  if (score >= 0.530) return { label: 'Demanding',  cls: 'text-orange-400 bg-orange-500/10 border-orange-500/30' }
-  if (score >= 0.460) return { label: 'Competitive',cls: 'text-yellow-400 bg-yellow-500/10 border-yellow-500/30' }
-  if (score >= 0.390) return { label: 'Beatable',   cls: 'text-lime-400   bg-lime-500/10   border-lime-500/30' }
-  return                     { label: 'Accessible', cls: 'text-green-400  bg-green-500/10  border-green-500/30' }
-}
-
-function getOppWinPct(event, lakersHomeAway) {
-  const comp = event.competitions?.[0]
-  if (!comp) return null
-  const oppSide = lakersHomeAway === 'home' ? 'away' : 'home'
-  const opp = comp.competitors.find(c => c.homeAway === oppSide)
-  if (!opp) return null
-  // Scoreboard format: records array with summary "W-L"
-  const recSummary = opp.records?.find(r => r.type === 'total' || r.name === 'overall')?.summary
-  if (recSummary) {
-    const [w, l] = recSummary.split('-').map(Number)
-    return (w + l) > 0 ? w / (w + l) : null
-  }
-  // Schedule format: record array with displayValue "W-L"
-  const recDisplay = opp.record?.find(r => r.type === 'total')?.displayValue
-  if (recDisplay) {
-    const [w, l] = recDisplay.split('-').map(Number)
-    return (w + l) > 0 ? w / (w + l) : null
-  }
-  return null
-}
-
 // Lakers full season + all playoff games
 export async function fetchNBAGames() {
   const currentYear = new Date().getFullYear()
@@ -101,11 +73,19 @@ export async function fetchNBAGames() {
   // Playoffs run Apr–Jun of the season end year; date range gets all played + upcoming games
   const playoffDates = `${season}0401-${season}0715`
 
-  const [regularData, playoffData, scoreboardData] = await Promise.all([
+  const [regularData, playoffData, scoreboardData, standings] = await Promise.all([
     fetchESPN(`basketball/nba/teams/${NBA_LAKERS_ID}/schedule`, { season, seasontype: 2 }),
     fetchESPN('basketball/nba/scoreboard', { seasontype: 3, dates: playoffDates, limit: 500 }).catch(() => ({ events: [] })),
     fetchESPN('basketball/nba/scoreboard', { limit: 100 }).catch(() => ({ events: [] })),
+    fetchNBAStandings().catch(() => null),
   ])
+
+  // The schedule/scoreboard endpoints don't carry opponent win-loss records
+  // on their competitor objects at all, so difficulty is looked up from
+  // standings by team id instead, joined in below.
+  const teamPctMap = new Map(
+    (standings?.divisions ?? []).flatMap(d => d.teams).map(t => [t.teamId, t.pct])
+  )
 
   // ESPN ignores seasontype when dates param is set — filter manually
   // season.type: 2=regular, 3=postseason, 5=play-in
@@ -133,11 +113,12 @@ export async function fetchNBAGames() {
       const isAway = g.awayTeam.id === NBA_LAKERS_ID
       const lakersTeam = isHome ? 'home' : isAway ? 'away' : null
       const isPlayoff = e.season?.type === 3 || e.season?.type === 5
-      const oppPct = lakersTeam ? getOppWinPct(e, lakersTeam) : null
+      const oppId = lakersTeam === 'home' ? g.awayTeam.id : lakersTeam === 'away' ? g.homeTeam.id : null
+      const oppPct = oppId ? teamPctMap.get(oppId) : undefined
       return {
         ...g,
         lakersTeam,
-        difficulty: oppPct !== null ? getNBADifficulty(oppPct, isPlayoff) : null,
+        difficulty: oppPct != null ? getDifficultyRating(oppPct, isPlayoff) : null,
         highlightUrl: g.status === 'final'
           ? nbaYoutubeUrl(g.awayTeam.name, g.homeTeam.name, g.gameDate)
           : (g.status === 'live' ? `https://www.espn.com/nba/game/_/gameId/${g.id}` : null),
@@ -301,15 +282,6 @@ function nflYoutubeUrl(awayName, homeName, gameDate) {
   return `https://www.youtube.com/results?search_query=${encodeURIComponent(`${away} ${home} highlights ${date} NFL`)}`
 }
 
-function getNFLDifficulty(avgPct, isPlayoff = false) {
-  const score = avgPct + (isPlayoff ? 0.08 : 0)
-  if (score >= 0.580) return { label: 'Extreme',    cls: 'text-red-400    bg-red-500/10    border-red-500/30' }
-  if (score >= 0.530) return { label: 'Demanding',  cls: 'text-orange-400 bg-orange-500/10 border-orange-500/30' }
-  if (score >= 0.460) return { label: 'Competitive',cls: 'text-yellow-400 bg-yellow-500/10 border-yellow-500/30' }
-  if (score >= 0.390) return { label: 'Beatable',   cls: 'text-lime-400   bg-lime-500/10   border-lime-500/30' }
-  return                     { label: 'Accessible', cls: 'text-green-400  bg-green-500/10  border-green-500/30' }
-}
-
 function nflGameDifficulty(event, isPlayoff) {
   const comp = event.competitions?.[0]
   if (!comp) return null
@@ -321,29 +293,32 @@ function nflGameDifficulty(event, isPlayoff) {
     return (w + l) > 0 ? w / (w + l) : null
   }).filter(p => p !== null)
   if (!pcts.length) return null
-  return getNFLDifficulty(pcts.reduce((a, b) => a + b, 0) / pcts.length, isPlayoff)
+  return getDifficultyRating(pcts.reduce((a, b) => a + b, 0) / pcts.length, isPlayoff)
 }
 
 export async function fetchNFLGames() {
   const now = new Date()
-  const seasonYear = now.getMonth() >= 8 ? now.getFullYear() : now.getFullYear() - 1
+  // NFL schedules are announced ~mid-May for the season kicking off that
+  // September — months before games start — so switch over as soon as the
+  // new season's schedule would plausibly exist, not once games begin.
+  const seasonStartYear = now.getMonth() >= 4 ? now.getFullYear() : now.getFullYear() - 1
 
-  const regularWeekFetches = Array.from({ length: 18 }, (_, i) =>
-    fetchESPN('football/nfl/scoreboard', { seasontype: 2, week: i + 1, season: seasonYear })
-      .then(d => d.events || [])
-      .catch(() => [])
-  )
-  const playoffWeekFetches = [1, 2, 3, 4, 5].map(week =>
-    fetchESPN('football/nfl/scoreboard', { seasontype: 3, week, season: seasonYear })
-      .then(d => d.events || [])
-      .catch(() => [])
-  )
+  // ESPN's scoreboard endpoint silently ignores season+week params for a
+  // season that hasn't "started" per its own internal clock — season=2026,
+  // 2027, even 2020 all returned the same stale, already-concluded season
+  // regardless of the value passed. Querying by date range instead reliably
+  // returns the real, current data, and covers the whole season (preseason
+  // through Super Bowl) in a single call instead of 23 separate ones.
+  const start = `${seasonStartYear}0801`
+  const end   = `${seasonStartYear + 1}0301`
+  const events = await fetchESPN('football/nfl/scoreboard', { dates: `${start}-${end}`, limit: 500 })
+    .then(d => d.events || [])
+    .catch(() => [])
 
-  const allBatches = await Promise.all([...regularWeekFetches, ...playoffWeekFetches])
   const seen = new Set()
 
-  return allBatches
-    .flat()
+  return events
+    .filter(e => e.season?.type !== 1) // exclude preseason — app scope is regular season + playoffs
     .map(e => {
       const g = normalizeEvent(e, 'nfl')
       if (!g) return null

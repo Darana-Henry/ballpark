@@ -1,3 +1,5 @@
+import { getDifficultyRating } from '../utils/difficulty'
+
 const BASE = 'https://site.api.espn.com/apis/site/v2/sports/soccer'
 export const MAN_UNITED_ID = '360'
 
@@ -22,7 +24,7 @@ function getSeason() {
   return now.getMonth() >= 7 ? now.getFullYear() : now.getFullYear() - 1
 }
 
-function normalizeEvent(event, competitionName) {
+function normalizeEvent(event, competitionName, teamStandingsMap) {
   const comp = event.competitions?.[0]
   if (!comp) return null
 
@@ -33,6 +35,20 @@ function normalizeEvent(event, competitionName) {
   const state = event.status?.type?.state
   const isLive = state === 'in'
   const isFinal = state === 'post'
+
+  // Difficulty is the opponent's points-per-game (3 pts/win, the standard
+  // soccer convention), normalized to the same 0-1 scale win-pct uses
+  // elsewhere — only meaningful when the opponent is in the Premier League
+  // standings and has actually played; cup/European opponents outside the
+  // league table correctly get no rating. Any competition other than the
+  // league itself is knockout/cup format, so it gets the same "higher
+  // stakes" boost playoffs get elsewhere.
+  const trackedTeam = home.team.id === MAN_UNITED_ID ? 'home' : away.team.id === MAN_UNITED_ID ? 'away' : null
+  const oppId = trackedTeam === 'home' ? away.team.id : trackedTeam === 'away' ? home.team.id : null
+  const oppRow = oppId ? teamStandingsMap?.get(oppId) : null
+  const gamesPlayed = oppRow ? parseInt(oppRow.gamesPlayed) || 0 : 0
+  const oppScore = oppRow && gamesPlayed > 0 ? parseInt(oppRow.points) / (gamesPlayed * 3) : null
+  const isPlayoff = competitionName !== 'Premier League'
 
   return {
     id: event.id,
@@ -55,6 +71,7 @@ function normalizeEvent(event, competitionName) {
     statusDetail: event.status?.type?.shortDetail ?? '',
     gameDate:     new Date(event.date),
     gameType:     competitionName,
+    difficulty:   oppScore != null ? getDifficultyRating(oppScore, isPlayoff) : null,
     highlightUrl: isFinal
       ? youtubeUrl(away.team.displayName, home.team.displayName, event.date, competitionName)
       : isLive ? `https://www.espn.com/soccer/match/_/gameId/${event.id}` : null,
@@ -62,14 +79,14 @@ function normalizeEvent(event, competitionName) {
   }
 }
 
-async function fetchCompetitionGames(slug, startDate, endDate, competitionName) {
+async function fetchCompetitionGames(slug, startDate, endDate, competitionName, teamStandingsMap) {
   try {
     const res = await fetch(`${BASE}/${slug}/scoreboard?dates=${startDate}-${endDate}&limit=300`)
     if (!res.ok) return []
     const data = await res.json()
     return (data.events ?? [])
       .filter(e => e.competitions?.[0]?.competitors?.some(c => c.team?.id === MAN_UNITED_ID))
-      .map(e => normalizeEvent(e, competitionName))
+      .map(e => normalizeEvent(e, competitionName, teamStandingsMap))
       .filter(Boolean)
   } catch {
     return []
@@ -83,9 +100,14 @@ export async function fetchEPLGames() {
   const startH2  = `${season + 1}0101`
   const endH2    = `${season + 1}0630`
 
+  const standings = await fetchEPLStandings().catch(() => [])
+  const teamStandingsMap = new Map(
+    standings.flatMap(group => group.entries).map(e => [e.teamId, e])
+  )
+
   const fetches = COMPETITIONS.flatMap(({ slug, name }) => [
-    fetchCompetitionGames(slug, startH1, endH1, name),
-    fetchCompetitionGames(slug, startH2, endH2, name),
+    fetchCompetitionGames(slug, startH1, endH1, name, teamStandingsMap),
+    fetchCompetitionGames(slug, startH2, endH2, name, teamStandingsMap),
   ])
 
   const results = await Promise.allSettled(fetches)

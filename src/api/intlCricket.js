@@ -197,7 +197,7 @@ function formatDateRange(startDate) {
 }
 
 function extractSeriesLabel(name) {
-  if (!name) return 'International Cricket'
+  if (!name) return 'Cricket'
   const stripped = name.replace(/,\s*(?:\d+(?:st|nd|rd|th)\s+(?:Test|ODI|T20I)|Only\s+(?:Test|ODI|T20I)|(?:Finals?|Semi.?Finals?|Quarter.?Finals?|Super\s+(?:4s|6s|8s|Fours|Sixes|Eights)))\s*$/i, '').trim()
   return stripped || name
 }

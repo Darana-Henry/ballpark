@@ -8,7 +8,7 @@ import MLBView from './views/MLBView'
 import NBAView from './views/NBAView'
 import NFLView from './views/NFLView'
 import BBLView from './views/BBLView'
-import WTCView from './views/WTCView'
+import IntlCricketView from './views/IntlCricketView'
 import MLSView from './views/MLSView'
 import EPLView from './views/EPLView'
 import StatsView from './views/StatsView'
@@ -40,7 +40,7 @@ const VIEWS = {
   nba: NBAView,
   nfl: NFLView,
   bbl: BBLView,
-  wtc: WTCView,
+  cricket: IntlCricketView,
   mls: MLSView,
   epl: EPLView,
   stats: StatsView,

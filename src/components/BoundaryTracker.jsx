@@ -1,11 +1,10 @@
 import { useState, useEffect, useCallback, useRef, useId } from 'react'
 
-const OVERS = 20
 const BALLS = 6
-const POWERPLAY = 6
+const GROUP_SIZE = 10
 
-function emptyGrid() {
-  return Array.from({ length: OVERS }, () =>
+function emptyGrid(overs) {
+  return Array.from({ length: overs }, () =>
     Array.from({ length: BALLS }, () => ({ home: null, away: null }))
   )
 }
@@ -50,7 +49,7 @@ function cumulativeBoundaries(grid, over, side) {
 
 function teamTotals(grid, side) {
   let count = 0
-  for (let o = 0; o < OVERS; o++)
+  for (let o = 0; o < grid.length; o++)
     for (let b = 0; b < BALLS; b++)
       if (grid[o][b][side]) count++
   return count
@@ -86,7 +85,7 @@ function DiffGraph({ grid, homeAbbr, awayAbbr, homeColor, awayColor, currentOver
   // Cumulative diff (home - away) after each over
   const diffs = []
   let home = 0, away = 0
-  for (let o = 0; o < OVERS; o++) {
+  for (let o = 0; o < grid.length; o++) {
     for (let b = 0; b < BALLS; b++) {
       if (grid[o][b].home) home++
       if (grid[o][b].away) away++
@@ -96,7 +95,7 @@ function DiffGraph({ grid, homeAbbr, awayAbbr, homeColor, awayColor, currentOver
 
   // Only draw up to the last over that has any data
   let lastOver = -1
-  outer: for (let o = OVERS - 1; o >= 0; o--)
+  outer: for (let o = grid.length - 1; o >= 0; o--)
     for (let b = 0; b < BALLS; b++)
       if (grid[o][b].home || grid[o][b].away) { lastOver = o; break outer }
 
@@ -238,10 +237,25 @@ function DiffGraph({ grid, homeAbbr, awayAbbr, homeColor, awayColor, currentOver
 }
 
 export default function BoundaryTracker({ game, standings = {}, onClose }) {
-  const [grid, setGrid]         = useState(emptyGrid)
+  // ODI is 50 overs with a 10-over powerplay; everything else (T20/BBL) is
+  // 20 overs with a 6-over powerplay. Derived once from the game itself, so
+  // no new prop threading is needed — intlCricket.js already tags every game
+  // with matchType.
+  const totalOvers     = game.matchType === 'odi' ? 50 : 20
+  const powerplayOvers = totalOvers === 50 ? 10 : 6
+  const isGrouped       = totalOvers === 50
+
+  const [grid, setGrid]         = useState(() => emptyGrid(totalOvers))
   const [focused, setFocused]   = useState({ over: 0, ball: 0 })
   const [awayMode, setAwayMode] = useState(false)
   const historyRef              = useRef([])
+
+  // Whichever block of 10 contains the focused over is the one expanded —
+  // entirely derived from focus, so no separate state/effect is needed:
+  // clicking a cell or a collapsed group's header both just move focus, and
+  // this recomputes on the next render. Only meaningful in ODI mode; T20 has
+  // no grouping at all.
+  const expandedGroup = isGrouped ? Math.floor(focused.over / GROUP_SIZE) : 0
 
   const HOME     = teamColor(game.homeTeam, '#f59e0b')
   const AWAY     = teamColor(game.awayTeam, '#2dd4bf')
@@ -287,9 +301,9 @@ export default function BoundaryTracker({ game, standings = {}, onClose }) {
 
   const advance = useCallback((over, ball) => {
     let nb = ball + 1, no = over
-    if (nb >= BALLS) { nb = 0; no = Math.min(over + 1, OVERS - 1) }
+    if (nb >= BALLS) { nb = 0; no = Math.min(over + 1, totalOvers - 1) }
     setFocused({ over: no, ball: nb })
-  }, [])
+  }, [totalOvers])
 
   useEffect(() => {
     function onKey(e) {
@@ -322,12 +336,12 @@ export default function BoundaryTracker({ game, standings = {}, onClose }) {
           setFocused({ over: po, ball: pb })
         }
       }
-      if (e.key === 'ArrowDown') { e.preventDefault(); setFocused({ over: e.ctrlKey ? OVERS - 1 : Math.min(over + 1, OVERS - 1), ball }) }
+      if (e.key === 'ArrowDown') { e.preventDefault(); setFocused({ over: e.ctrlKey ? totalOvers - 1 : Math.min(over + 1, totalOvers - 1), ball }) }
       if (e.key === 'ArrowUp')   { e.preventDefault(); setFocused({ over: e.ctrlKey ? 0 : Math.max(over - 1, 0), ball }) }
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [focused, awayMode, markCell, clearCell, advance, undoLast, onClose])
+  }, [focused, awayMode, markCell, clearCell, advance, undoLast, onClose, totalOvers])
 
   const homeBoundaries = teamTotals(grid, 'home')
   const awayBoundaries = teamTotals(grid, 'away')
@@ -335,6 +349,133 @@ export default function BoundaryTracker({ game, standings = {}, onClose }) {
   const COLS = '2.5rem repeat(6, 1fr) 5rem'
   const activeColor = awayMode ? AWAY : HOME
   const activeAbbr  = awayMode ? awayAbbr : homeAbbr
+
+  function renderRow(row, o) {
+    const isPP     = o < powerplayOvers
+    const isLastPP = o === powerplayOvers - 1
+    const homeCount = cumulativeBoundaries(grid, o, 'home')
+    const awayCount = cumulativeBoundaries(grid, o, 'away')
+
+    let frLabel = '—', frColor = '#334155'
+    if (homeCount + awayCount > 0) {
+      if (homeCount > awayCount)      { frLabel = homeAbbr; frColor = HOME }
+      else if (awayCount > homeCount) { frLabel = awayAbbr; frColor = AWAY }
+      else                            { frLabel = '=';      frColor = '#64748b' }
+    }
+
+    const rowBg = isPP
+      ? o % 2 === 0 ? 'rgba(99,102,241,0.07)' : 'rgba(99,102,241,0.11)'
+      : o % 2 === 0 ? 'transparent' : 'rgba(255,255,255,0.02)'
+
+    return (
+      <div
+        key={o}
+        className="grid items-center"
+        style={{
+          gridTemplateColumns: COLS,
+          background: rowBg,
+          padding: '2px 10px',
+          minHeight: '36px',
+          borderBottom: isLastPP
+            ? '1px solid rgba(99,102,241,0.25)'
+            : '1px solid rgba(255,255,255,0.04)',
+        }}
+      >
+        {/* Over number */}
+        <span
+          className="text-center text-[11px] font-mono tabular-nums font-medium"
+          style={{ color: isPP ? '#818cf8' : '#475569' }}
+        >
+          {o}
+        </span>
+
+        {/* Ball cells */}
+        {row.map((cell, b) => {
+          const isFocused = focused.over === o && focused.ball === b
+          const hasHome = !!cell.home
+          const hasAway = !!cell.away
+
+          return (
+            <div
+              key={b}
+              onClick={() => setFocused({ over: o, ball: b })}
+              className="flex items-center justify-center cursor-pointer mx-0.5"
+              style={{
+                height: '28px',
+                borderRadius: '5px',
+                background: isFocused ? 'rgba(255,255,255,0.1)' : 'transparent',
+                border: isFocused
+                  ? '1.5px solid rgba(255,255,255,0.3)'
+                  : '1px solid transparent',
+                transition: 'background 0.1s, border-color 0.1s',
+              }}
+            >
+              {!hasHome && !hasAway && (
+                <span className="text-[12px] text-slate-400 font-mono tabular-nums select-none">
+                  {b === 5 ? `${o + 1}.0` : `${o}.${b + 1}`}
+                </span>
+              )}
+              {hasHome && !hasAway && <BoundaryDot color={HOME} />}
+              {hasAway && !hasHome && <BoundaryDot color={AWAY} />}
+              {hasHome && hasAway && (
+                <div className="flex gap-px">
+                  <BoundaryDot color={HOME} />
+                  <BoundaryDot color={AWAY} />
+                </div>
+              )}
+            </div>
+          )
+        })}
+
+        {/* Leader */}
+        <div className="text-center">
+          <span className="text-[11px] font-bold tabular-nums" style={{ color: frColor }}>
+            {frLabel}
+          </span>
+          {frLabel !== '—' && frLabel !== '=' && (
+            <span className="text-[9px] text-slate-700 ml-1 tabular-nums">
+              {Math.max(homeCount, awayCount)}
+            </span>
+          )}
+        </div>
+      </div>
+    )
+  }
+
+  function renderCollapsedGroup(groupIndex) {
+    const groupStart = groupIndex * GROUP_SIZE
+    const groupEnd = Math.min(groupStart + GROUP_SIZE, totalOvers) - 1
+    const h = segmentTotals(grid, groupStart, groupEnd, 'home')
+    const a = segmentTotals(grid, groupStart, groupEnd, 'away')
+    return (
+      <button
+        key={groupIndex}
+        onClick={() => setFocused({ over: groupStart, ball: 0 })}
+        className="w-full flex items-center justify-between px-3 transition-colors hover:bg-white/[0.03]"
+        style={{ minHeight: '36px', borderBottom: '1px solid rgba(255,255,255,0.04)' }}
+      >
+        <span className="flex items-center gap-2 text-[11px] font-mono tabular-nums font-medium text-slate-500">
+          <span className="text-slate-600">▸</span> Overs {groupStart + 1}–{groupEnd + 1}
+        </span>
+        <span className="flex items-center gap-3 text-[11px] tabular-nums">
+          <span style={{ color: HOME }}>{homeAbbr} {h}</span>
+          <span style={{ color: AWAY }}>{awayAbbr} {a}</span>
+        </span>
+      </button>
+    )
+  }
+
+  const segmentPhases = totalOvers === 50
+    ? [
+        { short: 'PP',    from: 0,  to: 9  },
+        { short: 'MID',   from: 10, to: 39 },
+        { short: 'DEATH', from: 40, to: 49 },
+      ]
+    : [
+        { short: 'PP',    from: 0,  to: 5  },
+        { short: 'MID',   from: 6,  to: 14 },
+        { short: 'DEATH', from: 15, to: 19 },
+      ]
 
   return (
     <div
@@ -394,98 +535,20 @@ export default function BoundaryTracker({ game, standings = {}, onClose }) {
                 <span className="text-center">Leader</span>
               </div>
 
-              {/* Rows */}
-              {grid.map((row, o) => {
-                const isPP     = o < POWERPLAY
-                const isLastPP = o === POWERPLAY - 1
-                const homeCount = cumulativeBoundaries(grid, o, 'home')
-                const awayCount = cumulativeBoundaries(grid, o, 'away')
-
-                let frLabel = '—', frColor = '#334155'
-                if (homeCount + awayCount > 0) {
-                  if (homeCount > awayCount)      { frLabel = homeAbbr; frColor = HOME }
-                  else if (awayCount > homeCount) { frLabel = awayAbbr; frColor = AWAY }
-                  else                            { frLabel = '=';      frColor = '#64748b' }
-                }
-
-                const rowBg = isPP
-                  ? o % 2 === 0 ? 'rgba(99,102,241,0.07)' : 'rgba(99,102,241,0.11)'
-                  : o % 2 === 0 ? 'transparent' : 'rgba(255,255,255,0.02)'
-
-                return (
-                  <div
-                    key={o}
-                    className="grid items-center"
-                    style={{
-                      gridTemplateColumns: COLS,
-                      background: rowBg,
-                      padding: '2px 10px',
-                      minHeight: '36px',
-                      borderBottom: isLastPP
-                        ? '1px solid rgba(99,102,241,0.25)'
-                        : '1px solid rgba(255,255,255,0.04)',
-                    }}
-                  >
-                    {/* Over number */}
-                    <span
-                      className="text-center text-[11px] font-mono tabular-nums font-medium"
-                      style={{ color: isPP ? '#818cf8' : '#475569' }}
-                    >
-                      {o}
-                    </span>
-
-                    {/* Ball cells */}
-                    {row.map((cell, b) => {
-                      const isFocused = focused.over === o && focused.ball === b
-                      const hasHome = !!cell.home
-                      const hasAway = !!cell.away
-
-                      return (
-                        <div
-                          key={b}
-                          onClick={() => setFocused({ over: o, ball: b })}
-                          className="flex items-center justify-center cursor-pointer mx-0.5"
-                          style={{
-                            height: '28px',
-                            borderRadius: '5px',
-                            background: isFocused ? 'rgba(255,255,255,0.1)' : 'transparent',
-                            border: isFocused
-                              ? '1.5px solid rgba(255,255,255,0.3)'
-                              : '1px solid transparent',
-                            transition: 'background 0.1s, border-color 0.1s',
-                          }}
-                        >
-                          {!hasHome && !hasAway && (
-                            <span className="text-[12px] text-slate-400 font-mono tabular-nums select-none">
-                              {b === 5 ? `${o + 1}.0` : `${o}.${b + 1}`}
-                            </span>
-                          )}
-                          {hasHome && !hasAway && <BoundaryDot color={HOME} />}
-                          {hasAway && !hasHome && <BoundaryDot color={AWAY} />}
-                          {hasHome && hasAway && (
-                            <div className="flex gap-px">
-                              <BoundaryDot color={HOME} />
-                              <BoundaryDot color={AWAY} />
-                            </div>
-                          )}
-                        </div>
-                      )
-                    })}
-
-                    {/* Leader */}
-                    <div className="text-center">
-                      <span className="text-[11px] font-bold tabular-nums" style={{ color: frColor }}>
-                        {frLabel}
-                      </span>
-                      {frLabel !== '—' && frLabel !== '=' && (
-                        <span className="text-[9px] text-slate-700 ml-1 tabular-nums">
-                          {Math.max(homeCount, awayCount)}
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                )
-              })}
+              {/* Rows — flat for T20, grouped-by-10 with only one expanded for ODI */}
+              {isGrouped
+                ? Array.from({ length: Math.ceil(totalOvers / GROUP_SIZE) }, (_, groupIndex) => {
+                    if (groupIndex !== expandedGroup) return renderCollapsedGroup(groupIndex)
+                    const groupStart = groupIndex * GROUP_SIZE
+                    const groupEnd = Math.min(groupStart + GROUP_SIZE, totalOvers)
+                    return (
+                      <div key={groupIndex}>
+                        {grid.slice(groupStart, groupEnd).map((row, i) => renderRow(row, groupStart + i))}
+                      </div>
+                    )
+                  })
+                : grid.map((row, o) => renderRow(row, o))
+              }
             </div>
 
           </div>
@@ -570,11 +633,7 @@ export default function BoundaryTracker({ game, standings = {}, onClose }) {
 
               {/* Segment breakdown */}
               <div className="flex-1 min-h-0 flex flex-col justify-center gap-2">
-                {[
-                  { short: 'PP',    from: 0,  to: 5  },
-                  { short: 'MID',   from: 6,  to: 14 },
-                  { short: 'DEATH', from: 15, to: 19 },
-                ].map(({ short, from, to }) => {
+                {segmentPhases.map(({ short, from, to }) => {
                   const h = segmentTotals(grid, from, to, 'home')
                   const a = segmentTotals(grid, from, to, 'away')
                   const total = h + a

@@ -223,6 +223,7 @@ function normalizeMatch(match, seriesName) {
       logo:         img(awayInfo),
       color:        WTC_COLORS[away] || null,
     },
+    matchType:    'test',
     homeScore:    null,
     awayScore:    null,
     homeScoreStr,

@@ -24,7 +24,7 @@ const TEAM_COLORS = {
   'Perth Scorchers':     '#fb923c',
   'Sydney Sixers':       '#ec4899',
   'Sydney Thunder':      '#84cc16',
-  // WTC
+  // International Test nations
   'India':        '#4d90d3',
   'England':      '#3b82f6',
   'Australia':    '#f5a623',

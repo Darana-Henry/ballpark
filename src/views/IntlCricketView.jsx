@@ -1,5 +1,7 @@
 import { useState, useEffect, useMemo } from 'react'
 import { fetchIntlCricketGames, refreshIntlCricketGames } from '../api/intlCricket'
+import { fetchWTCGames, refreshWTCGames } from '../api/wtc'
+import { expandTestDays } from '../utils/cricketDayRows'
 import GameCard from '../components/GameCard'
 import LoadingSpinner from '../components/LoadingSpinner'
 import EmptyState from '../components/EmptyState'
@@ -15,6 +17,8 @@ const FORMAT_FILTERS = [
   { id: 'odi',   label: 'ODIs' },
   { id: 't20i',  label: 'T20Is' },
 ]
+
+const FORMAT_LABEL = { test: 'Test', odi: 'ODI', t20i: 'T20I' }
 
 function FormatPills({ active, onChange }) {
   return (
@@ -42,14 +46,140 @@ function applyFormatFilter(games, format) {
   return games.filter(g => g.matchType === format)
 }
 
-// ─── My Queue tab ──────────────────────────────────────────────────────────────
+// ─── Series tab ─────────────────────────────────────────────────────────────────
 
-function QueueTab({ games }) {
+function ordinal(n) {
+  const s = ['th', 'st', 'nd', 'rd']
+  const v = n % 100
+  return `${n}${s[(v - 20) % 10] || s[v] || s[0]}`
+}
+
+// Schedule/progress only — never reveals a score, result, or series leader.
+function seriesProgress(matches, today) {
+  const sorted = [...matches].sort((a, b) => a.gameDate - b.gameDate)
+  const live = sorted.filter(m => m.status === 'live')
+  const scheduled = sorted.filter(m => m.status === 'scheduled')
+  const completedCount = sorted.filter(m => m.status === 'final').length
+
+  if (live.length > 0) {
+    const m = live[0]
+    const idx = sorted.indexOf(m) + 1
+    const label = FORMAT_LABEL[m.matchType] || m.matchType
+    if (m.matchType === 'test') {
+      const dayNum = Math.min(5, Math.max(1, Math.floor((today - m.gameDate) / 86400000) + 1))
+      return { state: 'live', text: `${ordinal(idx)} ${label} in progress · Day ${dayNum} of 5`, sortDate: today }
+    }
+    return { state: 'live', text: `${ordinal(idx)} ${label} · Live now`, sortDate: today }
+  }
+  if (scheduled.length > 0) {
+    const m = scheduled[0]
+    const idx = sorted.indexOf(m) + 1
+    const label = FORMAT_LABEL[m.matchType] || m.matchType
+    const dateStr = m.gameDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+    return { state: 'upcoming', text: `Next: ${ordinal(idx)} ${label} · ${dateStr}`, sortDate: m.gameDate }
+  }
+  return {
+    state: 'completed',
+    text: `Series complete · ${completedCount} match${completedCount !== 1 ? 'es' : ''}`,
+    sortDate: sorted[sorted.length - 1]?.gameDate ?? today,
+  }
+}
+
+function SeriesCard({ seriesName, matches }) {
+  const today = new Date()
+  const sorted = [...matches].sort((a, b) => a.gameDate - b.gameDate)
+  const first = sorted[0]
+  const last = sorted[sorted.length - 1]
+
+  const formatCounts = {}
+  for (const m of matches) formatCounts[m.matchType] = (formatCounts[m.matchType] || 0) + 1
+  const formatTags = Object.entries(formatCounts)
+    .map(([type, count]) => `${count} ${FORMAT_LABEL[type] || type}${count !== 1 ? 's' : ''}`)
+    .join(' · ')
+
+  const lastEnd = last.matchType === 'test'
+    ? new Date(last.gameDate.getTime() + 4 * 86400000)
+    : last.gameDate
+  const rangeStr = `${first.gameDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} – ${lastEnd.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`
+
+  const progress = seriesProgress(matches, today)
+  const stateStyle = {
+    live:      'bg-red-500/10 text-red-400 border-red-500/25',
+    upcoming:  'bg-cyan-500/10 text-cyan-400 border-cyan-500/25',
+    completed: 'bg-slate-700/20 text-slate-500 border-slate-700/40',
+  }[progress.state]
+
+  return (
+    <div className="rounded-xl p-4" style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)' }}>
+      <div className="flex items-start justify-between gap-3 mb-3">
+        <div className="min-w-0">
+          <p className="font-semibold text-sm text-slate-100 truncate">{seriesName}</p>
+          <p className="text-xs text-slate-600 mt-0.5">{formatTags} · {rangeStr}</p>
+        </div>
+        <span className="text-xs text-slate-500 shrink-0">
+          {first.awayTeam.abbreviation} vs {first.homeTeam.abbreviation}
+        </span>
+      </div>
+      <span className={`inline-flex items-center text-xs px-2.5 py-1 rounded-full border ${stateStyle}`}>
+        {progress.state === 'live' && <span className="w-1.5 h-1.5 rounded-full bg-red-400 live-pulse mr-1.5" />}
+        {progress.text}
+      </span>
+    </div>
+  )
+}
+
+function SeriesTab({ games }) {
+  const [format, setFormat] = useState('all')
+  const filtered = useMemo(() => applyFormatFilter(games, format), [games, format])
+
+  const bySeries = useMemo(() => {
+    const map = new Map()
+    for (const g of filtered) {
+      const key = g.seriesLabel || 'International Cricket'
+      if (!map.has(key)) map.set(key, [])
+      map.get(key).push(g)
+    }
+    const today = new Date()
+    const order = { live: 0, upcoming: 1, completed: 2 }
+    return [...map.entries()]
+      .map(([name, matches]) => ({ name, matches, progress: seriesProgress(matches, today) }))
+      .sort((a, b) => {
+        if (order[a.progress.state] !== order[b.progress.state]) return order[a.progress.state] - order[b.progress.state]
+        return a.progress.state === 'completed'
+          ? b.progress.sortDate - a.progress.sortDate
+          : a.progress.sortDate - b.progress.sortDate
+      })
+  }, [filtered])
+
+  return (
+    <div className="flex flex-col gap-4">
+      <FormatPills active={format} onChange={setFormat} />
+
+      {bySeries.length === 0 && (
+        <EmptyState emoji="🏏" title="No series found" message="Try a different format filter or refresh." />
+      )}
+
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+        {bySeries.map(({ name, matches }) => (
+          <SeriesCard key={name} seriesName={name} matches={matches} />
+        ))}
+      </div>
+    </div>
+  )
+}
+
+// ─── Matches tab ────────────────────────────────────────────────────────────────
+// Chronological, spoiler-free watch queue. Tests are expanded into one row per
+// day (see src/utils/cricketDayRows.js) — each row never carries score data,
+// so GameCard has nothing to leak even once marked watched.
+
+function MatchesTab({ games }) {
   const { isWatched, isDismissed } = useWatched()
   const [showWatched, setShowWatched] = useState(false)
   const [format, setFormat] = useState('all')
 
-  const filtered = useMemo(() => applyFormatFilter(games, format), [games, format])
+  const expanded = useMemo(() => expandTestDays(games), [games])
+  const filtered = useMemo(() => applyFormatFilter(expanded, format), [expanded, format])
 
   const { upNext, unwatched, watched } = useMemo(() => {
     const live = filtered.filter(g => g.status === 'live' && !isDismissed(g.id, LEAGUE))
@@ -86,10 +216,10 @@ function QueueTab({ games }) {
             <GameCard game={upNext} isUpNext showDismissAction />
             <div className="rounded-2xl p-5 flex flex-col gap-2"
               style={{ background: 'rgba(6,182,212,0.05)', border: '1px solid rgba(6,182,212,0.15)' }}>
-              <p className="text-cyan-400 font-semibold text-sm">International Cricket 2026</p>
+              <p className="text-cyan-400 font-semibold text-sm">International Cricket</p>
               <p className="text-slate-500 text-xs leading-relaxed">
                 All formats — Tests, ODIs, and T20Is — between the 12 Full Member nations.
-                Mark matches as watched to build your personal log.
+                Tests are split into one row per day, so you can watch and check them off without spoilers.
               </p>
               <div className="flex flex-wrap gap-1.5 mt-1">
                 {['ENG','SA','AUS','NZ','IND','PAK','WI','SL','BAN','ZIM','AFG','IRE'].map(a => (
@@ -132,121 +262,223 @@ function QueueTab({ games }) {
   )
 }
 
-// ─── All Matches tab ───────────────────────────────────────────────────────────
+// ─── Standings tab ────────────────────────────────────────────────────────────
+// Ported from the old standalone WTCView. Uses its own CricAPI cache (the full
+// 2025-27 WTC cycle spans years, unlike the year-scoped Matches/Series data) and
+// its own refresh control, since it's a separate API cost.
 
-function AllMatchesTab({ games }) {
-  const [format, setFormat] = useState('all')
+function buildStandings(watchedGames) {
+  const t = {}
+  const ensure = (name, logo) => {
+    if (!t[name]) t[name] = { name, logo, M: 0, W: 0, L: 0, D: 0, NR: 0, Pts: 0 }
+  }
+  for (const g of watchedGames) {
+    if (g.status !== 'final') continue
+    const h = g.homeTeam.name, a = g.awayTeam.name
+    ensure(h, g.homeTeam.logo)
+    ensure(a, g.awayTeam.logo)
+    t[h].M++; t[a].M++
 
-  const filtered = useMemo(() => applyFormatFilter(games, format), [games, format])
-
-  const bySeries = useMemo(() => {
-    const map = new Map()
-    const sorted = [...filtered].sort((a, b) => b.gameDate - a.gameDate)
-    for (const g of sorted) {
-      const key = g.seriesLabel || 'International Cricket'
-      if (!map.has(key)) map.set(key, [])
-      map.get(key).push(g)
+    if (g.homeWon) {
+      t[h].W++; t[h].Pts += 12; t[a].L++
+    } else if (g.awayWon) {
+      t[a].W++; t[a].Pts += 12; t[h].L++
+    } else {
+      const d = (g.statusDetail || '').toLowerCase()
+      if (d.includes('abandon') || d.includes('no result')) {
+        t[h].NR++; t[h].Pts += 4; t[a].NR++; t[a].Pts += 4
+      } else if (d.includes('tied') || d.includes('tie')) {
+        t[h].D++; t[h].Pts += 6; t[a].D++; t[a].Pts += 6
+      } else {
+        t[h].D++; t[h].Pts += 4; t[a].D++; t[a].Pts += 4
+      }
     }
-    return [...map.entries()]
-  }, [filtered])
+  }
+  return Object.values(t)
+    .map(row => ({ ...row, PCT: row.M > 0 ? (row.Pts / (row.M * 12)) * 100 : 0 }))
+    .sort((a, b) => b.PCT - a.PCT || b.W - a.W)
+}
 
-  const formatLabel = { test: 'test', odi: 'ODI', t20i: 'T20I' }
-
+function StandingsTable({ standings, watchedCount }) {
   return (
-    <div className="flex flex-col gap-6">
-      <FormatPills active={format} onChange={setFormat} />
-
-      {bySeries.length === 0 && (
-        <EmptyState emoji="🏏" title="No matches found" message="Try a different format filter or refresh." />
+    <div className="rounded-2xl overflow-hidden"
+      style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)' }}>
+      <div className="px-4 py-3 border-b border-white/[0.06] flex items-center justify-between">
+        <div>
+          <h3 className="text-sm font-semibold text-slate-300">Points Table</h3>
+          <p className="text-[10px] text-slate-600 mt-0.5">Based on your {watchedCount} watched test{watchedCount !== 1 ? 's' : ''} · Win=12 · Draw=4 · NR=4 · ranked by PCT</p>
+        </div>
+        <span className="text-[10px] text-sky-600">Top 2 → Final</span>
+      </div>
+      <div className="overflow-x-auto">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="text-[10px] font-bold uppercase tracking-widest text-slate-600 border-b border-white/[0.04]">
+              <th className="text-left px-4 py-2 w-6">#</th>
+              <th className="text-left px-4 py-2">Nation</th>
+              <th className="text-center px-3 py-2">M</th>
+              <th className="text-center px-3 py-2">W</th>
+              <th className="text-center px-3 py-2">L</th>
+              <th className="text-center px-3 py-2">D</th>
+              <th className="text-center px-3 py-2">NR</th>
+              <th className="text-center px-3 py-2">Pts</th>
+              <th className="text-center px-3 py-2 text-sky-500">PCT</th>
+            </tr>
+          </thead>
+          <tbody>
+            {standings.map((row, i) => (
+              <tr
+                key={row.name}
+                className={`border-t border-white/[0.04] ${i < 2 ? 'text-slate-200' : 'text-slate-500'}`}
+                style={i === 1 ? { borderBottom: '1px solid rgba(14,165,233,0.18)' } : {}}
+              >
+                <td className="px-4 py-3 text-slate-600 text-xs">{i + 1}</td>
+                <td className="px-4 py-3">
+                  <div className="flex items-center gap-2">
+                    {row.logo
+                      ? <img src={row.logo} alt={row.name} className="w-6 h-6 object-contain rounded-full bg-slate-800/50" />
+                      : <div className="w-6 h-6 rounded-full bg-slate-800 shrink-0" />
+                    }
+                    <span className="font-medium">{row.name}</span>
+                    {i < 2 && (
+                      <span className="text-[9px] px-1.5 py-0.5 rounded font-bold tracking-wide"
+                        style={{ background: 'rgba(14,165,233,0.15)', color: '#0ea5e9' }}>F</span>
+                    )}
+                  </div>
+                </td>
+                <td className="text-center px-3 py-3 text-slate-400">{row.M}</td>
+                <td className="text-center px-3 py-3 text-emerald-400 font-medium">{row.W}</td>
+                <td className="text-center px-3 py-3 text-red-400">{row.L}</td>
+                <td className="text-center px-3 py-3 text-slate-500">{row.D}</td>
+                <td className="text-center px-3 py-3 text-slate-600">{row.NR}</td>
+                <td className="text-center px-3 py-3 font-medium">{row.Pts}</td>
+                <td className="text-center px-3 py-3 font-bold text-sky-400">{row.PCT.toFixed(2)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      {standings.length < 9 && (
+        <p className="px-4 py-3 text-[11px] text-slate-600 border-t border-white/[0.04]">
+          Watch more tests to see all 9 WTC nations in the table
+        </p>
       )}
-
-      {bySeries.map(([seriesName, seriesGames]) => {
-        const formats = [...new Set(seriesGames.map(g => g.matchType))]
-        const formatTags = formats.map(f => formatLabel[f] || f).join(' · ')
-        return (
-          <div key={seriesName}>
-            <div className="flex items-center gap-3 mb-3">
-              <p className="text-[10px] font-bold text-cyan-500 uppercase tracking-widest shrink-0">{seriesName}</p>
-              <div className="flex-1 border-t border-cyan-900/40" />
-              <span className="text-[10px] text-slate-700 shrink-0">{formatTags} · {seriesGames.length} match{seriesGames.length !== 1 ? 'es' : ''}</span>
-            </div>
-            <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-3">
-              {seriesGames.map(g => <GameCard key={g.id} game={g} />)}
-            </div>
-          </div>
-        )
-      })}
     </div>
   )
 }
 
-// ─── Watched tab ───────────────────────────────────────────────────────────────
+function wtcTimeAgo(date) {
+  if (!date) return null
+  const mins = Math.floor((Date.now() - date.getTime()) / 60000)
+  if (mins < 1) return 'just now'
+  if (mins < 60) return `${mins}m ago`
+  const hrs = Math.floor(mins / 60)
+  if (hrs < 24) return `${hrs}h ago`
+  return `${Math.floor(hrs / 24)}d ago`
+}
 
-function WatchedTab({ games }) {
-  const { isWatched, isDismissed } = useWatched()
-  const [showSkipped, setShowSkipped] = useState(false)
-  const [format, setFormat] = useState('all')
+function StandingsTab({ apiKey }) {
+  const { isWatched, watchedForLeague } = useWatched()
+  const [games, setGames] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState(null)
+  const [updatedAt, setUpdatedAt] = useState(null)
+  const [refreshing, setRefreshing] = useState(false)
 
-  const watched = useMemo(
-    () => applyFormatFilter(games.filter(g => isWatched(g.id, LEAGUE)), format).sort((a, b) => b.gameDate - a.gameDate),
-    [games, isWatched, format]
-  )
-  const skipped = useMemo(
-    () => applyFormatFilter(games.filter(g => isDismissed(g.id, LEAGUE)), format).sort((a, b) => b.gameDate - a.gameDate),
-    [games, isDismissed, format]
-  )
+  useEffect(() => {
+    setLoading(true)
+    setError(null)
+    fetchWTCGames(apiKey)
+      .then(({ games, updatedAt }) => { setGames(games); setUpdatedAt(updatedAt) })
+      .catch(err => setError(err.message))
+      .finally(() => setLoading(false))
+  }, [apiKey])
 
-  if (watched.length === 0 && skipped.length === 0)
-    return (
-      <div className="flex flex-col gap-4">
-        <FormatPills active={format} onChange={setFormat} />
-        <EmptyState emoji="🏏" title="No watched matches yet" message="Mark matches as watched from My Queue." />
-      </div>
+  async function handleRefresh() {
+    if (refreshing) return
+    setRefreshing(true)
+    setError(null)
+    try {
+      const { games, updatedAt } = await refreshWTCGames(apiKey)
+      setGames(games)
+      setUpdatedAt(updatedAt)
+    } catch (err) {
+      setError(err.message)
+    } finally {
+      setRefreshing(false)
+    }
+  }
+
+  // A WTC test counts as "watched" for standings either via the legacy direct
+  // toggle (isWatched(id, 'wtc') — how the old standalone WTC tab recorded it),
+  // or — for matches also covered by the year-scoped Matches tab — if any of
+  // its day-rows have been checked off there. This avoids double-marking the
+  // same real match as watched in two places.
+  const watchedGames = useMemo(() => {
+    const cricketDayGameIds = watchedForLeague('cricket').map(g => g.gameId)
+    return games.filter(g =>
+      g.status === 'final' &&
+      (isWatched(g.id, 'wtc') || cricketDayGameIds.some(id => id.startsWith(`${g.id}_d`)))
     )
+  }, [games, isWatched, watchedForLeague])
 
-  const byFormat = { test: 0, odi: 0, t20i: 0 }
-  for (const g of watched) if (byFormat[g.matchType] !== undefined) byFormat[g.matchType]++
+  const standings = useMemo(() => buildStandings(watchedGames), [watchedGames])
+  const sequence = useMemo(() => [...watchedGames].sort((a, b) => a.gameDate - b.gameDate), [watchedGames])
+
+  if (loading) return <LoadingSpinner message="Loading WTC standings…" />
+  if (error) return (
+    <div className="rounded-xl bg-red-900/20 border border-red-800 p-4 text-red-400 text-sm flex items-start gap-3">
+      <span className="shrink-0">⚠</span>
+      <div>
+        <p className="font-medium mb-1">Failed to load WTC standings</p>
+        <p>{error}</p>
+      </div>
+    </div>
+  )
 
   return (
     <div className="flex flex-col gap-4">
-      <FormatPills active={format} onChange={setFormat} />
+      <div className="flex items-center justify-between gap-3">
+        <p className="text-xs text-slate-500">
+          World Test Championship 2025-27 · 9 nations
+          {updatedAt && <span className="text-slate-700"> · updated {wtcTimeAgo(updatedAt)}</span>}
+        </p>
+        <button
+          onClick={handleRefresh}
+          disabled={refreshing}
+          className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg border border-sky-800/50 bg-sky-950/30 text-sky-400 hover:bg-sky-900/40 disabled:opacity-40 disabled:cursor-not-allowed transition-colors shrink-0"
+        >
+          {refreshing ? (
+            <>
+              <span className="w-3 h-3 border border-sky-500/30 border-t-sky-400 rounded-full animate-spin" />
+              Updating…
+            </>
+          ) : 'Update Standings'}
+        </button>
+      </div>
 
-      {watched.length > 0 && (
+      {watchedGames.length === 0 ? (
+        <EmptyState emoji="📊" title="No watched WTC tests yet"
+          message="Mark WTC test days as watched from the Matches tab to build your personal standings." />
+      ) : (
         <>
-          <div className="flex items-center gap-2 flex-wrap">
-            <div className="flex items-center gap-2 rounded-xl px-4 py-2"
-              style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.08)' }}>
-              <span className="text-cyan-400 font-bold text-lg">{watched.length}</span>
-              <span className="text-slate-600 text-sm">match{watched.length !== 1 ? 'es' : ''} watched</span>
-            </div>
-            {format === 'all' && (
-              <div className="flex gap-2">
-                {byFormat.test > 0  && <span className="text-xs px-2 py-1 rounded-full bg-sky-500/10 text-sky-400 border border-sky-500/20">{byFormat.test} Tests</span>}
-                {byFormat.odi > 0   && <span className="text-xs px-2 py-1 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">{byFormat.odi} ODIs</span>}
-                {byFormat.t20i > 0  && <span className="text-xs px-2 py-1 rounded-full bg-violet-500/10 text-violet-400 border border-violet-500/20">{byFormat.t20i} T20Is</span>}
-              </div>
-            )}
+          <StandingsTable standings={standings} watchedCount={watchedGames.length} />
+
+          <div className="rounded-xl px-4 py-3 flex items-start gap-3"
+            style={{ background: 'rgba(14,165,233,0.05)', border: '1px solid rgba(14,165,233,0.12)' }}>
+            <span className="text-sky-500 shrink-0 text-sm">ℹ</span>
+            <p className="text-xs text-slate-500 leading-relaxed">
+              PCT = Points ÷ (Matches × 12) × 100. Normalises across series of different lengths — a team that plays 2 tests isn't penalised vs one that plays 5.
+              {' '}<a href="https://www.icc-cricket.com/world-test-championship" target="_blank" rel="noopener noreferrer"
+                className="text-sky-500 hover:text-sky-400 underline">Official ICC standings →</a>
+            </p>
           </div>
+
+          <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mt-2">Results That Built This Table</p>
           <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-3">
-            {watched.map(g => <GameCard key={g.id} game={g} />)}
+            {sequence.map(g => <GameCard key={g.id} game={g} />)}
           </div>
         </>
-      )}
-
-      {skipped.length > 0 && (
-        <div className="mt-2">
-          <button onClick={() => setShowSkipped(v => !v)}
-            className="w-full flex items-center gap-3 py-2 text-xs text-slate-600 hover:text-slate-400 transition-colors">
-            <div className="flex-1 border-t border-white/[0.07]" />
-            <span className="shrink-0 flex items-center gap-1.5">{showSkipped ? '▾' : '▸'} {skipped.length} skipped</span>
-            <div className="flex-1 border-t border-white/[0.07]" />
-          </button>
-          {showSkipped && (
-            <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-3 mt-2">
-              {skipped.map(g => <GameCard key={g.id} game={g} showDismissAction />)}
-            </div>
-          )}
-        </div>
       )}
     </div>
   )
@@ -255,9 +487,9 @@ function WatchedTab({ games }) {
 // ─── Main ──────────────────────────────────────────────────────────────────────
 
 const TABS = [
-  { id: 'queue',   label: 'My Queue'     },
-  { id: 'all',     label: 'All Matches'  },
-  { id: 'watched', label: 'Watched'      },
+  { id: 'series',    label: 'Series'    },
+  { id: 'matches',   label: 'Matches'   },
+  { id: 'standings', label: 'Standings' },
 ]
 
 const ENV_KEY = import.meta.env.VITE_CRICAPI_KEY || ''
@@ -277,7 +509,7 @@ export default function IntlCricketView() {
   const [games, setGames]           = useState([])
   const [loading, setLoading]       = useState(false)
   const [error, setError]           = useState(null)
-  const [tab, setTab]               = useState('queue')
+  const [tab, setTab]               = useState('series')
   const [updatedAt, setUpdatedAt]   = useState(null)
   const [refreshing, setRefreshing] = useState(false)
   const [refreshSummary, setRefreshSummary] = useState(null)
@@ -298,14 +530,14 @@ export default function IntlCricketView() {
     setError(null)
     setRefreshSummary(null)
     try {
-      const { games, updatedAt, fetched } = await refreshIntlCricketGames(apiKey)
+      const { games, updatedAt, fetched, resolved, pendingResolution } = await refreshIntlCricketGames(apiKey)
       setGames(games)
       setUpdatedAt(updatedAt)
-      setRefreshSummary(
-        fetched > 0
-          ? `${games.length} matches loaded · ${fetched} new score${fetched !== 1 ? 's' : ''} fetched from API`
-          : `${games.length} matches loaded · all scores already cached`
-      )
+      const parts = [`${games.length} matches loaded`]
+      parts.push(fetched > 0 ? `${fetched} new score${fetched !== 1 ? 's' : ''} fetched` : 'all scores already cached')
+      if (resolved > 0) parts.push(`${resolved} new series discovered`)
+      if (pendingResolution > 0) parts.push(`${pendingResolution} series left to discover — click Update again to continue`)
+      setRefreshSummary(parts.join(' · '))
     } catch (err) {
       setError(err.message)
     } finally {
@@ -331,7 +563,7 @@ export default function IntlCricketView() {
             Cricket data comes from{' '}
             <a href="https://www.cricapi.com" target="_blank" rel="noopener noreferrer"
               className="text-cyan-400 hover:text-cyan-300 underline">cricapi.com</a>.
-            {' '}Get a free key (100 req/day) — the same key used for WTC.
+            {' '}Get a free key (100 req/day) — it powers Series, Matches, and Standings below.
           </p>
         </div>
         <div className="w-full flex flex-col gap-2">
@@ -348,7 +580,7 @@ export default function IntlCricketView() {
             Save Key & Load Matches
           </button>
         </div>
-        <p className="text-xs text-slate-600">Key stored locally in your browser only · First load uses ~8 API calls</p>
+        <p className="text-xs text-slate-600">Key stored locally in your browser only · Discovering the full year's schedule takes ~5 Update clicks (~15-25 calls each) from your 100/day free quota</p>
       </div>
     </div>
   )
@@ -389,19 +621,17 @@ export default function IntlCricketView() {
       </div>
 
       {/* Tab bar */}
-      {games.length > 0 && (
-        <div className="flex mb-6 rounded-2xl p-1 overflow-x-auto gap-0.5"
-          style={{ background: 'rgba(255,255,255,0.05)', backdropFilter: 'blur(16px)', WebkitBackdropFilter: 'blur(16px)', border: '1px solid rgba(255,255,255,0.08)' }}>
-          {TABS.map(t => (
-            <button key={t.id} onClick={() => setTab(t.id)}
-              className={`relative px-4 py-2 rounded-xl text-sm font-medium transition-all whitespace-nowrap ${tab === t.id ? 'text-slate-100' : 'text-slate-500 hover:text-slate-300'}`}
-              style={tab === t.id ? { background: 'rgba(255,255,255,0.1)', boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.12)' } : {}}>
-              {t.label}
-              {tab === t.id && <span className="absolute bottom-1.5 left-1/2 -translate-x-1/2 w-6 h-0.5 bg-cyan-500 rounded-full" />}
-            </button>
-          ))}
-        </div>
-      )}
+      <div className="flex mb-6 rounded-2xl p-1 overflow-x-auto gap-0.5"
+        style={{ background: 'rgba(255,255,255,0.05)', backdropFilter: 'blur(16px)', WebkitBackdropFilter: 'blur(16px)', border: '1px solid rgba(255,255,255,0.08)' }}>
+        {TABS.map(t => (
+          <button key={t.id} onClick={() => setTab(t.id)}
+            className={`relative px-4 py-2 rounded-xl text-sm font-medium transition-all whitespace-nowrap ${tab === t.id ? 'text-slate-100' : 'text-slate-500 hover:text-slate-300'}`}
+            style={tab === t.id ? { background: 'rgba(255,255,255,0.1)', boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.12)' } : {}}>
+            {t.label}
+            {tab === t.id && <span className="absolute bottom-1.5 left-1/2 -translate-x-1/2 w-6 h-0.5 bg-cyan-500 rounded-full" />}
+          </button>
+        ))}
+      </div>
 
       {/* Refresh summary */}
       {refreshSummary && !error && (
@@ -426,20 +656,20 @@ export default function IntlCricketView() {
         </div>
       )}
 
-      {!loading && !error && games.length === 0 && (
+      {!loading && !error && tab !== 'standings' && games.length === 0 && (
         <div className="flex flex-col items-center text-center gap-3 py-16">
           <span className="text-4xl">🏏</span>
           <p className="text-slate-300 font-medium">No cricket data loaded yet</p>
           <p className="text-sm text-slate-500 max-w-xs">
             Click <span className="text-cyan-400 font-medium">Update</span> above to fetch matches from CricAPI.
-            Uses up to 8 API calls from your 100/day free quota.
+            Uses ~15-25 API calls per click while the year's series are being discovered (~5 clicks total), then far fewer on later refreshes.
           </p>
         </div>
       )}
 
-      {!loading && !error && games.length > 0 && tab === 'queue'   && <QueueTab games={games} />}
-      {!loading && !error && games.length > 0 && tab === 'all'     && <AllMatchesTab games={games} />}
-      {!loading && !error && games.length > 0 && tab === 'watched' && <WatchedTab games={games} />}
+      {!loading && !error && tab === 'series'    && games.length > 0 && <SeriesTab games={games} />}
+      {!loading && !error && tab === 'matches'   && games.length > 0 && <MatchesTab games={games} />}
+      {!loading && !error && tab === 'standings' && <StandingsTab apiKey={apiKey} />}
     </div>
   )
 }

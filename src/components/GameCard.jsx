@@ -179,6 +179,10 @@ export default function GameCard({ game, isUpNext = false, resultColor = null, s
           )}
         </div>
 
+        {!dismissed && game.seriesLabel && (
+          <p className="text-center text-xs text-slate-500 truncate px-6">{game.seriesLabel}</p>
+        )}
+
         {/* Date */}
         <p className="text-center text-sm text-slate-400 mt-1 mb-3">
           {formatGameDate(game.gameDate)}
@@ -324,6 +328,10 @@ export default function GameCard({ game, isUpNext = false, resultColor = null, s
           <WatchedToggle watched={watched} onToggle={handleToggle} toggling={toggling} />
         )}
       </div>
+
+      {!dismissed && game.seriesLabel && (
+        <p className="text-xs text-slate-500 -mt-2 mb-3 truncate">{game.seriesLabel}</p>
+      )}
 
       {/* Teams + scores */}
       <div className="flex flex-col gap-2 mb-3">

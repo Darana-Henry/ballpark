@@ -1,5 +1,6 @@
 import { doc, getDoc, setDoc } from 'firebase/firestore'
 import { db, isFirebaseConfigured } from '../firebase'
+import { INTL_CRICKET_SERIES_2026 } from '../data/intlCricketSeries2026'
 
 const BASE = 'https://api.cricapi.com/v1'
 
@@ -23,7 +24,13 @@ const NATION_COLORS = {
   'Zimbabwe':     '#84cc16', 'Afghanistan':  '#0891b2', 'Ireland':      '#86efac',
 }
 
-const MATCH_TYPES = new Set(['test', 'odi', 't20i'])
+// CricAPI's raw matchType strings don't always match our internal format ids —
+// notably, international T20s come back as "t20", not "t20i".
+const MATCH_TYPE_ALIASES = { test: 'test', odi: 'odi', t20: 't20i', t20i: 't20i' }
+
+function normalizeMatchType(raw) {
+  return MATCH_TYPE_ALIASES[(raw || '').toLowerCase()] || null
+}
 
 // ─── Session cache ─────────────────────────────────────────────────────────────
 
@@ -76,6 +83,36 @@ async function saveToFirestore(games) {
       updatedAt: new Date(),
     })
   } catch (e) { console.warn('IntlCricket Firestore write failed:', e.message) }
+}
+
+// Maps our own stable entry ids (from INTL_CRICKET_SERIES_2026) to the real
+// CricAPI series id resolved for them via search. Resolution costs one API
+// call per series the first time it's seen, so it's cached permanently here
+// rather than re-searched on every refresh.
+//
+// SERIES_MAP_VERSION guards against a stale/incorrect cache: if the matching
+// logic changes (e.g. a query-format bug that wrongly cached most series as
+// "not found"), bumping this constant discards the old cache wholesale so
+// everything gets a clean re-resolution pass, instead of staying stuck on
+// bad results forever.
+const SERIES_MAP_VERSION = 2
+
+async function loadSeriesMap() {
+  if (!isFirebaseConfigured) return {}
+  try {
+    const snap = await getDoc(doc(db, 'intlCricketSeriesMap', 'current'))
+    if (!snap.exists()) return {}
+    const data = snap.data()
+    if (data.version !== SERIES_MAP_VERSION) return {}
+    return data.map || {}
+  } catch { return {} }
+}
+
+async function saveSeriesMap(map) {
+  if (!isFirebaseConfigured) return
+  try {
+    await setDoc(doc(db, 'intlCricketSeriesMap', 'current'), { version: SERIES_MAP_VERSION, map, updatedAt: new Date() })
+  } catch (e) { console.warn('IntlCricket series-map Firestore write failed:', e.message) }
 }
 
 // ─── API helpers ───────────────────────────────────────────────────────────────
@@ -165,13 +202,13 @@ function extractSeriesLabel(name) {
   return stripped || name
 }
 
-function normalizeMatch(match) {
+function normalizeMatch(match, seriesLabelOverride) {
   const teams = match.teams || []
   if (teams.length < 2) return null
   if (!teams.every(t => INTL_NATIONS.has(t))) return null
 
-  const matchType = (match.matchType || '').toLowerCase()
-  if (!MATCH_TYPES.has(matchType)) return null
+  const matchType = normalizeMatchType(match.matchType)
+  if (!matchType) return null
 
   const [home, away] = teams
   const teamInfo = match.teamInfo || []
@@ -240,74 +277,167 @@ function normalizeMatch(match) {
     dateRange,
     gameType:     gameTypeLabel,
     difficulty:   isFinal ? computeDifficulty(statusDetail, matchType) : null,
-    seriesLabel:  extractSeriesLabel(matchName),
+    seriesLabel:  seriesLabelOverride || extractSeriesLabel(matchName),
     highlightUrl,
     venue:        match.venue || null,
   }
 }
 
+// ─── Series discovery & resolution ─────────────────────────────────────────────
+// CricAPI's /matches listing turned out to be an incomplete "current window"
+// feed, not a full-year schedule (it silently omitted most 2026 series). The
+// year's schedule instead comes from INTL_CRICKET_SERIES_2026 — a curated
+// list sourced from Wikipedia's season pages — resolved to real CricAPI
+// series ids by name search, then hydrated via series_info/match_info the
+// same way src/api/wtc.js already does for WTC.
+
+function scoreSeriesCandidate(candidate, entry) {
+  const name = (candidate.name || '').toLowerCase()
+  let nationHits = 0
+  for (const nation of entry.nations) {
+    if (name.includes(nation.toLowerCase())) nationHits++
+  }
+  const candidateStart = candidate.startDate ? new Date(candidate.startDate) : null
+  const entryStart = new Date(entry.start)
+  const dateDiffDays = candidateStart && !isNaN(candidateStart)
+    ? Math.abs((candidateStart - entryStart) / 86400000)
+    : Infinity
+  const formatOverlap = entry.formats.some(f => {
+    if (f === 'test') return (candidate.test ?? 0) > 0
+    if (f === 'odi')  return (candidate.odi ?? 0) > 0
+    if (f === 't20i') return (candidate.t20 ?? 0) > 0
+    return false
+  })
+  return { nationHits, dateDiffDays, formatOverlap }
+}
+
+// CricAPI's search does substring matching against the series `name` field
+// (which always follows "<Team> tour of <Team>, <Year>") rather than a
+// keyword/AND search — searching "Sri Lanka Pakistan" returns nothing, but
+// "Sri Lanka tour of Pakistan" or "Pakistan tour of Sri Lanka" does. Since we
+// don't know in advance which of our two nations CricAPI treats as the
+// touring side, try one direction, and only spend a second search call on
+// the other direction if the first didn't produce a usable match.
+async function searchSeriesCandidates(query, apiKey) {
+  const resp = await apiGet(`series?search=${encodeURIComponent(query)}`, apiKey)
+  return resp.data ?? []
+}
+
+function pickBestCandidate(candidates, entry) {
+  const minNationHits = entry.tournament ? 0 : 2
+  let best = null
+  let bestScore = -Infinity
+  for (const c of candidates) {
+    if (!c?.id) continue
+    const s = scoreSeriesCandidate(c, entry)
+    if (!s.formatOverlap) continue
+    if (s.nationHits < minNationHits) continue
+    if (s.dateDiffDays > 60) continue
+    const score = s.nationHits * 1000 - s.dateDiffDays
+    if (score > bestScore) { bestScore = score; best = c.id }
+  }
+  return best
+}
+
+// Resolves one master-list entry to a CricAPI series id via /series?search.
+// Returns: a string id on a good match, null if the search genuinely found
+// nothing suitable (cached as a permanent skip), or undefined if the API
+// call itself failed — e.g. quota exhaustion — which must NOT be cached,
+// so it's retried on a future refresh instead of being skipped forever.
+async function resolveSeriesId(entry, apiKey) {
+  const queries = entry.tournament
+    ? [entry.label]
+    : [`${entry.nations[0]} tour of ${entry.nations[1]}`, `${entry.nations[1]} tour of ${entry.nations[0]}`]
+
+  for (const query of queries) {
+    let candidates
+    try {
+      candidates = await searchSeriesCandidates(query, apiKey)
+    } catch {
+      return undefined
+    }
+    const best = pickBestCandidate(candidates, entry)
+    if (best) return best
+  }
+  return null
+}
+
 // ─── Core fetch ────────────────────────────────────────────────────────────────
 
-const MAX_PAGES = 8
-const PAGE_SIZE = 25
+// Resolution costs one (sometimes two) search calls per series, so only a
+// bounded batch of still-unresolved entries is attempted per refresh — full
+// resolution of all ~40 series completes over roughly five refreshes rather
+// than spending the whole daily quota (shared with the BBL tab) at once.
+const RESOLVE_BATCH = 8
 
 async function fetchFromAPI(apiKey, { existingGames = [] } = {}) {
-  // Build cache maps from existing data
-  const existingMap = {}
-  const scoredMap   = {}
+  const scoredMap = {}
   for (const g of existingGames) {
-    existingMap[g.id] = g
     if (g.status === 'final') scoredMap[g.id] = g
   }
 
-  const yearStart = new Date(new Date().getFullYear(), 0, 1)
-  const seen      = new Set()
-  const allStubs  = []
+  const currentYear = new Date().getFullYear()
+  const yearStart   = new Date(currentYear, 0, 1)
+  const yearEnd     = new Date(currentYear + 1, 0, 1) // exclusive
 
-  for (let page = 0; page < MAX_PAGES; page++) {
-    let pageData
-    try {
-      const resp = await apiGet(`matches?offset=${page * PAGE_SIZE}`, apiKey)
-      pageData = resp.data ?? []
-    } catch { break }
+  const seriesMap  = await loadSeriesMap()
+  const unresolved = INTL_CRICKET_SERIES_2026.filter(e => !(e.id in seriesMap))
+  const toResolve  = unresolved.slice(0, RESOLVE_BATCH)
 
-    if (!pageData.length) break
+  let resolvedCount = 0
+  let mapChanged = false
+  for (const entry of toResolve) {
+    const cricapiId = await resolveSeriesId(entry, apiKey)
+    if (cricapiId !== undefined) {
+      seriesMap[entry.id] = cricapiId
+      mapChanged = true
+      if (cricapiId) resolvedCount++
+    }
+  }
+  if (mapChanged) await saveSeriesMap(seriesMap)
 
-    let anyQualifying = false
-    for (const m of pageData) {
+  const resolvedEntries = INTL_CRICKET_SERIES_2026
+    .map(entry => ({ entry, cricapiId: seriesMap[entry.id] }))
+    .filter(x => x.cricapiId)
+
+  // Schedule discovery: one series_info call per resolved series.
+  const seriesResults = await Promise.allSettled(
+    resolvedEntries.map(({ cricapiId }) => apiGet(`series_info?id=${cricapiId}`, apiKey))
+  )
+
+  const seen     = new Set()
+  const allStubs = []
+  seriesResults.forEach((r, i) => {
+    if (r.status !== 'fulfilled') return
+    const { entry } = resolvedEntries[i]
+    const data     = r.value.data
+    const fixtures = Array.isArray(data) ? data : (data?.matchList || [])
+    for (const m of fixtures) {
       if (!m?.id || seen.has(m.id)) continue
       const matchDate = new Date(m.dateTimeGMT || m.date)
-      if (matchDate < yearStart) continue
-
-      const mt = (m.matchType || '').toLowerCase()
-      if (!MATCH_TYPES.has(mt)) continue
-
+      if (matchDate < yearStart || matchDate >= yearEnd) continue
+      if (!normalizeMatchType(m.matchType)) continue
       const teams = m.teams || []
       if (teams.length < 2 || !teams.every(t => INTL_NATIONS.has(t))) continue
-
       seen.add(m.id)
-      allStubs.push(m)
-      anyQualifying = true
+      allStubs.push({ stub: m, seriesLabel: entry.label })
     }
-
-    // Stop early only after page 1 if a full page had no qualifying matches
-    if (!anyQualifying && page > 0) break
-  }
+  })
 
   // Incremental hydration: only fetch match_info for newly-completed matches
-  const needsHydration = allStubs.filter(m => m.matchEnded && !scoredMap[m.id])
+  const needsHydration = allStubs.filter(({ stub }) => stub.matchEnded && !scoredMap[stub.id])
   const hydrated = {}
   const BATCH = 10
   for (let i = 0; i < needsHydration.length; i += BATCH) {
     const batch   = needsHydration.slice(i, i + BATCH)
-    const results = await Promise.allSettled(batch.map(m => apiGet(`match_info?id=${m.id}`, apiKey)))
-    results.forEach((r, j) => { if (r.status === 'fulfilled') hydrated[batch[j].id] = r.value.data })
+    const results = await Promise.allSettled(batch.map(({ stub }) => apiGet(`match_info?id=${stub.id}`, apiKey)))
+    results.forEach((r, j) => { if (r.status === 'fulfilled') hydrated[batch[j].stub.id] = r.value.data })
   }
 
   const freshGames = allStubs
-    .map(m => {
-      if (scoredMap[m.id]) return scoredMap[m.id]
-      return normalizeMatch(hydrated[m.id] || m)
+    .map(({ stub, seriesLabel }) => {
+      if (scoredMap[stub.id]) return scoredMap[stub.id]
+      return normalizeMatch(hydrated[stub.id] || stub, seriesLabel)
     })
     .filter(Boolean)
 
@@ -318,7 +448,12 @@ async function fetchFromAPI(apiKey, { existingGames = [] } = {}) {
   const games = [...freshGames, ...preserved].sort((a, b) => b.gameDate - a.gameDate)
 
   await saveToFirestore(games)
-  return { games, fetched: needsHydration.length }
+  return {
+    games,
+    fetched: needsHydration.length,
+    resolved: resolvedCount,
+    pendingResolution: unresolved.length - toResolve.length,
+  }
 }
 
 // ─── Public API ────────────────────────────────────────────────────────────────
@@ -339,8 +474,8 @@ export async function fetchIntlCricketGames(apiKey) {
 
 export async function refreshIntlCricketGames(apiKey) {
   const existing = await loadFromFirestore()
-  const { games, fetched } = await fetchFromAPI(apiKey, { existingGames: existing?.games ?? [] })
-  const result = { games, updatedAt: new Date(), fetched }
+  const { games, fetched, resolved, pendingResolution } = await fetchFromAPI(apiKey, { existingGames: existing?.games ?? [] })
+  const result = { games, updatedAt: new Date(), fetched, resolved, pendingResolution }
   clearSession()
   writeSession(result)
   return result

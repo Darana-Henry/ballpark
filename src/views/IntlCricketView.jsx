@@ -1,13 +1,37 @@
 import { useState, useEffect, useMemo } from 'react'
 import { fetchIntlCricketGames, refreshIntlCricketGames } from '../api/intlCricket'
 import { fetchWTCGames, refreshWTCGames } from '../api/wtc'
-import { expandTestDays } from '../utils/cricketDayRows'
+import { expandTestDays, isMatchWatched } from '../utils/cricketDayRows'
 import GameCard from '../components/GameCard'
+import BoundaryTracker from '../components/BoundaryTracker'
 import LoadingSpinner from '../components/LoadingSpinner'
 import EmptyState from '../components/EmptyState'
 import { useWatched } from '../contexts/WatchedContext'
 
 const LEAGUE = 'cricket'
+
+// Boundary Tracker supports both T20 (20 overs) and ODI (50 overs, grouped
+// into collapsible blocks of 10 — see src/components/BoundaryTracker.jsx),
+// but not Test cricket, which is multi-day/session-based rather than a fixed
+// overs count, so the Track button only shows on T20I and ODI games.
+const TRACKABLE_FORMATS = new Set(['t20i', 'odi'])
+
+function TrackableGameCard({ game, onTrack, isUpNext, ...props }) {
+  if (!TRACKABLE_FORMATS.has(game.matchType)) return <GameCard game={game} isUpNext={isUpNext} {...props} />
+  return (
+    <div className="relative">
+      <GameCard game={game} isUpNext={isUpNext} {...props} />
+      <button
+        onClick={() => onTrack(game)}
+        title="Open boundary tracker"
+        className="absolute top-2 right-2 opacity-50 hover:opacity-100 transition-opacity flex items-center gap-1 text-[10px] font-bold px-2 py-1 rounded-lg text-amber-400 z-10"
+        style={{ background: 'rgba(245,158,11,0.15)', border: '1px solid rgba(245,158,11,0.3)' }}
+      >
+        🏏 Track
+      </button>
+    </div>
+  )
+}
 
 // ─── Format filter ─────────────────────────────────────────────────────────────
 
@@ -54,12 +78,48 @@ function ordinal(n) {
   return `${n}${s[(v - 20) % 10] || s[v] || s[0]}`
 }
 
-// Schedule/progress only — never reveals a score, result, or series leader.
-function seriesProgress(matches, today) {
+// Groups matches by format and tallies wins by team name (not home/away role,
+// which can vary match-to-match within a series) to describe the result of
+// each format played. Only called once every match in the series has been
+// watched — this is the spoiler-reveal step, not the default.
+function formatResultLine(matches, matchType) {
+  const single = matches.length === 1
+  const label = single
+    ? { test: 'Test', odi: 'ODI', t20i: 'T20I' }[matchType]
+    : { test: 'Tests', odi: 'ODIs', t20i: 'T20Is' }[matchType]
+
+  const tally = {}
+  for (const m of matches) {
+    if (m.homeWon) tally[m.homeTeam.name] = (tally[m.homeTeam.name] || 0) + 1
+    else if (m.awayWon) tally[m.awayTeam.name] = (tally[m.awayTeam.name] || 0) + 1
+  }
+  const entries = Object.entries(tally).sort((a, b) => b[1] - a[1])
+  if (entries.length === 0) return `${label}: drawn`
+
+  const [winner, winCount] = entries[0]
+  const loseCount = entries[1]?.[1] ?? 0
+  if (winCount === loseCount) return `${label}: series drawn ${winCount}-${loseCount}`
+  return single ? `${label}: ${winner} won` : `${label}: ${winner} won ${winCount}-${loseCount}`
+}
+
+function buildResultSummary(matches) {
+  const byType = new Map()
+  for (const m of matches) {
+    if (!byType.has(m.matchType)) byType.set(m.matchType, [])
+    byType.get(m.matchType).push(m)
+  }
+  return [...byType.entries()].map(([type, ms]) => formatResultLine(ms, type))
+}
+
+// Schedule/progress only, UNLESS the series is both finished in real life and
+// every one of its matches has been watched — only then does it reveal the
+// actual result. Never reveals a score, result, or series leader otherwise.
+function seriesProgress(matches, today, cricketWatchedIds) {
   const sorted = [...matches].sort((a, b) => a.gameDate - b.gameDate)
   const live = sorted.filter(m => m.status === 'live')
   const scheduled = sorted.filter(m => m.status === 'scheduled')
   const completedCount = sorted.filter(m => m.status === 'final').length
+  const lastDate = sorted[sorted.length - 1]?.gameDate ?? today
 
   if (live.length > 0) {
     const m = live[0]
@@ -78,14 +138,26 @@ function seriesProgress(matches, today) {
     const dateStr = m.gameDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
     return { state: 'upcoming', text: `Next: ${ordinal(idx)} ${label} · ${dateStr}`, sortDate: m.gameDate }
   }
+
+  const allWatched = sorted.every(m => isMatchWatched(m, cricketWatchedIds))
+  if (allWatched) {
+    return { state: 'done', lines: buildResultSummary(sorted), sortDate: lastDate }
+  }
   return {
     state: 'completed',
     text: `Series complete · ${completedCount} match${completedCount !== 1 ? 'es' : ''}`,
-    sortDate: sorted[sorted.length - 1]?.gameDate ?? today,
+    sortDate: lastDate,
   }
 }
 
-function SeriesCard({ seriesName, matches }) {
+const SERIES_STATE_STYLE = {
+  live:      'bg-red-500/10 text-red-400 border-red-500/25',
+  upcoming:  'bg-cyan-500/10 text-cyan-400 border-cyan-500/25',
+  completed: 'bg-slate-700/20 text-slate-500 border-slate-700/40',
+  done:      'bg-emerald-500/10 text-emerald-400 border-emerald-500/25',
+}
+
+function SeriesCard({ seriesName, matches, cricketWatchedIds }) {
   const today = new Date()
   const sorted = [...matches].sort((a, b) => a.gameDate - b.gameDate)
   const first = sorted[0]
@@ -102,12 +174,7 @@ function SeriesCard({ seriesName, matches }) {
     : last.gameDate
   const rangeStr = `${first.gameDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} – ${lastEnd.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`
 
-  const progress = seriesProgress(matches, today)
-  const stateStyle = {
-    live:      'bg-red-500/10 text-red-400 border-red-500/25',
-    upcoming:  'bg-cyan-500/10 text-cyan-400 border-cyan-500/25',
-    completed: 'bg-slate-700/20 text-slate-500 border-slate-700/40',
-  }[progress.state]
+  const progress = seriesProgress(matches, today, cricketWatchedIds)
 
   return (
     <div className="rounded-xl p-4" style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)' }}>
@@ -120,17 +187,34 @@ function SeriesCard({ seriesName, matches }) {
           {first.awayTeam.abbreviation} vs {first.homeTeam.abbreviation}
         </span>
       </div>
-      <span className={`inline-flex items-center text-xs px-2.5 py-1 rounded-full border ${stateStyle}`}>
-        {progress.state === 'live' && <span className="w-1.5 h-1.5 rounded-full bg-red-400 live-pulse mr-1.5" />}
-        {progress.text}
-      </span>
+      {progress.state === 'done' ? (
+        <div className="flex flex-col gap-1 items-start">
+          {progress.lines.map((line, i) => (
+            <span key={i} className={`inline-flex items-center text-xs px-2.5 py-1 rounded-full border ${SERIES_STATE_STYLE.done}`}>
+              {line}
+            </span>
+          ))}
+        </div>
+      ) : (
+        <span className={`inline-flex items-center text-xs px-2.5 py-1 rounded-full border ${SERIES_STATE_STYLE[progress.state]}`}>
+          {progress.state === 'live' && <span className="w-1.5 h-1.5 rounded-full bg-red-400 live-pulse mr-1.5" />}
+          {progress.text}
+        </span>
+      )}
     </div>
   )
 }
 
+// live/upcoming come first (still in play); completed and done share the last
+// tier — a fully-revealed series and a still-locked one are equally "nothing
+// left to do here," tie-broken by most-recently-finished.
+const SERIES_SORT_ORDER = { live: 0, upcoming: 1, completed: 2, done: 2 }
+
 function SeriesTab({ games }) {
+  const { watchedForLeague } = useWatched()
   const [format, setFormat] = useState('all')
   const filtered = useMemo(() => applyFormatFilter(games, format), [games, format])
+  const cricketWatchedIds = useMemo(() => watchedForLeague('cricket').map(g => g.gameId), [watchedForLeague])
 
   const bySeries = useMemo(() => {
     const map = new Map()
@@ -140,16 +224,17 @@ function SeriesTab({ games }) {
       map.get(key).push(g)
     }
     const today = new Date()
-    const order = { live: 0, upcoming: 1, completed: 2 }
     return [...map.entries()]
-      .map(([name, matches]) => ({ name, matches, progress: seriesProgress(matches, today) }))
+      .map(([name, matches]) => ({ name, matches, progress: seriesProgress(matches, today, cricketWatchedIds) }))
       .sort((a, b) => {
-        if (order[a.progress.state] !== order[b.progress.state]) return order[a.progress.state] - order[b.progress.state]
-        return a.progress.state === 'completed'
+        if (SERIES_SORT_ORDER[a.progress.state] !== SERIES_SORT_ORDER[b.progress.state]) {
+          return SERIES_SORT_ORDER[a.progress.state] - SERIES_SORT_ORDER[b.progress.state]
+        }
+        return SERIES_SORT_ORDER[a.progress.state] === 2
           ? b.progress.sortDate - a.progress.sortDate
           : a.progress.sortDate - b.progress.sortDate
       })
-  }, [filtered])
+  }, [filtered, cricketWatchedIds])
 
   return (
     <div className="flex flex-col gap-4">
@@ -161,7 +246,7 @@ function SeriesTab({ games }) {
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
         {bySeries.map(({ name, matches }) => (
-          <SeriesCard key={name} seriesName={name} matches={matches} />
+          <SeriesCard key={name} seriesName={name} matches={matches} cricketWatchedIds={cricketWatchedIds} />
         ))}
       </div>
     </div>
@@ -173,15 +258,14 @@ function SeriesTab({ games }) {
 // day (see src/utils/cricketDayRows.js) — each row never carries score data,
 // so GameCard has nothing to leak even once marked watched.
 
-function MatchesTab({ games }) {
+function MatchesTab({ games, onTrack }) {
   const { isWatched, isDismissed } = useWatched()
-  const [showWatched, setShowWatched] = useState(false)
   const [format, setFormat] = useState('all')
 
   const expanded = useMemo(() => expandTestDays(games), [games])
   const filtered = useMemo(() => applyFormatFilter(expanded, format), [expanded, format])
 
-  const { upNext, unwatched, watched } = useMemo(() => {
+  const { upNext, unwatched } = useMemo(() => {
     const live = filtered.filter(g => g.status === 'live' && !isDismissed(g.id, LEAGUE))
     const finalUnwatched = filtered
       .filter(g => g.status === 'final' && !isWatched(g.id, LEAGUE) && !isDismissed(g.id, LEAGUE))
@@ -189,7 +273,6 @@ function MatchesTab({ games }) {
     const scheduled = filtered
       .filter(g => g.status === 'scheduled' && !isDismissed(g.id, LEAGUE))
       .sort((a, b) => a.gameDate - b.gameDate)
-    const watchedList = filtered.filter(g => isWatched(g.id, LEAGUE)).sort((a, b) => b.gameDate - a.gameDate)
 
     const upNext   = finalUnwatched[0] ?? live[0] ?? scheduled[0]
     const upNextId = upNext?.id
@@ -198,14 +281,14 @@ function MatchesTab({ games }) {
       ...live.filter(g => g.id !== upNextId),
       ...scheduled.filter(g => g.id !== upNextId),
     ]
-    return { upNext, unwatched: remaining, watched: watchedList }
+    return { upNext, unwatched: remaining }
   }, [filtered, isWatched, isDismissed])
 
   return (
     <div className="flex flex-col gap-4">
       <FormatPills active={format} onChange={setFormat} />
 
-      {!upNext && unwatched.length === 0 && watched.length === 0 && (
+      {!upNext && unwatched.length === 0 && (
         <EmptyState emoji="✅" title="All caught up" message="No unwatched international matches in your queue." />
       )}
 
@@ -213,7 +296,7 @@ function MatchesTab({ games }) {
         <>
           <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Up Next For You</p>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <GameCard game={upNext} isUpNext showDismissAction />
+            <TrackableGameCard game={upNext} isUpNext showDismissAction onTrack={onTrack} />
             <div className="rounded-2xl p-5 flex flex-col gap-2"
               style={{ background: 'rgba(6,182,212,0.05)', border: '1px solid rgba(6,182,212,0.15)' }}>
               <p className="text-cyan-400 font-semibold text-sm">International Cricket</p>
@@ -240,23 +323,74 @@ function MatchesTab({ games }) {
       )}
 
       <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-3">
-        {unwatched.map(g => <GameCard key={g.id} game={g} showDismissAction />)}
+        {unwatched.map(g => <TrackableGameCard key={g.id} game={g} showDismissAction onTrack={onTrack} />)}
       </div>
+    </div>
+  )
+}
 
-      {watched.length > 0 && (
-        <div className="mt-2">
-          <button onClick={() => setShowWatched(v => !v)}
-            className="w-full flex items-center gap-3 py-2 text-xs text-slate-600 hover:text-slate-400 transition-colors">
-            <div className="flex-1 border-t border-white/[0.07]" />
-            <span className="shrink-0 flex items-center gap-1.5">{showWatched ? '▾' : '▸'} {watched.length} watched</span>
-            <div className="flex-1 border-t border-white/[0.07]" />
-          </button>
-          {showWatched && (
-            <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-3 mt-2">
-              {watched.map(g => <GameCard key={g.id} game={g} />)}
-            </div>
-          )}
-        </div>
+// ─── Watched tab ────────────────────────────────────────────────────────────────
+// Every match/day you've marked watched, across all formats. Split out from
+// Matches (which is now purely the unwatched queue) into its own tab.
+
+function WatchedTab({ games }) {
+  const { isWatched } = useWatched()
+  const [format, setFormat] = useState('all')
+
+  const expanded = useMemo(() => expandTestDays(games), [games])
+  const filtered = useMemo(() => applyFormatFilter(expanded, format), [expanded, format])
+  const watchedFlat = useMemo(
+    () => filtered.filter(g => isWatched(g.id, LEAGUE)),
+    [filtered, isWatched]
+  )
+
+  // Grouped by series, series ordered reverse chronological (most recent
+  // match first), cards within each series chronological (oldest first) —
+  // so a series reads top-to-bottom in the order it was actually played.
+  const bySeries = useMemo(() => {
+    const map = new Map()
+    for (const g of watchedFlat) {
+      const key = g.seriesLabel || 'International Cricket'
+      if (!map.has(key)) map.set(key, [])
+      map.get(key).push(g)
+    }
+    return [...map.entries()]
+      .map(([name, matches]) => ({
+        name,
+        matches: [...matches].sort((a, b) => a.gameDate - b.gameDate),
+        lastDate: Math.max(...matches.map(m => m.gameDate.getTime())),
+      }))
+      .sort((a, b) => b.lastDate - a.lastDate)
+  }, [watchedFlat])
+
+  return (
+    <div className="flex flex-col gap-4">
+      <FormatPills active={format} onChange={setFormat} />
+
+      {watchedFlat.length === 0 ? (
+        <EmptyState emoji="✅" title="No watched matches yet" message="Mark matches as watched from the Matches tab." />
+      ) : (
+        <>
+          <div className="flex items-center gap-2 rounded-xl px-4 py-2 w-fit"
+            style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.08)' }}>
+            <span className="text-cyan-400 font-bold text-lg">{watchedFlat.length}</span>
+            <span className="text-slate-600 text-sm">watched</span>
+          </div>
+          <div className="flex flex-col gap-6">
+            {bySeries.map(({ name, matches }) => (
+              <div key={name}>
+                <div className="flex items-center gap-3 mb-3">
+                  <p className="text-[10px] font-bold text-cyan-500 uppercase tracking-widest shrink-0">{name}</p>
+                  <div className="flex-1 border-t border-cyan-900/40" />
+                  <span className="text-[10px] text-slate-700 shrink-0">{matches.length} watched</span>
+                </div>
+                <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-3">
+                  {matches.map(g => <GameCard key={g.id} game={g} />)}
+                </div>
+              </div>
+            ))}
+          </div>
+        </>
       )}
     </div>
   )
@@ -415,10 +549,10 @@ function StandingsTab({ apiKey }) {
   // its day-rows have been checked off there. This avoids double-marking the
   // same real match as watched in two places.
   const watchedGames = useMemo(() => {
-    const cricketDayGameIds = watchedForLeague('cricket').map(g => g.gameId)
+    const cricketWatchedIds = watchedForLeague('cricket').map(g => g.gameId)
     return games.filter(g =>
       g.status === 'final' &&
-      (isWatched(g.id, 'wtc') || cricketDayGameIds.some(id => id.startsWith(`${g.id}_d`)))
+      (isWatched(g.id, 'wtc') || isMatchWatched(g, cricketWatchedIds))
     )
   }, [games, isWatched, watchedForLeague])
 
@@ -489,6 +623,7 @@ function StandingsTab({ apiKey }) {
 const TABS = [
   { id: 'series',    label: 'Series'    },
   { id: 'matches',   label: 'Matches'   },
+  { id: 'watched',   label: 'Watched'   },
   { id: 'standings', label: 'Standings' },
 ]
 
@@ -513,6 +648,7 @@ export default function IntlCricketView() {
   const [updatedAt, setUpdatedAt]   = useState(null)
   const [refreshing, setRefreshing] = useState(false)
   const [refreshSummary, setRefreshSummary] = useState(null)
+  const [trackedGame, setTrackedGame] = useState(null)
 
   useEffect(() => {
     if (!apiKey) return
@@ -668,8 +804,13 @@ export default function IntlCricketView() {
       )}
 
       {!loading && !error && tab === 'series'    && games.length > 0 && <SeriesTab games={games} />}
-      {!loading && !error && tab === 'matches'   && games.length > 0 && <MatchesTab games={games} />}
+      {!loading && !error && tab === 'matches'   && games.length > 0 && <MatchesTab games={games} onTrack={setTrackedGame} />}
+      {!loading && !error && tab === 'watched'   && games.length > 0 && <WatchedTab games={games} />}
       {!loading && !error && tab === 'standings' && <StandingsTab apiKey={apiKey} />}
+
+      {trackedGame && (
+        <BoundaryTracker game={trackedGame} onClose={() => setTrackedGame(null)} />
+      )}
     </div>
   )
 }

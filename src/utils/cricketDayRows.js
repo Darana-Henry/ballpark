@@ -58,3 +58,14 @@ export function buildTestDayRows(match, today = new Date()) {
 export function expandTestDays(games, today = new Date()) {
   return games.flatMap(g => (g.matchType === 'test' ? buildTestDayRows(g, today) : [g]))
 }
+
+// Whether a (whole, un-expanded) match counts as watched. Tests are tracked
+// per day-row rather than as a single game, so a Test counts as watched once
+// at least one of its day-rows has been checked off — not all five, since
+// trailing days may never get played for a Test that finishes early.
+export function isMatchWatched(match, cricketWatchedIds) {
+  if (match.matchType === 'test') {
+    return cricketWatchedIds.some(id => id.startsWith(`${match.id}_d`))
+  }
+  return cricketWatchedIds.includes(match.id)
+}

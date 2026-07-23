@@ -207,13 +207,17 @@ function parseWinner(statusDetail, homeTeam, awayTeam) {
   return null
 }
 
-function buildStandings(games) {
+// watchedIds guards internally so this can never be called with an
+// unfiltered game list and leak an unwatched result into the table — even
+// though today's callers already pre-filter, that shouldn't be the only
+// thing standing between a live/unwatched score and the standings table.
+function buildStandings(games, watchedIds) {
   const t = {}
   const ensure = (name, logo) => {
     if (!t[name]) t[name] = { name, logo, P: 0, W: 0, L: 0, NR: 0, Pts: 0, rf: 0, ra: 0 }
   }
   for (const g of games) {
-    if (g.status !== 'final') continue
+    if (g.status !== 'final' || !watchedIds.has(g.id)) continue
     const h = g.homeTeam.name, a = g.awayTeam.name
     ensure(h, g.homeTeam.logo); ensure(a, g.awayTeam.logo)
     t[h].P++; t[a].P++
@@ -280,7 +284,7 @@ function StandingsTab({ games }) {
     () => games.filter(g => watchedIds.has(g.id) && g.status === 'final'),
     [games, watchedIds]
   )
-  const standings = useMemo(() => buildStandings(watchedGames), [watchedGames])
+  const standings = useMemo(() => buildStandings(watchedGames, watchedIds), [watchedGames, watchedIds])
 
   if (watchedGames.length === 0) {
     return <EmptyState emoji="📊" title="No watched matches yet"
@@ -397,7 +401,7 @@ export default function BBLView() {
   const bblStandings = useMemo(() => {
     const watchedIds = new Set(watchedForLeague('bbl').map(g => g.gameId))
     const watched = games.filter(g => watchedIds.has(g.id) && g.status === 'final')
-    const table = buildStandings(watched)
+    const table = buildStandings(watched, watchedIds)
     return Object.fromEntries(table.map((team, i) => [team.name, i + 1]))
   }, [games, watchedForLeague])
 

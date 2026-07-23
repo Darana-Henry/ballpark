@@ -1,3 +1,5 @@
+import { getDifficultyRating } from '../utils/difficulty'
+
 const BASE = 'https://statsapi.mlb.com/api/v1'
 const DODGERS_ID = 119
 const SEASON = new Date().getFullYear()
@@ -23,16 +25,6 @@ function youtubeHighlightUrl(awayName, homeName, gameDate) {
   return `https://www.youtube.com/results?search_query=${q}`
 }
 
-// Opponent win% → difficulty label + Tailwind classes
-function getDifficulty(oppWinPct, isPlayoff) {
-  const score = oppWinPct + (isPlayoff ? 0.08 : 0)
-  if (score >= 0.580) return { label: 'Extreme',    cls: 'text-red-400    bg-red-500/10    border-red-500/30' }
-  if (score >= 0.530) return { label: 'Demanding',  cls: 'text-orange-400 bg-orange-500/10 border-orange-500/30' }
-  if (score >= 0.460) return { label: 'Competitive',cls: 'text-yellow-400 bg-yellow-500/10 border-yellow-500/30' }
-  if (score >= 0.390) return { label: 'Beatable',   cls: 'text-lime-400   bg-lime-500/10   border-lime-500/30' }
-  return                     { label: 'Accessible', cls: 'text-green-400  bg-green-500/10  border-green-500/30' }
-}
-
 function normalizeGame(game) {
   const state = game.status?.abstractGameState
   const isLive = state === 'Live'
@@ -52,7 +44,7 @@ function normalizeGame(game) {
   if (dodgersTeam) {
     const opp = dodgersTeam === 'home' ? away : home
     const pct = parseFloat(opp.leagueRecord?.pct || '0')
-    difficulty = getDifficulty(pct, isPlayoff)
+    difficulty = getDifficultyRating(pct, isPlayoff)
   }
 
   const toPitcher = (p) => p

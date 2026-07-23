@@ -218,7 +218,10 @@ function AllGamesTab({ games }) {
 
 // ─── Watched ──────────────────────────────────────────────────────────────────
 
-function getResult(game) {
+// isWatched guarded internally — never derive a result for a game the user
+// hasn't watched, even if a future caller forgets to pre-filter.
+function getResult(game, isWatched) {
+  if (!isWatched(game.id, 'nba')) return null
   if (game.homeScore === null || game.awayScore === null) return null
   if (!game.lakersTeam) return null
   const lakersScore = game.lakersTeam === 'home' ? game.homeScore : game.awayScore
@@ -245,8 +248,8 @@ function WatchedTab({ games }) {
     )
   }
 
-  const wins   = watched.filter(g => getResult(g) === 'win').length
-  const losses = watched.filter(g => getResult(g) === 'loss').length
+  const wins   = watched.filter(g => getResult(g, isWatched) === 'win').length
+  const losses = watched.filter(g => getResult(g, isWatched) === 'loss').length
 
   return (
     <div className="flex flex-col gap-3">
@@ -263,7 +266,7 @@ function WatchedTab({ games }) {
             <p className="text-xs text-slate-600">{watched.length} game{watched.length !== 1 ? 's' : ''} watched · green = win, red = loss</p>
           </div>
           <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-3">
-            {watched.map(g => <GameCard key={g.id} game={g} resultColor={getResult(g)} trackedTeamId={LAKERS_ID} />)}
+            {watched.map(g => <GameCard key={g.id} game={g} resultColor={getResult(g, isWatched)} trackedTeamId={LAKERS_ID} />)}
           </div>
         </>
       )}

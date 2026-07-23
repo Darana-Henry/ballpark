@@ -411,7 +411,7 @@ export default function BoundaryTracker({ game, standings = {}, onClose }) {
               }}
             >
               {!hasHome && !hasAway && (
-                <span className="text-[12px] text-slate-400 font-mono tabular-nums select-none">
+                <span className={`text-[12px] font-mono tabular-nums select-none ${totalOvers === 50 ? 'text-slate-200' : 'text-slate-400'}`}>
                   {b === 5 ? `${o + 1}.0` : `${o}.${b + 1}`}
                 </span>
               )}
@@ -465,12 +465,15 @@ export default function BoundaryTracker({ game, standings = {}, onClose }) {
     )
   }
 
+  // ODI's breakdown mirrors the same 10-over grouping as the grid itself
+  // (1-10, 11-20, ... 41-50) rather than T20's 3-phase PP/MID/DEATH split,
+  // which doesn't map cleanly onto a 50-over innings.
   const segmentPhases = totalOvers === 50
-    ? [
-        { short: 'PP',    from: 0,  to: 9  },
-        { short: 'MID',   from: 10, to: 39 },
-        { short: 'DEATH', from: 40, to: 49 },
-      ]
+    ? Array.from({ length: 5 }, (_, i) => ({
+        short: `${i * GROUP_SIZE + 1}-${i * GROUP_SIZE + GROUP_SIZE}`,
+        from: i * GROUP_SIZE,
+        to: i * GROUP_SIZE + GROUP_SIZE - 1,
+      }))
     : [
         { short: 'PP',    from: 0,  to: 5  },
         { short: 'MID',   from: 6,  to: 14 },
@@ -644,7 +647,7 @@ export default function BoundaryTracker({ game, standings = {}, onClose }) {
                   return (
                     <div key={short} className="flex items-center gap-2">
                       {/* Phase label */}
-                      <span className="text-[9px] font-bold uppercase tracking-widest shrink-0 w-10 text-right"
+                      <span className={`text-[9px] font-bold uppercase tracking-widest shrink-0 text-right ${totalOvers === 50 ? 'w-12' : 'w-10'}`}
                         style={{ color: 'rgba(100,116,139,0.7)' }}>
                         {short}
                       </span>

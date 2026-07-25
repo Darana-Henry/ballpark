@@ -70,6 +70,18 @@ function applyFormatFilter(games, format) {
   return games.filter(g => g.matchType === format)
 }
 
+// No single followed nation, so the win/loss color is anchored to the home
+// team of each match. Test day-rows are excluded — they're synthetic
+// spoiler-safe placeholders (see cricketDayRows.js) and never carry a real
+// homeWon/awayWon result, so coloring them would either show nothing or, if
+// they ever did carry data, leak the outcome before the match is truly over.
+function getResult(game) {
+  if (game.matchType === 'test') return null
+  if (game.homeWon) return 'win'
+  if (game.awayWon) return 'loss'
+  return null
+}
+
 // ─── Series tab ─────────────────────────────────────────────────────────────────
 
 function ordinal(n) {
@@ -385,7 +397,7 @@ function WatchedTab({ games }) {
                   <span className="text-[10px] text-slate-700 shrink-0">{matches.length} watched</span>
                 </div>
                 <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-3">
-                  {matches.map(g => <GameCard key={g.id} game={g} />)}
+                  {matches.map(g => <GameCard key={g.id} game={g} resultColor={getResult(g)} />)}
                 </div>
               </div>
             ))}

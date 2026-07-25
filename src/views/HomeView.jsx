@@ -3,12 +3,18 @@ import { fetchMLBGames } from '../api/mlb'
 import { fetchNBAGames, fetchNFLGames } from '../api/espn'
 import { fetchMLSGames } from '../api/mls'
 import { fetchBBLGames } from '../api/bbl'
+import { fetchIntlCricketGames } from '../api/intlCricket'
+import { expandTestDays } from '../utils/cricketDayRows'
 import GameCard from '../components/GameCard'
 import BoundaryTracker from '../components/BoundaryTracker'
 import { useWatched } from '../contexts/WatchedContext'
 import { LEAGUE_MAP } from '../constants/leagues'
 
 const ENV_BBL_KEY = import.meta.env.VITE_CRICAPI_KEY || ''
+
+// Boundary Tracker supports T20I/ODI (fixed overs) but not Test cricket,
+// which is multi-day/session-based — mirrors IntlCricketView's TRACKABLE_FORMATS.
+const CRICKET_TRACKABLE = new Set(['t20i', 'odi'])
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -18,6 +24,7 @@ const LEAGUE_LABELS = {
   nfl: 'NFL',
   mls: 'MLS · Inter Miami',
   bbl: 'BBL',
+  cricket: 'Cricket',
 }
 
 const LEAGUE_COLORS = {
@@ -26,6 +33,7 @@ const LEAGUE_COLORS = {
   nfl: 'text-emerald-400',
   mls: 'text-pink-400',
   bbl: 'text-amber-400',
+  cricket: 'text-cyan-400',
 }
 
 const LEAGUE_DOT_BG = {
@@ -34,6 +42,7 @@ const LEAGUE_DOT_BG = {
   nfl: 'bg-emerald-500',
   mls: 'bg-pink-500',
   bbl: 'bg-amber-500',
+  cricket: 'bg-cyan-500',
 }
 
 const LEAGUE_BORDER = {
@@ -42,6 +51,7 @@ const LEAGUE_BORDER = {
   nfl: 'border-l-emerald-500',
   mls: 'border-l-pink-500',
   bbl: 'border-l-amber-500',
+  cricket: 'border-l-cyan-500',
 }
 
 const TRACKED_TEAM = { mlb: '119', nba: '13', mls: '20232' }
@@ -75,14 +85,33 @@ function getThisWeekRange() {
 
 function getWeeklyResult(g) {
   const trackedId = TRACKED_TEAM[g.league]
-  if (!trackedId) return null
-  if (g.homeScore === null || g.awayScore === null) return null
-  const isHome = g.homeTeamId === trackedId
-  const isAway = g.awayTeamId === trackedId
-  if (!isHome && !isAway) return null
-  const ts = isHome ? g.homeScore : g.awayScore
-  const os = isHome ? g.awayScore  : g.homeScore
-  return ts > os ? 'win' : ts < os ? 'loss' : 'draw'
+  if (trackedId) {
+    if (g.homeScore === null || g.awayScore === null) return null
+    const isHome = g.homeTeamId === trackedId
+    const isAway = g.awayTeamId === trackedId
+    if (!isHome && !isAway) return null
+    const ts = isHome ? g.homeScore : g.awayScore
+    const os = isHome ? g.awayScore  : g.homeScore
+    return ts > os ? 'win' : ts < os ? 'loss' : 'draw'
+  }
+
+  // No tracked team for NFL/BBL/Cricket — color by the home team of the
+  // individual match instead.
+  if (g.league === 'nfl') {
+    if (g.homeScore === null || g.awayScore === null) return null
+    return g.homeScore > g.awayScore ? 'win' : g.homeScore < g.awayScore ? 'loss' : 'draw'
+  }
+  if (g.league === 'bbl' || g.league === 'cricket') {
+    // Also naturally excludes watched Test day-rows: their stored
+    // statusDetail is a synthetic "Day complete"/"Upcoming" label that never
+    // matches the "won by" pattern, so they resolve to null (no color) —
+    // exactly the spoiler-safe behavior Tests need.
+    const result = parseWinnerFromDetail(g.statusDetail, g.homeTeam, g.awayTeam)
+    if (result === 'home') return 'win'
+    if (result === 'away') return 'loss'
+    return null
+  }
+  return null
 }
 
 function logoUrl(league, teamId) {
@@ -310,9 +339,11 @@ function Ticker({ league, items }) {
   )
 }
 
-// ─── BBL standings — mirrors BBLView's buildStandings/parseWinner exactly ─────
+// ─── Winner parsing — shared by BBL standings and BBL/Cricket weekly results ──
+// Both leagues come from CricAPI and share the same statusDetail phrasing
+// ("<Team> won by N wickets/runs"), so one parser covers both.
 
-function bblParseWinner(statusDetail, homeTeam, awayTeam) {
+function parseWinnerFromDetail(statusDetail, homeTeam, awayTeam) {
   if (!statusDetail) return null
   const d = statusDetail.toLowerCase()
   if (d.includes('no result') || d.includes('abandoned') || d.includes('cancelled')) return 'nr'
@@ -331,7 +362,7 @@ function computeBBLStandings(games, watchedIds) {
     if (g.status !== 'final' || !watchedIds.has(g.id)) continue
     const h = g.homeTeam.name, a = g.awayTeam.name
     pts[h] ??= 0; pts[a] ??= 0
-    const result = bblParseWinner(g.statusDetail, h, a)
+    const result = parseWinnerFromDetail(g.statusDetail, h, a)
     if (result === 'home')      { pts[h] += 2 }
     else if (result === 'away') { pts[a] += 2 }
     else                        { pts[h] += 1; pts[a] += 1 }
@@ -347,8 +378,8 @@ export default function HomeView() {
   const [trackedGame, setTrackedGame] = useState(null)
 
   const [states, setStates] = useState(() => {
-    const hasBBL = !!(ENV_BBL_KEY || localStorage.getItem('cricapi_key'))
-    const ids = [...FETCH_ORDER, ...(hasBBL ? ['bbl'] : [])]
+    const hasCricApiKey = !!(ENV_BBL_KEY || localStorage.getItem('cricapi_key'))
+    const ids = [...FETCH_ORDER, ...(hasCricApiKey ? ['bbl', 'cricket'] : [])]
     return Object.fromEntries(ids.map(id => [id, { games: [], loading: true, error: null }]))
   })
 
@@ -365,8 +396,14 @@ export default function HomeView() {
     load('nba', fetchNBAGames())
     load('nfl', fetchNFLGames())
     load('mls', fetchMLSGames())
-    const bblKey = ENV_BBL_KEY || localStorage.getItem('cricapi_key')
-    if (bblKey) load('bbl', fetchBBLGames(bblKey))
+    const cricApiKey = ENV_BBL_KEY || localStorage.getItem('cricapi_key')
+    if (cricApiKey) {
+      load('bbl', fetchBBLGames(cricApiKey))
+      // Tests are expanded into per-day rows — same spoiler-safe convention
+      // the Cricket tab's Matches queue uses — so a live/multi-day Test
+      // surfaces today's day-row instead of the whole match's status.
+      load('cricket', fetchIntlCricketGames(cricApiKey).then(({ games, updatedAt }) => ({ games: expandTestDays(games), updatedAt })))
+    }
   }, [])
 
   const bblStandings = useMemo(() => {
@@ -456,7 +493,7 @@ export default function HomeView() {
                 showDismissAction
                 trackedTeamId={hero.trackedTeamId}
               />
-              {hero.league === 'bbl' && (
+              {(hero.league === 'bbl' || (hero.league === 'cricket' && CRICKET_TRACKABLE.has(hero.game.matchType))) && (
                 <button
                   onClick={() => setTrackedGame(hero.game)}
                   className="absolute top-2 right-2 opacity-50 hover:opacity-100 transition-opacity flex items-center gap-1 text-[10px] font-bold px-2 py-1 rounded-lg text-amber-400 z-10"
@@ -512,7 +549,7 @@ export default function HomeView() {
                     trackedTeamId={trackedTeamId}
                     className="flex-1 h-full"
                   />
-                  {league === 'bbl' && (
+                  {(league === 'bbl' || (league === 'cricket' && CRICKET_TRACKABLE.has(game.matchType))) && (
                     <button
                       onClick={() => setTrackedGame(game)}
                       className="absolute top-2 right-2 opacity-50 hover:opacity-100 transition-opacity flex items-center gap-1 text-[10px] font-bold px-2 py-1 rounded-lg text-amber-400 z-10"
@@ -539,7 +576,7 @@ export default function HomeView() {
 
       {/* ── Per-league tickers (all except MLS) ──────────────────────────── */}
       {(() => {
-        const TICKER_LEAGUES = ['mlb', 'nba', 'nfl', 'bbl']
+        const TICKER_LEAGUES = ['mlb', 'nba', 'nfl', 'bbl', 'cricket']
         const byLeague = {}
         for (const id of TICKER_LEAGUES) {
           byLeague[id] = weekItems.filter(i => i.league === id)

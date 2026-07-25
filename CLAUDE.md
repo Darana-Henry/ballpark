@@ -72,7 +72,7 @@ All API modules normalize to this shape:
 
 Collection: `watchedGames`
 Document ID: `{league}_{gameId}` (e.g. `mlb_778556`)
-Fields: `{ watched, league, gameId, homeTeam, awayTeam, homeTeamId, awayTeamId, homeScore, awayScore, gameDate, status, gameType, updatedAt }`
+Fields: `{ watched, league, gameId, homeTeam, awayTeam, homeTeamId, awayTeamId, homeScore, awayScore, statusDetail, gameDate, status, gameType, updatedAt }`
 
 Firestore rules should allow read/write (personal use, no auth):
 ```

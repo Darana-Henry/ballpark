@@ -129,7 +129,7 @@ function QueueTab({ games, onTrack }) {
           </button>
           {showWatched && (
             <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-3 mt-2">
-              {watched.map(g => <TrackableCard key={g.id} game={g} onTrack={onTrack} />)}
+              {watched.map(g => <TrackableCard key={g.id} game={g} onTrack={onTrack} resultColor={getResult(g)} />)}
             </div>
           )}
         </div>
@@ -169,7 +169,7 @@ function WatchedTab({ games, onTrack }) {
             </div>
           </div>
           <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-3">
-            {watched.map(g => <TrackableCard key={g.id} game={g} onTrack={onTrack} />)}
+            {watched.map(g => <TrackableCard key={g.id} game={g} onTrack={onTrack} resultColor={getResult(g)} />)}
           </div>
         </>
       )}
@@ -204,6 +204,15 @@ function parseWinner(statusDetail, homeTeam, awayTeam) {
   const w = m[1].trim().toLowerCase()
   if (homeTeam.toLowerCase() === w || homeTeam.toLowerCase().includes(w)) return 'home'
   if (awayTeam.toLowerCase() === w || awayTeam.toLowerCase().includes(w)) return 'away'
+  return null
+}
+
+// No single followed BBL team, so the win/loss color is anchored to the
+// home team of each individual match instead of a tracked franchise.
+function getResult(game) {
+  const result = parseWinner(game.statusDetail, game.homeTeam.name, game.awayTeam.name)
+  if (result === 'home') return 'win'
+  if (result === 'away') return 'loss'
   return null
 }
 

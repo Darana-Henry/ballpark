@@ -39,6 +39,10 @@ export function useWatchedGames() {
       awayTeamId: game.awayTeam.id,
       homeScore: game.homeScore,
       awayScore: game.awayScore,
+      // Cricket winners aren't always the higher raw score (DLS, ties, no
+      // results), so statusDetail (e.g. "India won by 5 wickets") is stored
+      // alongside the score for leagues that need text-based result parsing.
+      statusDetail: game.statusDetail ?? null,
       gameDate: game.gameDate?.toISOString() || null,
       status: game.status,
       gameType: game.gameType,

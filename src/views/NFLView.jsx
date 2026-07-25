@@ -209,6 +209,13 @@ function NFLPlayoffBracket({ games, isProcessed }) {
   )
 }
 
+// No single followed NFL team, so the win/loss color is anchored to the
+// home team of each individual matchup instead of a tracked franchise.
+function getResult(game) {
+  if (game.homeScore === null || game.awayScore === null) return null
+  return game.homeScore > game.awayScore ? 'win' : game.homeScore < game.awayScore ? 'loss' : null
+}
+
 // ─── My Queue ─────────────────────────────────────────────────────────────────
 
 function QueueTab({ games }) {
@@ -280,7 +287,7 @@ function QueueTab({ games }) {
           </button>
           {showWatched && (
             <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-3 mt-2">
-              {watched.map(g => <GameCard key={g.id} game={g} />)}
+              {watched.map(g => <GameCard key={g.id} game={g} resultColor={getResult(g)} />)}
             </div>
           )}
         </div>
@@ -356,7 +363,7 @@ function WatchedTab({ games }) {
             <p className="text-xs text-slate-600">scores visible · toggle to unwatch</p>
           </div>
           <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-3">
-            {watched.map(g => <GameCard key={g.id} game={g} />)}
+            {watched.map(g => <GameCard key={g.id} game={g} resultColor={getResult(g)} />)}
           </div>
         </>
       )}

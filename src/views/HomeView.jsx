@@ -7,6 +7,7 @@ import { fetchIntlCricketGames } from '../api/intlCricket'
 import { expandTestDays } from '../utils/cricketDayRows'
 import GameCard from '../components/GameCard'
 import BoundaryTracker from '../components/BoundaryTracker'
+import FantasyDeadlineStrip from '../components/FantasyDeadlineStrip'
 import { useWatched } from '../contexts/WatchedContext'
 import { LEAGUE_MAP } from '../constants/leagues'
 
@@ -470,6 +471,8 @@ export default function HomeView() {
           }
         </p>
       </div>
+
+      <FantasyDeadlineStrip />
 
       {/* ── Split hero: left = next game, right = this week stats ─────────── */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">

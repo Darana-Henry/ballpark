@@ -69,6 +69,17 @@ function BarChartIcon() {
   )
 }
 
+function AlarmClockIcon() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="12" cy="13" r="8" />
+      <path d="M12 9v4l2.5 2.5" />
+      <path d="M5 3 2 6" />
+      <path d="M22 6 19 3" />
+    </svg>
+  )
+}
+
 export default function Sidebar({ activeLeague, onLeagueChange }) {
   return (
     <aside className="hidden md:flex flex-col w-60 shrink-0 h-screen sticky top-0" style={{ background: 'rgba(6,8,22,0.75)', backdropFilter: 'blur(24px)', WebkitBackdropFilter: 'blur(24px)', borderRight: '1px solid rgba(255,255,255,0.07)' }}>
@@ -119,6 +130,29 @@ export default function Sidebar({ activeLeague, onLeagueChange }) {
           />
         ))}
       </nav>
+
+      {/* Fantasy section */}
+      <div className="px-4 mt-5 mb-1">
+        <p className="text-[10px] font-semibold text-slate-600 uppercase tracking-widest">Fantasy</p>
+      </div>
+      <div className="px-3">
+        <button
+          onClick={() => onLeagueChange('deadlines')}
+          className={[
+            'flex items-center gap-3 w-full px-3 py-2.5 rounded-xl text-left transition-all duration-150',
+            activeLeague === 'deadlines'
+              ? 'bg-slate-800/80 text-slate-100'
+              : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/40',
+          ].join(' ')}
+        >
+          <div className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 ${activeLeague === 'deadlines' ? 'bg-slate-700' : 'bg-slate-800/60'}`}>
+            <AlarmClockIcon />
+          </div>
+          <span className={`text-sm font-semibold ${activeLeague === 'deadlines' ? 'text-slate-100' : 'text-slate-300'}`}>
+            Deadlines
+          </span>
+        </button>
+      </div>
 
       {/* Analytics section */}
       <div className="px-4 mt-5 mb-1">

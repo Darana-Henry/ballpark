@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo } from 'react'
-import { fetchIntlCricketGames, refreshIntlCricketGames } from '../api/intlCricket'
+import { fetchIntlCricketGames, refreshIntlCricketGames, NATIONS, NATION_ABBR } from '../api/intlCricket'
 import { fetchWTCGames, refreshWTCGames } from '../api/wtc'
-import { expandTestDays, isMatchWatched } from '../utils/cricketDayRows'
+import { expandTestDays, isMatchWatched, isMatchFullyWatched } from '../utils/cricketDayRows'
 import GameCard from '../components/GameCard'
 import BoundaryTracker from '../components/BoundaryTracker'
 import LoadingSpinner from '../components/LoadingSpinner'
@@ -68,6 +68,31 @@ function FormatPills({ active, onChange }) {
 function applyFormatFilter(games, format) {
   if (format === 'all') return games
   return games.filter(g => g.matchType === format)
+}
+
+// ─── Country filter ────────────────────────────────────────────────────────────
+// A dropdown rather than pills — 12 nations as pills would be a wall of
+// buttons, so this stays a single compact control per tab.
+
+function CountrySelect({ value, onChange, placeholder = 'All Countries' }) {
+  return (
+    <select
+      value={value}
+      onChange={e => onChange(e.target.value)}
+      className="px-3 py-1.5 rounded-full text-xs font-semibold bg-transparent text-slate-300 border border-slate-700/50 focus:outline-none focus:border-cyan-500/40 hover:border-slate-600 transition-colors cursor-pointer"
+      style={{ background: 'rgba(255,255,255,0.03)' }}
+    >
+      <option value="" className="bg-[#161622] text-slate-300">{placeholder}</option>
+      {NATIONS.map(n => (
+        <option key={n} value={n} className="bg-[#161622] text-slate-300">{n}</option>
+      ))}
+    </select>
+  )
+}
+
+function applyCountryFilter(games, country) {
+  if (!country) return games
+  return games.filter(g => g.homeTeam.name === country || g.awayTeam.name === country)
 }
 
 // No single followed nation, so the win/loss color is anchored to the home
@@ -225,7 +250,11 @@ const SERIES_SORT_ORDER = { live: 0, upcoming: 1, completed: 2, done: 2 }
 function SeriesTab({ games }) {
   const { watchedForLeague } = useWatched()
   const [format, setFormat] = useState('all')
-  const filtered = useMemo(() => applyFormatFilter(games, format), [games, format])
+  const [country, setCountry] = useState('')
+  const filtered = useMemo(
+    () => applyCountryFilter(applyFormatFilter(games, format), country),
+    [games, format, country]
+  )
   const cricketWatchedIds = useMemo(() => watchedForLeague('cricket').map(g => g.gameId), [watchedForLeague])
 
   const bySeries = useMemo(() => {
@@ -250,10 +279,13 @@ function SeriesTab({ games }) {
 
   return (
     <div className="flex flex-col gap-4">
-      <FormatPills active={format} onChange={setFormat} />
+      <div className="flex items-center justify-between gap-3 flex-wrap">
+        <FormatPills active={format} onChange={setFormat} />
+        <CountrySelect value={country} onChange={setCountry} />
+      </div>
 
       {bySeries.length === 0 && (
-        <EmptyState emoji="🏏" title="No series found" message="Try a different format filter or refresh." />
+        <EmptyState emoji="🏏" title="No series found" message="Try a different format or country filter, or refresh." />
       )}
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -273,9 +305,13 @@ function SeriesTab({ games }) {
 function MatchesTab({ games, onTrack }) {
   const { isWatched, isDismissed } = useWatched()
   const [format, setFormat] = useState('all')
+  const [country, setCountry] = useState('')
 
   const expanded = useMemo(() => expandTestDays(games), [games])
-  const filtered = useMemo(() => applyFormatFilter(expanded, format), [expanded, format])
+  const filtered = useMemo(
+    () => applyCountryFilter(applyFormatFilter(expanded, format), country),
+    [expanded, format, country]
+  )
 
   const { upNext, unwatched } = useMemo(() => {
     const live = filtered.filter(g => g.status === 'live' && !isDismissed(g.id, LEAGUE))
@@ -298,7 +334,10 @@ function MatchesTab({ games, onTrack }) {
 
   return (
     <div className="flex flex-col gap-4">
-      <FormatPills active={format} onChange={setFormat} />
+      <div className="flex items-center justify-between gap-3 flex-wrap">
+        <FormatPills active={format} onChange={setFormat} />
+        <CountrySelect value={country} onChange={setCountry} />
+      </div>
 
       {!upNext && unwatched.length === 0 && (
         <EmptyState emoji="✅" title="All caught up" message="No unwatched international matches in your queue." />
@@ -317,8 +356,8 @@ function MatchesTab({ games, onTrack }) {
                 Tests are split into one row per day, so you can watch and check them off without spoilers.
               </p>
               <div className="flex flex-wrap gap-1.5 mt-1">
-                {['ENG','SA','AUS','NZ','IND','PAK','WI','SL','BAN','ZIM','AFG','IRE'].map(a => (
-                  <span key={a} className="text-[10px] font-bold px-1.5 py-0.5 rounded text-slate-600 bg-slate-800/60">{a}</span>
+                {NATIONS.map(n => (
+                  <span key={n} className="text-[10px] font-bold px-1.5 py-0.5 rounded text-slate-600 bg-slate-800/60">{NATION_ABBR[n]}</span>
                 ))}
               </div>
             </div>
@@ -348,9 +387,13 @@ function MatchesTab({ games, onTrack }) {
 function WatchedTab({ games }) {
   const { isWatched } = useWatched()
   const [format, setFormat] = useState('all')
+  const [country, setCountry] = useState('')
 
   const expanded = useMemo(() => expandTestDays(games), [games])
-  const filtered = useMemo(() => applyFormatFilter(expanded, format), [expanded, format])
+  const filtered = useMemo(
+    () => applyCountryFilter(applyFormatFilter(expanded, format), country),
+    [expanded, format, country]
+  )
   const watchedFlat = useMemo(
     () => filtered.filter(g => isWatched(g.id, LEAGUE)),
     [filtered, isWatched]
@@ -377,7 +420,10 @@ function WatchedTab({ games }) {
 
   return (
     <div className="flex flex-col gap-4">
-      <FormatPills active={format} onChange={setFormat} />
+      <div className="flex items-center justify-between gap-3 flex-wrap">
+        <FormatPills active={format} onChange={setFormat} />
+        <CountrySelect value={country} onChange={setCountry} />
+      </div>
 
       {watchedFlat.length === 0 ? (
         <EmptyState emoji="✅" title="No watched matches yet" message="Mark matches as watched from the Matches tab." />
@@ -401,6 +447,103 @@ function WatchedTab({ games }) {
                 </div>
               </div>
             ))}
+          </div>
+        </>
+      )}
+    </div>
+  )
+}
+
+// ─── Results Log tab ────────────────────────────────────────────────────────────
+// Every match a selected country has played — past and upcoming — laid out
+// as the same GameCard grid as the Watched tab. Unlike Watched, unwatched
+// and future games still show up here (as plain, uncolored cards), but only
+// ones you've actually watched get win/loss colored relative to the
+// selected country. A Test only counts as watched once every one of its 5
+// day-rows is checked off (isMatchFullyWatched) — same spoiler-safe rule
+// used elsewhere — since GameCard's own isWatched check is keyed to
+// day-row ids for Tests, not the whole match's id, forceWatched is what
+// actually reveals the score/win-loss styling once that gate passes.
+
+function countryResultColor(game, country) {
+  const countryWon = (game.homeTeam.name === country && game.homeWon) ||
+                      (game.awayTeam.name === country && game.awayWon)
+  if (countryWon) return 'win'
+  const countryLost = (game.homeTeam.name === country && game.awayWon) ||
+                       (game.awayTeam.name === country && game.homeWon)
+  return countryLost ? 'loss' : null
+}
+
+function RecordBadge({ wins, losses }) {
+  return (
+    <div className="inline-flex items-center gap-1.5 rounded-xl px-4 py-2 w-fit"
+      style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.08)' }}>
+      <span className="text-slate-100 font-bold text-lg tabular-nums">{wins}</span>
+      <span className="text-slate-500 text-sm font-semibold">W</span>
+      <span className="text-slate-700">·</span>
+      <span className="text-red-400 font-bold text-lg tabular-nums">{losses}</span>
+      <span className="text-slate-500 text-sm font-semibold">L</span>
+    </div>
+  )
+}
+
+function ResultsLogTab({ games }) {
+  const { watchedForLeague } = useWatched()
+  const [format, setFormat] = useState('all')
+  const [country, setCountry] = useState('')
+  const cricketWatchedIds = useMemo(() => watchedForLeague('cricket').map(g => g.gameId), [watchedForLeague])
+
+  const countryGames = useMemo(() => {
+    if (!country) return []
+    return applyFormatFilter(
+      games.filter(g => g.homeTeam.name === country || g.awayTeam.name === country),
+      format
+    ).sort((a, b) => a.gameDate - b.gameDate)
+  }, [games, country, format])
+
+  const record = useMemo(() => {
+    let wins = 0, losses = 0
+    for (const g of countryGames) {
+      if (g.status !== 'final' || !isMatchFullyWatched(g, cricketWatchedIds)) continue
+      const result = countryResultColor(g, country)
+      if (result === 'win') wins++
+      else if (result === 'loss') losses++
+    }
+    return { wins, losses }
+  }, [countryGames, cricketWatchedIds, country])
+
+  return (
+    <div className="flex flex-col gap-4">
+      <div className="flex items-center justify-between gap-3 flex-wrap">
+        <FormatPills active={format} onChange={setFormat} />
+        <CountrySelect value={country} onChange={setCountry} />
+      </div>
+
+      {!country && (
+        <EmptyState emoji="🏆" title="Pick a country"
+          message="Select a nation above to see every match they've played — the ones you've watched are revealed in color." />
+      )}
+
+      {country && countryGames.length === 0 && (
+        <EmptyState emoji="🏆" title="No matches found" message={`No ${country} matches loaded yet.`} />
+      )}
+
+      {countryGames.length > 0 && (
+        <>
+          <RecordBadge wins={record.wins} losses={record.losses} />
+          <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-3">
+            {countryGames.map(g => {
+              const revealed = g.status === 'final' && isMatchFullyWatched(g, cricketWatchedIds)
+              return (
+                <GameCard
+                  key={g.id}
+                  game={g}
+                  resultColor={revealed ? countryResultColor(g, country) : null}
+                  forceWatched={revealed}
+                  readOnly
+                />
+              )
+            })}
           </div>
         </>
       )}
@@ -633,10 +776,11 @@ function StandingsTab({ apiKey }) {
 // ─── Main ──────────────────────────────────────────────────────────────────────
 
 const TABS = [
-  { id: 'series',    label: 'Series'    },
-  { id: 'matches',   label: 'Matches'   },
-  { id: 'watched',   label: 'Watched'   },
-  { id: 'standings', label: 'Standings' },
+  { id: 'series',    label: 'Series'      },
+  { id: 'matches',   label: 'Matches'     },
+  { id: 'watched',   label: 'Watched'     },
+  { id: 'results',   label: 'Results Log' },
+  { id: 'standings', label: 'Standings'   },
 ]
 
 const ENV_KEY = import.meta.env.VITE_CRICAPI_KEY || ''
@@ -818,6 +962,7 @@ export default function IntlCricketView() {
       {!loading && !error && tab === 'series'    && games.length > 0 && <SeriesTab games={games} />}
       {!loading && !error && tab === 'matches'   && games.length > 0 && <MatchesTab games={games} onTrack={setTrackedGame} />}
       {!loading && !error && tab === 'watched'   && games.length > 0 && <WatchedTab games={games} />}
+      {!loading && !error && tab === 'results'   && games.length > 0 && <ResultsLogTab games={games} />}
       {!loading && !error && tab === 'standings' && <StandingsTab apiKey={apiKey} />}
 
       {trackedGame && (

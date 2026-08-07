@@ -112,9 +112,14 @@ function DismissButton({ dismissed, onToggle, dismissing }) {
 // resultColor: 'win' | 'loss' | null — used in Watched tab
 // showDismissAction: show the dismiss/un-dismiss X button
 // trackedTeamId: used by hero card to compute Home/Away badge
-export default function GameCard({ game, isUpNext = false, resultColor = null, showDismissAction = false, trackedTeamId = null, className = '' }) {
+// forceWatched: treat the card as watched without an isWatched(game.id, ...)
+//   match — needed for Tests in the Results Log, where "watched" is tracked
+//   per day-row id, not the whole match's own id.
+// readOnly: suppress the watched-toggle/dismiss controls entirely (Results
+//   Log is a history view, not a queue you manage from).
+export default function GameCard({ game, isUpNext = false, resultColor = null, showDismissAction = false, trackedTeamId = null, className = '', forceWatched = false, readOnly = false }) {
   const { isWatched, toggleWatched, isDismissed, toggleDismissed } = useWatched()
-  const watched = isWatched(game.id, game.league)
+  const watched = forceWatched || isWatched(game.id, game.league)
   const dismissed = isDismissed(game.id, game.league)
   const league = LEAGUE_MAP[game.league]
   const [toggling, setToggling] = useState(false)
@@ -124,8 +129,8 @@ export default function GameCard({ game, isUpNext = false, resultColor = null, s
   // Never reveal a score — live or final — until the user has marked the
   // game watched. They watch on delay and don't want anything spoiled.
   const showScore = !dismissed && watched
-  const canToggle = isFirebaseConfigured && game.status === 'final' && !dismissed
-  const canDismiss = showDismissAction && isFirebaseConfigured && game.status !== 'live' && !watched
+  const canToggle = !readOnly && isFirebaseConfigured && game.status === 'final' && !dismissed
+  const canDismiss = !readOnly && showDismissAction && isFirebaseConfigured && game.status !== 'live' && !watched
   const showHighlight = !dismissed && game.status === 'final' && game.highlightUrl
   const hasPitchers = !dismissed && (game.probablePitchers?.away || game.probablePitchers?.home)
 

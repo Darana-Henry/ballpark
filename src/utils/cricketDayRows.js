@@ -1,4 +1,4 @@
-const DAYS_PER_TEST = 5
+export const DAYS_PER_TEST = 5
 
 function sameCalendarDay(a, b) {
   return a.toDateString() === b.toDateString()
@@ -66,6 +66,18 @@ export function expandTestDays(games, today = new Date()) {
 export function isMatchWatched(match, cricketWatchedIds) {
   if (match.matchType === 'test') {
     return cricketWatchedIds.some(id => id.startsWith(`${match.id}_d`))
+  }
+  return cricketWatchedIds.includes(match.id)
+}
+
+// Stricter than isMatchWatched: a Test only counts once EVERY day-row has
+// been checked off, not just one. Used by the Results Log tab, where the
+// point is to reveal the actual result sentence — a match you've only
+// partly watched shouldn't have its outcome spoiled.
+export function isMatchFullyWatched(match, cricketWatchedIds) {
+  if (match.matchType === 'test') {
+    return Array.from({ length: DAYS_PER_TEST }, (_, i) => `${match.id}_d${i + 1}`)
+      .every(id => cricketWatchedIds.includes(id))
   }
   return cricketWatchedIds.includes(match.id)
 }

@@ -10,12 +10,16 @@ const INTL_NATIONS = new Set([
   'Bangladesh', 'Zimbabwe', 'Afghanistan', 'Ireland',
 ])
 
-const NATION_ABBR = {
+export const NATION_ABBR = {
   'England':      'ENG', 'South Africa': 'SA',  'Australia':    'AUS',
   'New Zealand':  'NZ',  'India':        'IND', 'Pakistan':     'PAK',
   'West Indies':  'WI',  'Sri Lanka':    'SL',  'Bangladesh':   'BAN',
   'Zimbabwe':     'ZIM', 'Afghanistan':  'AFG', 'Ireland':      'IRE',
 }
+
+// Ordered list of the 12 Full Member nations this tab tracks — exported so
+// views can build a country filter dropdown without re-declaring the list.
+export const NATIONS = [...INTL_NATIONS]
 
 const NATION_COLORS = {
   'England':      '#3b82f6', 'South Africa': '#16a34a', 'Australia':    '#f59e0b',

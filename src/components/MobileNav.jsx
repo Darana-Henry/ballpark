@@ -3,6 +3,7 @@ import { LEAGUES } from '../constants/leagues'
 const ALL_TABS = [
   { id: 'home', name: 'Home', emoji: '🏠' },
   ...LEAGUES,
+  { id: 'deadlines', name: 'Deadlines', emoji: '⏰' },
   { id: 'stats', name: 'Stats', emoji: '📊' },
 ]
 

@@ -120,4 +120,27 @@ export const FANTASY_DEADLINES = {
     { round: 37, label: 'Gameweek 37', deadline: d(2027, 5, 23, 18, 0) },
     { round: 38, label: 'Gameweek 38', deadline: d(2027, 5, 30, 19, 0) },
   ],
+
+  // 2026/27 UCL league-phase/knockout dates only — kickoff times aren't
+  // announced yet, so every entry below is dated at 00:00. Update with real
+  // deadline times once UEFA publishes them.
+  championsLeague: [
+    { round: 1, label: 'Matchday 1', deadline: d(2026, 9, 8, 0, 0) },
+    { round: 2, label: 'Matchday 2', deadline: d(2026, 10, 13, 0, 0) },
+    { round: 3, label: 'Matchday 3', deadline: d(2026, 10, 20, 0, 0) },
+    { round: 4, label: 'Matchday 4', deadline: d(2026, 11, 3, 0, 0) },
+    { round: 5, label: 'Matchday 5', deadline: d(2026, 11, 24, 0, 0) },
+    { round: 6, label: 'Matchday 6', deadline: d(2026, 12, 8, 0, 0) },
+    { round: 7, label: 'Matchday 7', deadline: d(2027, 1, 19, 0, 0) },
+    { round: 8, label: 'Matchday 8', deadline: d(2027, 1, 27, 0, 0) },
+    { round: 9, label: 'Knockout Play-offs (1st leg)', deadline: d(2027, 2, 16, 0, 0) },
+    { round: 10, label: 'Knockout Play-offs (2nd leg)', deadline: d(2027, 2, 23, 0, 0) },
+    { round: 11, label: 'Round of 16 (1st leg)', deadline: d(2027, 3, 9, 0, 0) },
+    { round: 12, label: 'Round of 16 (2nd leg)', deadline: d(2027, 3, 16, 0, 0) },
+    { round: 13, label: 'Quarter-finals (1st leg)', deadline: d(2027, 4, 6, 0, 0) },
+    { round: 14, label: 'Quarter-finals (2nd leg)', deadline: d(2027, 4, 13, 0, 0) },
+    { round: 15, label: 'Semi-finals (1st leg)', deadline: d(2027, 4, 27, 0, 0) },
+    { round: 16, label: 'Semi-finals (2nd leg)', deadline: d(2027, 5, 4, 0, 0) },
+    { round: 17, label: 'Final', deadline: d(2027, 6, 5, 0, 0) },
+  ],
 }

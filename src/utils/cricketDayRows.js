@@ -43,7 +43,7 @@ export function buildTestDayRows(match, today = new Date()) {
       statusDetail: isFuture ? 'Upcoming' : isToday ? 'Live now' : 'Day complete',
       gameDate: dayDate,
       dateRange: null,
-      gameType: `Test · Day ${n}`,
+      gameType: `${match.gameType} · Day ${n}`,
       difficulty: null,
       seriesLabel: match.seriesLabel,
       highlightUrl: null,

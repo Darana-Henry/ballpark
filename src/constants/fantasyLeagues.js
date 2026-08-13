@@ -67,6 +67,19 @@ export const FANTASY_LEAGUES = [
     badgeClass: 'bg-teal-500/20 text-teal-400 border border-teal-500/30',
     iconBg: 'bg-white',
   },
+  {
+    id: 'championsLeague',
+    name: 'Champions League Fantasy',
+    emoji: '⭐',
+    logoUrl: 'https://upload.wikimedia.org/wikipedia/en/f/f5/UEFA_Champions_League.svg',
+    type: 'static',
+    accentColor: '#3b82f6',
+    accentClass: 'bg-blue-600',
+    borderClass: 'border-l-blue-500',
+    textClass: 'text-blue-400',
+    badgeClass: 'bg-blue-500/20 text-blue-400 border border-blue-500/30',
+    iconBg: 'bg-white',
+  },
 ]
 
 export const FANTASY_LEAGUE_MAP = Object.fromEntries(FANTASY_LEAGUES.map(l => [l.id, l]))

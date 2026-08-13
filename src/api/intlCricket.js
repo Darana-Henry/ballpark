@@ -206,6 +206,20 @@ function extractSeriesLabel(name) {
   return stripped || name
 }
 
+// CricAPI encodes which match-in-the-series this is directly in the raw name
+// (e.g. "New Zealand tour of India, 2026, 2nd ODI") — the same trailing
+// segment extractSeriesLabel() strips off above. Captures just the ordinal
+// token ("2nd", "Only") so the format badge can show "2nd ODI"/"Only Test"
+// instead of a flat "ODI"/"Test Match". Returns null for match names that
+// don't carry this pattern (tournament fixtures like "5th Match, Group A"),
+// so the caller falls back to the generic label.
+function extractMatchOrdinal(name) {
+  if (!name) return null
+  if (/,\s*Only\s+(?:Test|ODI|T20I)\s*$/i.test(name)) return 'Only'
+  const m = name.match(/,\s*(\d+(?:st|nd|rd|th))\s+(?:Test|ODI|T20I)\s*$/i)
+  return m ? m[1] : null
+}
+
 function normalizeMatch(match, seriesLabelOverride) {
   const teams = match.teams || []
   if (teams.length < 2) return null
@@ -238,7 +252,9 @@ function normalizeMatch(match, seriesLabelOverride) {
 
   const gameDate = new Date(match.dateTimeGMT || match.date || Date.now())
 
-  const gameTypeLabel = isTest ? 'Test Match' : matchType === 'odi' ? 'ODI' : 'T20I'
+  const formatWord = isTest ? 'Test' : matchType === 'odi' ? 'ODI' : 'T20I'
+  const matchOrdinal = extractMatchOrdinal(match.name)
+  const gameTypeLabel = matchOrdinal ? `${matchOrdinal} ${formatWord}` : (isTest ? 'Test Match' : formatWord)
 
   // Show a date range for scheduled/live tests (up to 5 days)
   const dateRange = isTest && !isFinal ? formatDateRange(gameDate) : null
@@ -285,6 +301,20 @@ function normalizeMatch(match, seriesLabelOverride) {
     highlightUrl,
     venue:        match.venue || null,
   }
+}
+
+// Re-derives just the gameType badge for an already-cached finished match,
+// using the match name from this refresh's series_info listing (already
+// fetched — costs no extra API call). Cached matches skip normalizeMatch()
+// entirely to avoid re-spending match_info quota on scores that never
+// change, so this is what lets old cache entries pick up ordinal labeling
+// added after they were first stored, without a full re-hydrate.
+function relabelCachedMatch(cached, rawName) {
+  const ordinal = extractMatchOrdinal(rawName)
+  if (!ordinal) return cached
+  const formatWord = cached.matchType === 'test' ? 'Test' : cached.matchType === 'odi' ? 'ODI' : 'T20I'
+  const gameType = `${ordinal} ${formatWord}`
+  return gameType === cached.gameType ? cached : { ...cached, gameType }
 }
 
 // ─── Series discovery & resolution ─────────────────────────────────────────────
@@ -440,7 +470,7 @@ async function fetchFromAPI(apiKey, { existingGames = [] } = {}) {
 
   const freshGames = allStubs
     .map(({ stub, seriesLabel }) => {
-      if (scoredMap[stub.id]) return scoredMap[stub.id]
+      if (scoredMap[stub.id]) return relabelCachedMatch(scoredMap[stub.id], stub.name)
       return normalizeMatch(hydrated[stub.id] || stub, seriesLabel)
     })
     .filter(Boolean)

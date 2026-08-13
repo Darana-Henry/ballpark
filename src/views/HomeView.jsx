@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo } from 'react'
 import { fetchMLBGames } from '../api/mlb'
 import { fetchNBAGames, fetchNFLGames } from '../api/espn'
 import { fetchMLSGames } from '../api/mls'
+import { fetchEPLGames } from '../api/epl'
 import { fetchBBLGames } from '../api/bbl'
 import { fetchIntlCricketGames } from '../api/intlCricket'
 import { expandTestDays } from '../utils/cricketDayRows'
@@ -26,6 +27,7 @@ const LEAGUE_LABELS = {
   mls: 'MLS · Inter Miami',
   bbl: 'BBL',
   cricket: 'Cricket',
+  epl: 'EPL · Man Utd',
 }
 
 const LEAGUE_COLORS = {
@@ -35,6 +37,7 @@ const LEAGUE_COLORS = {
   mls: 'text-pink-400',
   bbl: 'text-amber-400',
   cricket: 'text-cyan-400',
+  epl: 'text-red-400',
 }
 
 const LEAGUE_DOT_BG = {
@@ -44,6 +47,7 @@ const LEAGUE_DOT_BG = {
   mls: 'bg-pink-500',
   bbl: 'bg-amber-500',
   cricket: 'bg-cyan-500',
+  epl: 'bg-red-500',
 }
 
 const LEAGUE_BORDER = {
@@ -53,10 +57,11 @@ const LEAGUE_BORDER = {
   mls: 'border-l-pink-500',
   bbl: 'border-l-amber-500',
   cricket: 'border-l-cyan-500',
+  epl: 'border-l-red-500',
 }
 
-const TRACKED_TEAM = { mlb: '119', nba: '13', mls: '20232' }
-const FETCH_ORDER  = ['mlb', 'nba', 'mls', 'nfl']
+const TRACKED_TEAM = { mlb: '119', nba: '13', mls: '20232', epl: '360' }
+const FETCH_ORDER  = ['mlb', 'nba', 'mls', 'nfl', 'epl']
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -121,6 +126,7 @@ function logoUrl(league, teamId) {
   if (league === 'nba') return `https://a.espncdn.com/i/teamlogos/nba/500/${teamId}.png`
   if (league === 'nfl') return `https://a.espncdn.com/i/teamlogos/nfl/500/${teamId}.png`
   if (league === 'mls') return `https://a.espncdn.com/i/teamlogos/soccer/500/${teamId}.png`
+  if (league === 'epl') return `https://a.espncdn.com/i/teamlogos/soccer/500/${teamId}.png`
   return null
 }
 
@@ -397,6 +403,7 @@ export default function HomeView() {
     load('nba', fetchNBAGames())
     load('nfl', fetchNFLGames())
     load('mls', fetchMLSGames())
+    load('epl', fetchEPLGames())
     const cricApiKey = ENV_BBL_KEY || localStorage.getItem('cricapi_key')
     if (cricApiKey) {
       load('bbl', fetchBBLGames(cricApiKey))

@@ -59,6 +59,15 @@ function normalizeEvent(event, league) {
 
 const NBA_LAKERS_ID = '13'
 
+// ESPN labels an NBA season by the year it ENDS, so 2026-27 is season=2027.
+// Roll over in August, when the new schedule is published, rather than at
+// tip-off in October — otherwise Aug/Sep requests ask for the season that
+// just finished and the app shows a stale, fully-played schedule.
+function getNBASeason() {
+  const now = new Date()
+  return now.getMonth() >= 7 ? now.getFullYear() + 1 : now.getFullYear()
+}
+
 function nbaYoutubeUrl(awayName, homeName, gameDate) {
   const away = awayName.split(' ').pop()
   const home = homeName.split(' ').pop()
@@ -68,8 +77,7 @@ function nbaYoutubeUrl(awayName, homeName, gameDate) {
 
 // Lakers full season + all playoff games
 export async function fetchNBAGames() {
-  const currentYear = new Date().getFullYear()
-  const season = new Date().getMonth() >= 9 ? currentYear + 1 : currentYear
+  const season = getNBASeason()
 
   const [regularData, playoffEventsRaw, scoreboardData, standings] = await Promise.all([
     fetchESPN(`basketball/nba/teams/${NBA_LAKERS_ID}/schedule`, { season, seasontype: 2 }),
@@ -147,15 +155,25 @@ const NBA_DIV_CONF = {
 }
 const NBA_DIV_ORDER = ['Atlantic', 'Central', 'Southeast', 'Northwest', 'Pacific', 'Southwest']
 
-export async function fetchNBAStandings() {
-  const currentYear = new Date().getFullYear()
-  const season = new Date().getMonth() >= 9 ? currentYear + 1 : currentYear
-
+async function fetchNBAStandingsForSeason(season) {
   const res = await fetch(
     `https://site.api.espn.com/apis/v2/sports/basketball/nba/standings?season=${season}&seasontype=2`
   )
   if (!res.ok) throw new Error(`NBA standings error ${res.status}`)
-  const data = await res.json()
+  return res.json()
+}
+
+const standingsHasEntries = data =>
+  (data?.children ?? []).some(conf => (conf.standings?.entries ?? []).length > 0)
+
+export async function fetchNBAStandings() {
+  // A season that hasn't tipped off yet has a standings table with no entries,
+  // which would leave every opponent unrated between August and October. Fall
+  // back to the last completed season so preseason difficulty still means
+  // something.
+  const season = getNBASeason()
+  let data = await fetchNBAStandingsForSeason(season)
+  if (!standingsHasEntries(data)) data = await fetchNBAStandingsForSeason(season - 1)
 
   const parseStat = (stats, name) => stats?.find(s => s.name === name)?.value ?? 0
 

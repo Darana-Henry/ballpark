@@ -1,4 +1,4 @@
-const BASE = 'https://site.api.espn.com/apis/site/v2/sports/soccer'
+import { fetchScoreboardMonths } from './espnDates'
 
 // A new matchday starts once the gap since the previous fixture exceeds this
 // — real matchdays cluster within a Fri-Mon window (hours apart), while the
@@ -14,13 +14,9 @@ function getSeason() {
 
 async function fetchSeasonEvents(slug) {
   const season = getSeason()
-  const start = `${season}0701`
-  const end = `${season + 1}0701`
   try {
-    const res = await fetch(`${BASE}/${slug}/scoreboard?dates=${start}-${end}&limit=400`)
-    if (!res.ok) return []
-    const data = await res.json()
-    return (data.events ?? [])
+    const events = await fetchScoreboardMonths(`soccer/${slug}`, `${season}0701`, `${season + 1}0630`)
+    return events
       .map(e => new Date(e.date))
       .sort((a, b) => a - b)
   } catch {

@@ -1,4 +1,5 @@
 import { getDifficultyRating } from '../utils/difficulty'
+import { fetchScoreboardMonths } from './espnDates'
 
 const BASE = 'https://site.api.espn.com/apis/site/v2/sports'
 
@@ -70,12 +71,11 @@ export async function fetchNBAGames() {
   const currentYear = new Date().getFullYear()
   const season = new Date().getMonth() >= 9 ? currentYear + 1 : currentYear
 
-  // Playoffs run Apr–Jun of the season end year; date range gets all played + upcoming games
-  const playoffDates = `${season}0401-${season}0715`
-
-  const [regularData, playoffData, scoreboardData, standings] = await Promise.all([
+  const [regularData, playoffEventsRaw, scoreboardData, standings] = await Promise.all([
     fetchESPN(`basketball/nba/teams/${NBA_LAKERS_ID}/schedule`, { season, seasontype: 2 }),
-    fetchESPN('basketball/nba/scoreboard', { seasontype: 3, dates: playoffDates, limit: 500 }).catch(() => ({ events: [] })),
+    // Playoffs run Apr–Jun of the season end year; sweeping the months picks
+    // up played and upcoming games alike.
+    fetchScoreboardMonths('basketball/nba', `${season}0401`, `${season}0715`),
     fetchESPN('basketball/nba/scoreboard', { limit: 100 }).catch(() => ({ events: [] })),
     fetchNBAStandings().catch(() => null),
   ])
@@ -91,7 +91,7 @@ export async function fetchNBAGames() {
   // season.type: 2=regular, 3=postseason, 5=play-in
   const isPostseason = e => e.season?.type === 3 || e.season?.type === 5
 
-  const playoffEvents = (playoffData.events || []).filter(isPostseason)
+  const playoffEvents = playoffEventsRaw.filter(isPostseason)
 
   // From live scoreboard: keep Lakers regular season games (live scores) + any postseason
   const liveEvents = (scoreboardData.events || []).filter(e => {
@@ -306,14 +306,14 @@ export async function fetchNFLGames() {
   // ESPN's scoreboard endpoint silently ignores season+week params for a
   // season that hasn't "started" per its own internal clock — season=2026,
   // 2027, even 2020 all returned the same stale, already-concluded season
-  // regardless of the value passed. Querying by date range instead reliably
-  // returns the real, current data, and covers the whole season (preseason
-  // through Super Bowl) in a single call instead of 23 separate ones.
-  const start = `${seasonStartYear}0801`
-  const end   = `${seasonStartYear + 1}0301`
-  const events = await fetchESPN('football/nfl/scoreboard', { dates: `${start}-${end}`, limit: 500 })
-    .then(d => d.events || [])
-    .catch(() => [])
+  // regardless of the value passed. Querying by date instead reliably returns
+  // the real, current data, and one Aug–Mar sweep covers the whole season,
+  // preseason through Super Bowl, instead of 23 separate week queries.
+  const events = await fetchScoreboardMonths(
+    'football/nfl',
+    `${seasonStartYear}0801`,
+    `${seasonStartYear + 1}0301`,
+  )
 
   const seen = new Set()
 

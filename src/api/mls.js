@@ -1,6 +1,6 @@
 import { getDifficultyRating } from '../utils/difficulty'
+import { fetchScoreboardMonths } from './espnDates'
 
-const BASE_SOCCER = 'https://site.api.espn.com/apis/site/v2/sports/soccer'
 export const INTER_MIAMI_ID = '20232'
 
 function youtubeUrl(awayName, homeName, date, competition) {
@@ -66,10 +66,8 @@ function normalizeEvent(event, overrideGameType, teamStandingsMap) {
 
 async function fetchGamesForSlug(slug, startDate, endDate, overrideGameType = null, teamStandingsMap = null) {
   try {
-    const res  = await fetch(`${BASE_SOCCER}/${slug}/scoreboard?dates=${startDate}-${endDate}&limit=300`)
-    if (!res.ok) return []
-    const data = await res.json()
-    return (data.events ?? [])
+    const events = await fetchScoreboardMonths(`soccer/${slug}`, startDate, endDate)
+    return events
       .filter(e => e.competitions?.[0]?.competitors?.some(c => c.team?.id === INTER_MIAMI_ID))
       .map(e => normalizeEvent(e, overrideGameType, teamStandingsMap))
       .filter(Boolean)

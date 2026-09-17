@@ -1,6 +1,6 @@
 import { getDifficultyRating } from '../utils/difficulty'
+import { fetchScoreboardMonths } from './espnDates'
 
-const BASE = 'https://site.api.espn.com/apis/site/v2/sports/soccer'
 export const MAN_UNITED_ID = '360'
 
 const COMPETITIONS = [
@@ -81,10 +81,8 @@ function normalizeEvent(event, competitionName, teamStandingsMap) {
 
 async function fetchCompetitionGames(slug, startDate, endDate, competitionName, teamStandingsMap) {
   try {
-    const res = await fetch(`${BASE}/${slug}/scoreboard?dates=${startDate}-${endDate}&limit=300`)
-    if (!res.ok) return []
-    const data = await res.json()
-    return (data.events ?? [])
+    const events = await fetchScoreboardMonths(`soccer/${slug}`, startDate, endDate)
+    return events
       .filter(e => e.competitions?.[0]?.competitors?.some(c => c.team?.id === MAN_UNITED_ID))
       .map(e => normalizeEvent(e, competitionName, teamStandingsMap))
       .filter(Boolean)

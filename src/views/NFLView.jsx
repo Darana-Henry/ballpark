@@ -9,6 +9,7 @@ import { useWatched } from '../contexts/WatchedContext'
 import { getSeasonYear, getAvailableSeasons } from '../utils/season'
 import { NFL_TEAMS, NFL_DIVISION_ORDER, nflLogo } from '../constants/nflTeams'
 import { fetchNFLTeamRanks } from '../api/nfl'
+import NFLQuarterbackHistory from '../components/NFLQuarterbackHistory'
 
 
 function getNFLPlayoffRound(gameType, gameDate) {
@@ -613,6 +614,7 @@ const TABS = [
   { id: 'standings', label: 'Standings'   },
   { id: 'playoffs',  label: 'Playoffs'    },
   { id: 'stats',     label: 'Stats'       },
+  { id: 'qbs',       label: 'Quarterbacks'},
 ]
 
 export default function NFLView() {
@@ -676,6 +678,7 @@ export default function NFLView() {
       {tab === 'standings' && <StandingsTab games={games} />}
       {tab === 'playoffs'  && <NFLBracketTab games={games} />}
       {tab === 'stats'     && <StatsTab />}
+      {tab === 'qbs'       && <NFLQuarterbackHistory />}
     </div>
   )
 }

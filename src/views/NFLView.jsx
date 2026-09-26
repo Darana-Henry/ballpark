@@ -615,13 +615,18 @@ function NFLBracketTab({ games }) {
 
 // ─── Main ─────────────────────────────────────────────────────────────────────
 
+// Stats is on hold. With no tab entry there is no way to select it, so
+// StatsTab never mounts and fetchNFLStatsFromWatchedGames is never called.
+// Flip this to bring the tab back.
+const SHOW_STATS_TAB = false
+
 const TABS = [
   { id: 'queue',     label: 'My Queue'    },
   { id: 'all',       label: 'All Games'   },
   { id: 'watched',   label: 'Watched'     },
   { id: 'standings', label: 'Standings'   },
   { id: 'playoffs',  label: 'Playoffs'    },
-  { id: 'stats',     label: 'Stats'       },
+  ...(SHOW_STATS_TAB ? [{ id: 'stats', label: 'Stats', view: StatsTab }] : []),
   { id: 'leaders',   label: 'Leaders'     },
   { id: 'form',      label: 'Performance' },
   { id: 'qbs',       label: 'Quarterbacks'},
@@ -701,7 +706,6 @@ export default function NFLView() {
       {!loading && !error && tab === 'watched'   && <WatchedTab games={games} ranks={ranks} form={form} />}
       {tab === 'standings' && <StandingsTab games={games} />}
       {tab === 'playoffs'  && <NFLBracketTab games={games} />}
-      {tab === 'stats'     && <StatsTab />}
       {tab === 'leaders'   && <NFLLeagueLeaders teamAbbrById={teamAbbrById} />}
       {tab === 'form'      && <NFLPerformanceHistory games={games} teamIdByAbbr={teamIdByAbbr} season={season} />}
       {tab === 'qbs'       && <NFLQuarterbackHistory />}

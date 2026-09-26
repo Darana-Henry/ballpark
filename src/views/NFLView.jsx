@@ -13,6 +13,7 @@ import { fetchNFLTeamRanks } from '../api/nfl'
 import NFLLeagueLeaders from '../components/NFLLeagueLeaders'
 import NFLQuarterbackHistory from '../components/NFLQuarterbackHistory'
 import NFLWeekFilter from '../components/NFLWeekFilter'
+import NFLPerformanceHistory from '../components/NFLPerformanceHistory'
 import { buildFormByTeam } from '../utils/teamForm'
 import { getNFLSeason } from '../api/nfl'
 
@@ -622,6 +623,7 @@ const TABS = [
   { id: 'playoffs',  label: 'Playoffs'    },
   { id: 'stats',     label: 'Stats'       },
   { id: 'leaders',   label: 'Leaders'     },
+  { id: 'form',      label: 'Performance' },
   { id: 'qbs',       label: 'Quarterbacks'},
 ]
 
@@ -638,6 +640,10 @@ export default function NFLView() {
   // Form is derived from watched games only, so it costs no request and can
   // never show a result the user hasn't marked.
   const form = useMemo(() => buildFormByTeam(watchedGames, 'nfl', season), [watchedGames, season])
+  const teamIdByAbbr = useMemo(
+    () => Object.fromEntries(Object.entries(teamAbbrById ?? {}).map(([id, abbr]) => [abbr, id])),
+    [teamAbbrById]
+  )
 
   useEffect(() => {
     fetchNFLGames()
@@ -697,6 +703,7 @@ export default function NFLView() {
       {tab === 'playoffs'  && <NFLBracketTab games={games} />}
       {tab === 'stats'     && <StatsTab />}
       {tab === 'leaders'   && <NFLLeagueLeaders teamAbbrById={teamAbbrById} />}
+      {tab === 'form'      && <NFLPerformanceHistory games={games} teamIdByAbbr={teamIdByAbbr} season={season} />}
       {tab === 'qbs'       && <NFLQuarterbackHistory />}
     </div>
   )

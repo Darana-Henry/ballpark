@@ -11,6 +11,8 @@ import BoundaryTracker from '../components/BoundaryTracker'
 import FantasyDeadlineStrip from '../components/FantasyDeadlineStrip'
 import { useWatched } from '../contexts/WatchedContext'
 import { LEAGUE_MAP } from '../constants/leagues'
+import { fetchNFLTeamRanks, getNFLSeason } from '../api/nfl'
+import { buildFormByTeam } from '../utils/teamForm'
 
 const ENV_BBL_KEY = import.meta.env.VITE_CRICAPI_KEY || ''
 
@@ -383,6 +385,15 @@ function computeBBLStandings(games, watchedIds) {
 export default function HomeView() {
   const { isWatched, isDismissed, watchedGames, watchedForLeague } = useWatched()
   const [trackedGame, setTrackedGame] = useState(null)
+  const [nflRanks, setNflRanks] = useState(null)
+
+  // Home shows a card per league, so rankings are looked up by league. Only the
+  // NFL publishes one today; other leagues pass null and render as before.
+  useEffect(() => {
+    fetchNFLTeamRanks()
+      .then(({ rankByTeamId }) => setNflRanks(rankByTeamId))
+      .catch(() => {})
+  }, [])
 
   const [states, setStates] = useState(() => {
     const hasCricApiKey = !!(ENV_BBL_KEY || localStorage.getItem('cricapi_key'))
@@ -413,6 +424,13 @@ export default function HomeView() {
       load('cricket', fetchIntlCricketGames(cricApiKey).then(({ games, updatedAt }) => ({ games: expandTestDays(games), updatedAt })))
     }
   }, [])
+
+  const nflForm = useMemo(
+    () => buildFormByTeam(watchedGames, 'nfl', getNFLSeason()),
+    [watchedGames]
+  )
+  const ranksFor = league => (league === 'nfl' ? nflRanks : null)
+  const formFor  = league => (league === 'nfl' ? nflForm : null)
 
   const bblStandings = useMemo(() => {
     const watchedIds = new Set(watchedForLeague('bbl').map(g => g.gameId))
@@ -502,6 +520,8 @@ export default function HomeView() {
                 isUpNext
                 showDismissAction
                 trackedTeamId={hero.trackedTeamId}
+                ranks={ranksFor(hero.league)}
+                form={formFor(hero.league)}
               />
               {(hero.league === 'bbl' || (hero.league === 'cricket' && CRICKET_TRACKABLE.has(hero.game.matchType))) && (
                 <button
@@ -557,6 +577,8 @@ export default function HomeView() {
                     game={game}
                     showDismissAction
                     trackedTeamId={trackedTeamId}
+                    ranks={ranksFor(league)}
+                    form={formFor(league)}
                     className="flex-1 h-full"
                   />
                   {(league === 'bbl' || (league === 'cricket' && CRICKET_TRACKABLE.has(game.matchType))) && (

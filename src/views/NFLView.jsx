@@ -8,6 +8,7 @@ import EmptyState from '../components/EmptyState'
 import { useWatched } from '../contexts/WatchedContext'
 import { getSeasonYear, getAvailableSeasons } from '../utils/season'
 import { NFL_TEAMS, NFL_DIVISION_ORDER, nflLogo } from '../constants/nflTeams'
+import { fetchNFLTeamRanks } from '../api/nfl'
 
 
 function getNFLPlayoffRound(gameType, gameDate) {
@@ -174,7 +175,7 @@ function getResult(game) {
 
 // ─── My Queue ─────────────────────────────────────────────────────────────────
 
-function QueueTab({ games }) {
+function QueueTab({ games, ranks }) {
   const { isWatched, isDismissed } = useWatched()
   const [showWatched, setShowWatched] = useState(false)
 
@@ -211,7 +212,7 @@ function QueueTab({ games }) {
         <>
           <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Up Next For You</p>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <GameCard game={upNext} isUpNext showDismissAction />
+            <GameCard ranks={ranks} game={upNext} isUpNext showDismissAction />
             <SeasonStatsPanel league="nfl" trackedTeamId={null} />
           </div>
         </>
@@ -226,7 +227,7 @@ function QueueTab({ games }) {
       )}
 
       <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-3">
-        {unwatched.map(g => <GameCard key={g.id} game={g} showDismissAction />)}
+        {unwatched.map(g => <GameCard ranks={ranks} key={g.id} game={g} showDismissAction />)}
       </div>
 
       {watched.length > 0 && (
@@ -243,7 +244,7 @@ function QueueTab({ games }) {
           </button>
           {showWatched && (
             <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-3 mt-2">
-              {watched.map(g => <GameCard key={g.id} game={g} resultColor={getResult(g)} />)}
+              {watched.map(g => <GameCard ranks={ranks} key={g.id} game={g} resultColor={getResult(g)} />)}
             </div>
           )}
         </div>
@@ -260,7 +261,7 @@ const GAME_FILTERS = [
   { id: 'regular',  label: 'Regular Season' },
 ]
 
-function AllGamesTab({ games }) {
+function AllGamesTab({ games, ranks }) {
   const [filter, setFilter] = useState('all')
   const filtered = useMemo(() => {
     const sorted = [...games].sort((a, b) => b.gameDate - a.gameDate)
@@ -280,7 +281,7 @@ function AllGamesTab({ games }) {
         ))}
       </div>
       <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-3">
-        {filtered.map(g => <GameCard key={g.id} game={g} />)}
+        {filtered.map(g => <GameCard ranks={ranks} key={g.id} game={g} />)}
       </div>
     </>
   )
@@ -288,7 +289,7 @@ function AllGamesTab({ games }) {
 
 // ─── Watched ──────────────────────────────────────────────────────────────────
 
-function WatchedTab({ games }) {
+function WatchedTab({ games, ranks }) {
   const { isWatched, isDismissed } = useWatched()
   const [showSkipped, setShowSkipped] = useState(false)
 
@@ -319,7 +320,7 @@ function WatchedTab({ games }) {
             <p className="text-xs text-slate-600">scores visible · toggle to unwatch</p>
           </div>
           <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-3">
-            {watched.map(g => <GameCard key={g.id} game={g} resultColor={getResult(g)} />)}
+            {watched.map(g => <GameCard ranks={ranks} key={g.id} game={g} resultColor={getResult(g)} />)}
           </div>
         </>
       )}
@@ -338,7 +339,7 @@ function WatchedTab({ games }) {
           </button>
           {showSkipped && (
             <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-3 mt-2">
-              {skipped.map(g => <GameCard key={g.id} game={g} showDismissAction />)}
+              {skipped.map(g => <GameCard ranks={ranks} key={g.id} game={g} showDismissAction />)}
             </div>
           )}
         </div>
@@ -619,12 +620,21 @@ export default function NFLView() {
   const [loading, setLoading] = useState(true)
   const [error, setError]     = useState(null)
   const [tab, setTab]         = useState('queue')
+  const [ranks, setRanks]     = useState(null)
 
   useEffect(() => {
     fetchNFLGames()
       .then(setGames)
       .catch(err => setError(err.message))
       .finally(() => setLoading(false))
+  }, [])
+
+  // League ranking is supplementary to the schedule: cards render without it
+  // and pick the bracket numbers up once standings land.
+  useEffect(() => {
+    fetchNFLTeamRanks()
+      .then(({ rankByTeamId }) => setRanks(rankByTeamId))
+      .catch(() => {})
   }, [])
 
   return (
@@ -660,9 +670,9 @@ export default function NFLView() {
         </div>
       )}
 
-      {!loading && !error && tab === 'queue'     && <QueueTab games={games} />}
-      {!loading && !error && tab === 'all'       && <AllGamesTab games={games} />}
-      {!loading && !error && tab === 'watched'   && <WatchedTab games={games} />}
+      {!loading && !error && tab === 'queue'     && <QueueTab games={games} ranks={ranks} />}
+      {!loading && !error && tab === 'all'       && <AllGamesTab games={games} ranks={ranks} />}
+      {!loading && !error && tab === 'watched'   && <WatchedTab games={games} ranks={ranks} />}
       {tab === 'standings' && <StandingsTab games={games} />}
       {tab === 'playoffs'  && <NFLBracketTab games={games} />}
       {tab === 'stats'     && <StatsTab />}

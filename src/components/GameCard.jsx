@@ -111,13 +111,25 @@ function DismissButton({ dismissed, onToggle, dismissing }) {
 
 // resultColor: 'win' | 'loss' | null — used in Watched tab
 // showDismissAction: show the dismiss/un-dismiss X button
+// League rank shown in brackets beside a team name, e.g. "Tampa Bay [3]".
+// Teams level on the ranking measure share a rank, so repeated numbers across
+// cards early in a season are expected rather than a bug.
+function TeamRank({ rank }) {
+  if (!rank) return null
+  return (
+    <span className="text-slate-500 font-semibold tabular-nums" title={`League rank ${rank}`}>
+      {' '}[{rank}]
+    </span>
+  )
+}
+
 // trackedTeamId: used by hero card to compute Home/Away badge
 // forceWatched: treat the card as watched without an isWatched(game.id, ...)
 //   match — needed for Tests in the Results Log, where "watched" is tracked
 //   per day-row id, not the whole match's own id.
 // readOnly: suppress the watched-toggle/dismiss controls entirely (Results
 //   Log is a history view, not a queue you manage from).
-export default function GameCard({ game, isUpNext = false, resultColor = null, showDismissAction = false, trackedTeamId = null, className = '', forceWatched = false, readOnly = false }) {
+export default function GameCard({ game, isUpNext = false, resultColor = null, showDismissAction = false, trackedTeamId = null, className = '', forceWatched = false, readOnly = false, ranks = null }) {
   const { isWatched, toggleWatched, isDismissed, toggleDismissed } = useWatched()
   const watched = forceWatched || isWatched(game.id, game.league)
   const dismissed = isDismissed(game.id, game.league)
@@ -209,7 +221,7 @@ export default function GameCard({ game, isUpNext = false, resultColor = null, s
           {/* Away team */}
           <div className="flex items-center gap-3 flex-1 justify-end">
             <p className="text-right font-bold text-base text-slate-100 leading-snug max-w-[110px]">
-              {game.awayTeam.name}
+              {game.awayTeam.name}<TeamRank rank={ranks?.[game.awayTeam.id]} />
             </p>
             <TeamLogo src={game.awayTeam.logo} alt={game.awayTeam.abbreviation} size={54} />
           </div>
@@ -247,7 +259,7 @@ export default function GameCard({ game, isUpNext = false, resultColor = null, s
           <div className="flex items-center gap-3 flex-1">
             <TeamLogo src={game.homeTeam.logo} alt={game.homeTeam.abbreviation} size={54} />
             <p className="font-bold text-base text-slate-100 leading-snug max-w-[110px]">
-              {game.homeTeam.name}
+              {game.homeTeam.name}<TeamRank rank={ranks?.[game.homeTeam.id]} />
             </p>
           </div>
         </div>
@@ -359,7 +371,7 @@ export default function GameCard({ game, isUpNext = false, resultColor = null, s
               <TeamLogo src={team.logo} alt={team.abbreviation} />
               <div className="min-w-0">
                 <p className={`font-semibold text-sm leading-tight truncate ${dismissed ? 'text-slate-600' : won ? 'text-slate-100' : 'text-slate-400'}`}>
-                  {team.name}
+                  {team.name}<TeamRank rank={ranks?.[team.id]} />
                 </p>
                 <p className="text-xs text-slate-600">{team.abbreviation} · {label}</p>
               </div>

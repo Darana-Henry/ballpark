@@ -99,6 +99,57 @@ async function resolveAthletes(refs) {
   return cache
 }
 
+// ─── League leaderboards ─────────────────────────────────────────────────────
+
+// ESPN returns 25 leaders per category. The receiving and passing boards are
+// position-restricted, so the list is filtered after the athletes resolve and
+// then trimmed — pulling the full 25 leaves enough to still fill a board of 10
+// once the other positions drop out.
+export const NFL_LEADER_CATEGORIES = [
+  { id: 'totalTouchdowns', title: 'Most Touchdowns',    unit: ''     },
+  { id: 'receptions',      title: 'Most Catches',       unit: '',     position: 'WR', note: 'Wide receivers' },
+  { id: 'rushingYards',    title: 'Most Rushing Yards', unit: ' yds' },
+  { id: 'passingYards',    title: 'Most Passing Yards', unit: ' yds', position: 'QB', note: 'Quarterbacks'   },
+]
+
+const BOARD_SIZE = 10
+
+export async function fetchNFLLeagueLeaders() {
+  const season = getNFLSeason()
+  const data = await getJSON(`${CORE}/seasons/${season}/types/2/leaders`)
+  const categories = Object.fromEntries((data.categories ?? []).map(c => [c.name, c]))
+
+  const wanted = NFL_LEADER_CATEGORIES.map(cat => ({
+    ...cat,
+    entries: (categories[cat.id]?.leaders ?? []).map(l => ({
+      ref:    l.athlete?.$ref,
+      teamId: idFromRef(l.team?.$ref),
+      value:  l.value,
+      display: l.displayValue,
+    })),
+  }))
+
+  const athletes = await resolveAthletes(wanted.flatMap(c => c.entries.map(e => e.ref)))
+
+  return {
+    season,
+    boards: wanted.map(cat => ({
+      id: cat.id,
+      title: cat.title,
+      unit: cat.unit,
+      note: cat.note ?? null,
+      players: cat.entries
+        .map(e => {
+          const athlete = athletes[idFromRef(e.ref)]
+          if (!athlete) return null
+          return { ...athlete, teamId: e.teamId, value: e.value, display: e.display }
+        })
+        .filter(p => p && (!cat.position || p.position === cat.position))
+        .slice(0, BOARD_SIZE),
+    })),
+  }
+}
+
 // ─── Current starting quarterbacks ───────────────────────────────────────────
 
 // The starter is the rank-1 quarterback on the team's offensive depth chart.

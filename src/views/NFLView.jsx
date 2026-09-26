@@ -9,6 +9,7 @@ import { useWatched } from '../contexts/WatchedContext'
 import { getSeasonYear, getAvailableSeasons } from '../utils/season'
 import { NFL_TEAMS, NFL_DIVISION_ORDER, nflLogo } from '../constants/nflTeams'
 import { fetchNFLTeamRanks } from '../api/nfl'
+import NFLLeagueLeaders from '../components/NFLLeagueLeaders'
 import NFLQuarterbackHistory from '../components/NFLQuarterbackHistory'
 
 
@@ -614,6 +615,7 @@ const TABS = [
   { id: 'standings', label: 'Standings'   },
   { id: 'playoffs',  label: 'Playoffs'    },
   { id: 'stats',     label: 'Stats'       },
+  { id: 'leaders',   label: 'Leaders'     },
   { id: 'qbs',       label: 'Quarterbacks'},
 ]
 
@@ -623,6 +625,7 @@ export default function NFLView() {
   const [error, setError]     = useState(null)
   const [tab, setTab]         = useState('queue')
   const [ranks, setRanks]     = useState(null)
+  const [teamAbbrById, setTeamAbbrById] = useState(null)
 
   useEffect(() => {
     fetchNFLGames()
@@ -635,7 +638,10 @@ export default function NFLView() {
   // and pick the bracket numbers up once standings land.
   useEffect(() => {
     fetchNFLTeamRanks()
-      .then(({ rankByTeamId }) => setRanks(rankByTeamId))
+      .then(({ rankByTeamId, teams }) => {
+        setRanks(rankByTeamId)
+        setTeamAbbrById(Object.fromEntries(teams.map(t => [t.teamId, t.abbreviation])))
+      })
       .catch(() => {})
   }, [])
 
@@ -678,6 +684,7 @@ export default function NFLView() {
       {tab === 'standings' && <StandingsTab games={games} />}
       {tab === 'playoffs'  && <NFLBracketTab games={games} />}
       {tab === 'stats'     && <StatsTab />}
+      {tab === 'leaders'   && <NFLLeagueLeaders teamAbbrById={teamAbbrById} />}
       {tab === 'qbs'       && <NFLQuarterbackHistory />}
     </div>
   )

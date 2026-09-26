@@ -174,10 +174,23 @@ export default function SeasonStatsPanel({ league, trackedTeamId = null, games =
       .finally(() => setLoadingPlayers(false))
   }, [league])
 
-  // Compute season record from Firestore watched games
+  // Ids of every game in this season, taken from the schedule the view loaded.
+  // Membership of that set is what makes a watched game "this season" — far
+  // safer than comparing dates, which breaks at a season boundary (in late
+  // September the NBA and BBL schedules are already next season's).
+  const seasonGameIds = useMemo(
+    () => (games?.length ? new Set(games.map(g => String(g.id))) : null),
+    [games]
+  )
+
+  // Season record from Firestore watched games, scoped to this season. Without
+  // a schedule to scope against it falls back to counting everything, which is
+  // the old behaviour rather than a silent zero.
   const stats = useMemo(() => {
     const games = Object.values(watchedGames).filter(
-      g => g.league === league && g.watched
+      g => g.league === league
+        && g.watched
+        && (!seasonGameIds || seasonGameIds.has(String(g.gameId)))
     )
 
     if (!trackedTeamId) {
@@ -210,7 +223,7 @@ export default function SeasonStatsPanel({ league, trackedTeamId = null, games =
     })
 
     return { total: games.length, wins, losses, draws, form }
-  }, [watchedGames, league, trackedTeamId])
+  }, [watchedGames, league, trackedTeamId, seasonGameIds])
 
   const hasDraw  = HAS_DRAW[league] ?? false
   const hasStats = stats.wins !== null
@@ -222,13 +235,12 @@ export default function SeasonStatsPanel({ league, trackedTeamId = null, games =
   // wrong near a boundary: in late September the NBA and BBL schedules are
   // already next season's, which a "current season year" check discards.
   const progress = useMemo(() => {
-    if (!games?.length) return null
+    if (!games?.length || !seasonGameIds) return null
     const played = games.filter(g => g.status === 'final')
     const playedIds = new Set(played.map(g => String(g.id)))
-    const seasonIds = new Set(games.map(g => String(g.id)))
 
     const watchedRecords = Object.values(watchedGames).filter(
-      g => g.league === league && g.watched && seasonIds.has(String(g.gameId))
+      g => g.league === league && g.watched && seasonGameIds.has(String(g.gameId))
     )
     return {
       total: games.length,
@@ -236,7 +248,7 @@ export default function SeasonStatsPanel({ league, trackedTeamId = null, games =
       watched: watchedRecords.length,
       watchedPlayed: watchedRecords.filter(g => playedIds.has(String(g.gameId))).length,
     }
-  }, [games, league, watchedGames])
+  }, [games, league, watchedGames, seasonGameIds])
 
   const accentColor = LEAGUE_MAP[league]?.accentColor ?? '#64748b'
 

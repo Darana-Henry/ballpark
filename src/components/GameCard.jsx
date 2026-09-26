@@ -111,14 +111,14 @@ function DismissButton({ dismissed, onToggle, dismissing }) {
 
 // resultColor: 'win' | 'loss' | null — used in Watched tab
 // showDismissAction: show the dismiss/un-dismiss X button
-// League rank shown in brackets beside a team name, e.g. "Tampa Bay [3]".
+// League rank shown in brackets beside a team name, e.g. "Tampa Bay (3)".
 // Teams level on the ranking measure share a rank, so repeated numbers across
 // cards early in a season are expected rather than a bug.
 function TeamRank({ rank }) {
   if (!rank) return null
   return (
     <span className="text-slate-500 font-semibold tabular-nums" title={`League rank ${rank}`}>
-      {' '}[{rank}]
+      {' '}({rank})
     </span>
   )
 }
@@ -273,6 +273,7 @@ export default function GameCard({ game, isUpNext = false, resultColor = null, s
           </p>
         )}
 
+
         {/* Venue */}
         {game.venue && !dismissed && (
           <p className="text-center text-xs text-slate-500 pb-4 px-6">{game.venue}</p>
@@ -407,6 +408,7 @@ export default function GameCard({ game, isUpNext = false, resultColor = null, s
           <span className="text-xs text-slate-700">Starting pitchers</span>
         </div>
       )}
+
 
       {/* Footer */}
       <div className="border-t border-slate-800 pt-3 flex items-center justify-between gap-2">

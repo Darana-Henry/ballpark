@@ -49,6 +49,10 @@ function normalizeEvent(event, league) {
     statusDetail: event.status?.type?.shortDetail ?? comp.status?.type?.shortDetail ?? '',
     gameDate: new Date(event.date),
     gameType: gameTypeNote,
+    // Week number drives the NFL queue's week filter. Present on NFL events
+    // (regular season 1-18, then playoff rounds); absent for NBA.
+    week: event.week?.number ?? null,
+    seasonType: event.season?.type ?? null,
     highlightUrl: isFinal
       ? `https://www.espn.com/${league}/game/_/gameId/${event.id}`
       : (isLive ? `https://www.espn.com/${league}/game/_/gameId/${event.id}` : null),

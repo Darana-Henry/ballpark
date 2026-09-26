@@ -8,29 +8,12 @@ import EmptyState from '../components/EmptyState'
 import { useWatched } from '../contexts/WatchedContext'
 import { getSeasonYear, getAvailableSeasons } from '../utils/season'
 import { NFL_TEAMS, NFL_DIVISION_ORDER, nflLogo } from '../constants/nflTeams'
+import { getNFLPlayoffRound } from '../utils/nflWeeks'
 import { fetchNFLTeamRanks } from '../api/nfl'
 import NFLLeagueLeaders from '../components/NFLLeagueLeaders'
 import NFLQuarterbackHistory from '../components/NFLQuarterbackHistory'
 
 
-function getNFLPlayoffRound(gameType, gameDate) {
-  if (!gameType || gameType === 'Regular Season') return null
-  const gt = gameType.toLowerCase()
-  if (gt.includes('super bowl')) return 'Super Bowl'
-  if (gt.includes('championship')) return 'Conference'
-  if (gt.includes('divisional') || gt.includes('division')) return 'Divisional'
-  if (gt.includes('wild card')) return 'Wild Card'
-  // Date-based fallback when gameType is generic 'Playoffs'
-  if (gameDate) {
-    const d = new Date(gameDate)
-    const m = d.getMonth(), day = d.getDate()
-    if (m === 1) return 'Super Bowl'           // February
-    if (m === 0 && day >= 24) return 'Conference'
-    if (m === 0 && day >= 16) return 'Divisional'
-    if (m === 0) return 'Wild Card'
-  }
-  return 'Wild Card'
-}
 
 function getConference(teamName) {
   return NFL_TEAMS[teamName]?.div.startsWith('AFC') ? 'AFC' : 'NFC'
@@ -181,6 +164,7 @@ function QueueTab({ games, ranks }) {
   const { isWatched, isDismissed } = useWatched()
   const [showWatched, setShowWatched] = useState(false)
 
+
   const { upNext, nextScheduled, unwatched, watched } = useMemo(() => {
     const live = games.filter(g => g.status === 'live' && !isDismissed(g.id, 'nfl'))
     const finalUnwatched = games
@@ -215,7 +199,7 @@ function QueueTab({ games, ranks }) {
           <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Up Next For You</p>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <GameCard ranks={ranks} game={upNext} isUpNext showDismissAction />
-            <SeasonStatsPanel league="nfl" trackedTeamId={null} />
+            <SeasonStatsPanel league="nfl" trackedTeamId={null} games={games} />
           </div>
         </>
       )}

@@ -8,10 +8,11 @@ import EmptyState from '../components/EmptyState'
 import { useWatched } from '../contexts/WatchedContext'
 import { getSeasonYear, getAvailableSeasons } from '../utils/season'
 import { NFL_TEAMS, NFL_DIVISION_ORDER, nflLogo } from '../constants/nflTeams'
-import { getNFLPlayoffRound } from '../utils/nflWeeks'
+import { getNFLPlayoffRound, buildWeekOptions, defaultWeekId, matchesWeek } from '../utils/nflWeeks'
 import { fetchNFLTeamRanks } from '../api/nfl'
 import NFLLeagueLeaders from '../components/NFLLeagueLeaders'
 import NFLQuarterbackHistory from '../components/NFLQuarterbackHistory'
+import NFLWeekFilter from '../components/NFLWeekFilter'
 
 
 
@@ -164,16 +165,24 @@ function QueueTab({ games, ranks }) {
   const { isWatched, isDismissed } = useWatched()
   const [showWatched, setShowWatched] = useState(false)
 
+  const weekOptions = useMemo(() => buildWeekOptions(games), [games])
+  // Open on the week in progress rather than week 1. Derived rather than set
+  // in an effect: the schedule only arrives after first render, and once the
+  // user picks a week their choice takes over.
+  const currentWeek = useMemo(() => (games.length ? defaultWeekId(games) : 'all'), [games])
+  const [week, setWeek] = useState(null)
+  const activeWeek = week ?? currentWeek
 
   const { upNext, nextScheduled, unwatched, watched } = useMemo(() => {
-    const live = games.filter(g => g.status === 'live' && !isDismissed(g.id, 'nfl'))
-    const finalUnwatched = games
+    const inWeek = games.filter(g => matchesWeek(g, activeWeek))
+    const live = inWeek.filter(g => g.status === 'live' && !isDismissed(g.id, 'nfl'))
+    const finalUnwatched = inWeek
       .filter(g => g.status === 'final' && !isWatched(g.id, 'nfl') && !isDismissed(g.id, 'nfl'))
       .sort((a, b) => a.gameDate - b.gameDate)
-    const scheduled = games
+    const scheduled = inWeek
       .filter(g => g.status === 'scheduled' && !isDismissed(g.id, 'nfl'))
       .sort((a, b) => a.gameDate - b.gameDate)
-    const watchedList = games
+    const watchedList = inWeek
       .filter(g => isWatched(g.id, 'nfl'))
       .sort((a, b) => b.gameDate - a.gameDate)
 
@@ -185,13 +194,24 @@ function QueueTab({ games, ranks }) {
       ...scheduled.filter(g => g.id !== upNextId),
     ]
     return { upNext, nextScheduled: scheduled[0] ?? null, unwatched: remaining, watched: watchedList }
-  }, [games, isWatched, isDismissed])
+  }, [games, activeWeek, isWatched, isDismissed])
 
 
   return (
     <div className="flex flex-col gap-3">
+      <NFLWeekFilter
+        options={weekOptions}
+        value={activeWeek}
+        onChange={setWeek}
+        count={(upNext ? 1 : 0) + unwatched.length + watched.length}
+      />
+
       {!upNext && unwatched.length === 0 && watched.length === 0 && (
-        <EmptyState emoji="🏈" title="No games yet" message="Check back when the season starts." />
+        <EmptyState
+          emoji="🏈"
+          title={activeWeek === 'all' ? 'No games yet' : 'Nothing this week'}
+          message={activeWeek === 'all' ? 'Check back when the season starts.' : 'Try another week, or clear the filter.'}
+        />
       )}
 
       {upNext && (

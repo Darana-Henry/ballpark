@@ -13,6 +13,8 @@ import { fetchNFLTeamRanks } from '../api/nfl'
 import NFLLeagueLeaders from '../components/NFLLeagueLeaders'
 import NFLQuarterbackHistory from '../components/NFLQuarterbackHistory'
 import NFLWeekFilter from '../components/NFLWeekFilter'
+import { buildFormByTeam } from '../utils/teamForm'
+import { getNFLSeason } from '../api/nfl'
 
 
 
@@ -161,7 +163,7 @@ function getResult(game) {
 
 // ─── My Queue ─────────────────────────────────────────────────────────────────
 
-function QueueTab({ games, ranks }) {
+function QueueTab({ games, ranks, form }) {
   const { isWatched, isDismissed } = useWatched()
   const [showWatched, setShowWatched] = useState(false)
 
@@ -218,7 +220,7 @@ function QueueTab({ games, ranks }) {
         <>
           <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Up Next For You</p>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <GameCard ranks={ranks} game={upNext} isUpNext showDismissAction />
+            <GameCard ranks={ranks} form={form} game={upNext} isUpNext showDismissAction />
             <SeasonStatsPanel league="nfl" trackedTeamId={null} games={games} />
           </div>
         </>
@@ -233,7 +235,7 @@ function QueueTab({ games, ranks }) {
       )}
 
       <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-3">
-        {unwatched.map(g => <GameCard ranks={ranks} key={g.id} game={g} showDismissAction />)}
+        {unwatched.map(g => <GameCard ranks={ranks} form={form} key={g.id} game={g} showDismissAction />)}
       </div>
 
       {watched.length > 0 && (
@@ -250,7 +252,7 @@ function QueueTab({ games, ranks }) {
           </button>
           {showWatched && (
             <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-3 mt-2">
-              {watched.map(g => <GameCard ranks={ranks} key={g.id} game={g} resultColor={getResult(g)} />)}
+              {watched.map(g => <GameCard ranks={ranks} form={form} key={g.id} game={g} resultColor={getResult(g)} />)}
             </div>
           )}
         </div>
@@ -267,7 +269,7 @@ const GAME_FILTERS = [
   { id: 'regular',  label: 'Regular Season' },
 ]
 
-function AllGamesTab({ games, ranks }) {
+function AllGamesTab({ games, ranks, form }) {
   const [filter, setFilter] = useState('all')
   const filtered = useMemo(() => {
     const sorted = [...games].sort((a, b) => b.gameDate - a.gameDate)
@@ -287,7 +289,7 @@ function AllGamesTab({ games, ranks }) {
         ))}
       </div>
       <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-3">
-        {filtered.map(g => <GameCard ranks={ranks} key={g.id} game={g} />)}
+        {filtered.map(g => <GameCard ranks={ranks} form={form} key={g.id} game={g} />)}
       </div>
     </>
   )
@@ -295,7 +297,7 @@ function AllGamesTab({ games, ranks }) {
 
 // ─── Watched ──────────────────────────────────────────────────────────────────
 
-function WatchedTab({ games, ranks }) {
+function WatchedTab({ games, ranks, form }) {
   const { isWatched, isDismissed } = useWatched()
   const [showSkipped, setShowSkipped] = useState(false)
 
@@ -326,7 +328,7 @@ function WatchedTab({ games, ranks }) {
             <p className="text-xs text-slate-600">scores visible · toggle to unwatch</p>
           </div>
           <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-3">
-            {watched.map(g => <GameCard ranks={ranks} key={g.id} game={g} resultColor={getResult(g)} />)}
+            {watched.map(g => <GameCard ranks={ranks} form={form} key={g.id} game={g} resultColor={getResult(g)} />)}
           </div>
         </>
       )}
@@ -345,7 +347,7 @@ function WatchedTab({ games, ranks }) {
           </button>
           {showSkipped && (
             <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-3 mt-2">
-              {skipped.map(g => <GameCard ranks={ranks} key={g.id} game={g} showDismissAction />)}
+              {skipped.map(g => <GameCard ranks={ranks} form={form} key={g.id} game={g} showDismissAction />)}
             </div>
           )}
         </div>
@@ -630,6 +632,12 @@ export default function NFLView() {
   const [tab, setTab]         = useState('queue')
   const [ranks, setRanks]     = useState(null)
   const [teamAbbrById, setTeamAbbrById] = useState(null)
+  const { watchedGames } = useWatched()
+
+  const season = getNFLSeason()
+  // Form is derived from watched games only, so it costs no request and can
+  // never show a result the user hasn't marked.
+  const form = useMemo(() => buildFormByTeam(watchedGames, 'nfl', season), [watchedGames, season])
 
   useEffect(() => {
     fetchNFLGames()
@@ -682,9 +690,9 @@ export default function NFLView() {
         </div>
       )}
 
-      {!loading && !error && tab === 'queue'     && <QueueTab games={games} ranks={ranks} />}
-      {!loading && !error && tab === 'all'       && <AllGamesTab games={games} ranks={ranks} />}
-      {!loading && !error && tab === 'watched'   && <WatchedTab games={games} ranks={ranks} />}
+      {!loading && !error && tab === 'queue'     && <QueueTab games={games} ranks={ranks} form={form} />}
+      {!loading && !error && tab === 'all'       && <AllGamesTab games={games} ranks={ranks} form={form} />}
+      {!loading && !error && tab === 'watched'   && <WatchedTab games={games} ranks={ranks} form={form} />}
       {tab === 'standings' && <StandingsTab games={games} />}
       {tab === 'playoffs'  && <NFLBracketTab games={games} />}
       {tab === 'stats'     && <StatsTab />}

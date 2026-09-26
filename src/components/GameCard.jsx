@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { LEAGUE_MAP } from '../constants/leagues'
+import RecentForm from './RecentForm'
 import { useWatched } from '../contexts/WatchedContext'
 import { isFirebaseConfigured } from '../firebase'
 import { useCountdown } from '../hooks/useCountdown'
@@ -129,7 +130,7 @@ function TeamRank({ rank }) {
 //   per day-row id, not the whole match's own id.
 // readOnly: suppress the watched-toggle/dismiss controls entirely (Results
 //   Log is a history view, not a queue you manage from).
-export default function GameCard({ game, isUpNext = false, resultColor = null, showDismissAction = false, trackedTeamId = null, className = '', forceWatched = false, readOnly = false, ranks = null }) {
+export default function GameCard({ game, isUpNext = false, resultColor = null, showDismissAction = false, trackedTeamId = null, className = '', forceWatched = false, readOnly = false, ranks = null, form = null }) {
   const { isWatched, toggleWatched, isDismissed, toggleDismissed } = useWatched()
   const watched = forceWatched || isWatched(game.id, game.league)
   const dismissed = isDismissed(game.id, game.league)
@@ -220,9 +221,12 @@ export default function GameCard({ game, isUpNext = false, resultColor = null, s
         <div className="flex items-center px-4 mb-3">
           {/* Away team */}
           <div className="flex items-center gap-3 flex-1 justify-end">
-            <p className="text-right font-bold text-base text-slate-100 leading-snug max-w-[110px]">
-              {game.awayTeam.name}<TeamRank rank={ranks?.[game.awayTeam.id]} />
-            </p>
+            <div className="max-w-[110px]">
+              <p className="text-right font-bold text-base text-slate-100 leading-snug">
+                {game.awayTeam.name}<TeamRank rank={ranks?.[game.awayTeam.id]} />
+              </p>
+              <RecentForm form={form?.[game.awayTeam.id]} align="right" className="mt-1 w-full" />
+            </div>
             <TeamLogo src={game.awayTeam.logo} alt={game.awayTeam.abbreviation} size={54} />
           </div>
 
@@ -258,9 +262,12 @@ export default function GameCard({ game, isUpNext = false, resultColor = null, s
           {/* Home team */}
           <div className="flex items-center gap-3 flex-1">
             <TeamLogo src={game.homeTeam.logo} alt={game.homeTeam.abbreviation} size={54} />
-            <p className="font-bold text-base text-slate-100 leading-snug max-w-[110px]">
-              {game.homeTeam.name}<TeamRank rank={ranks?.[game.homeTeam.id]} />
-            </p>
+            <div className="max-w-[110px]">
+              <p className="font-bold text-base text-slate-100 leading-snug">
+                {game.homeTeam.name}<TeamRank rank={ranks?.[game.homeTeam.id]} />
+              </p>
+              <RecentForm form={form?.[game.homeTeam.id]} className="mt-1" />
+            </div>
           </div>
         </div>
 
@@ -374,7 +381,10 @@ export default function GameCard({ game, isUpNext = false, resultColor = null, s
                 <p className={`font-semibold text-sm leading-tight truncate ${dismissed ? 'text-slate-600' : won ? 'text-slate-100' : 'text-slate-400'}`}>
                   {team.name}<TeamRank rank={ranks?.[team.id]} />
                 </p>
-                <p className="text-xs text-slate-600">{team.abbreviation} · {label}</p>
+                <p className="text-xs text-slate-600 flex items-center gap-1.5">
+                  <span>{team.abbreviation} · {label}</span>
+                  <RecentForm form={form?.[team.id]} />
+                </p>
               </div>
             </div>
             {game.status !== 'scheduled' && (

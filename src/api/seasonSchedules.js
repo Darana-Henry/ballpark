@@ -2,20 +2,37 @@ import { fetchMLBGames } from './mlb'
 import { fetchNBAGames, fetchNFLGames } from './espn'
 import { fetchMLSGames } from './mls'
 import { fetchEPLGames } from './epl'
+import { fetchBBLGames } from './bbl'
+import { fetchIntlCricketGames } from './intlCricket'
 
 // Counting "games played so far" needs each league's schedule, which Home
 // already loads on every visit. The promises are memoised for the session so
 // the Stats page reuses that work instead of paying for it a second time —
 // EPL alone is a dozen requests per competition.
 //
-// Only the keyless leagues are here; BBL and international cricket need the
-// user's CricAPI key and are fetched by the views that hold it.
+// BBL and international cricket need the user's CricAPI key; without one they
+// simply resolve empty, and anything reading them shows no season total.
+const cricApiKey = () => {
+  try {
+    return import.meta.env.VITE_CRICAPI_KEY || localStorage.getItem('cricapi_key') || ''
+  } catch {
+    return import.meta.env.VITE_CRICAPI_KEY || ''
+  }
+}
+
+const withKey = fn => () => {
+  const key = cricApiKey()
+  return key ? fn(key) : Promise.resolve([])
+}
+
 const FETCHERS = {
   mlb: fetchMLBGames,
   nba: fetchNBAGames,
   nfl: fetchNFLGames,
   mls: fetchMLSGames,
   epl: fetchEPLGames,
+  bbl: withKey(fetchBBLGames),
+  cricket: withKey(fetchIntlCricketGames),
 }
 
 export const SCHEDULED_LEAGUES = Object.keys(FETCHERS)

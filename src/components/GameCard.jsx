@@ -124,13 +124,34 @@ function TeamRank({ rank }) {
   )
 }
 
+// A player worth watching from either side, shown on scheduled games only —
+// once a game is over the interesting thing is the result, not the preview.
+function PlayerToWatch({ game, players }) {
+  if (!players) return null
+  const picks = [players[game.awayTeam.id], players[game.homeTeam.id]].filter(Boolean)
+  if (!picks.length) return null
+  const pick = picks.reduce((a, b) => (a.score <= b.score ? a : b))
+
+  return (
+    <div className="flex items-center gap-2 px-4 pb-3 -mt-1">
+      {pick.photo
+        ? <img src={pick.photo} alt="" width={20} height={20} className="rounded-full object-cover object-top bg-slate-800 shrink-0" />
+        : <div className="w-5 h-5 rounded-full bg-slate-700 shrink-0" />}
+      <span className="text-[10px] text-slate-500 truncate">
+        <span className="text-slate-400 font-medium">{pick.name}</span>
+        {pick.position ? ` · ${pick.position}` : ''} · {pick.stat} {pick.display}
+      </span>
+    </div>
+  )
+}
+
 // trackedTeamId: used by hero card to compute Home/Away badge
 // forceWatched: treat the card as watched without an isWatched(game.id, ...)
 //   match — needed for Tests in the Results Log, where "watched" is tracked
 //   per day-row id, not the whole match's own id.
 // readOnly: suppress the watched-toggle/dismiss controls entirely (Results
 //   Log is a history view, not a queue you manage from).
-export default function GameCard({ game, isUpNext = false, resultColor = null, showDismissAction = false, trackedTeamId = null, className = '', forceWatched = false, readOnly = false, ranks = null, form = null }) {
+export default function GameCard({ game, isUpNext = false, resultColor = null, showDismissAction = false, trackedTeamId = null, className = '', forceWatched = false, readOnly = false, ranks = null, form = null, playersToWatch = null }) {
   const { isWatched, toggleWatched, isDismissed, toggleDismissed } = useWatched()
   const watched = forceWatched || isWatched(game.id, game.league)
   const dismissed = isDismissed(game.id, game.league)
@@ -280,6 +301,9 @@ export default function GameCard({ game, isUpNext = false, resultColor = null, s
           </p>
         )}
 
+        {game.status === 'scheduled' && !dismissed && (
+          <PlayerToWatch game={game} players={playersToWatch} />
+        )}
 
         {/* Venue */}
         {game.venue && !dismissed && (
@@ -419,6 +443,11 @@ export default function GameCard({ game, isUpNext = false, resultColor = null, s
         </div>
       )}
 
+      {game.status === 'scheduled' && !dismissed && (
+        <div className="-mx-4">
+          <PlayerToWatch game={game} players={playersToWatch} />
+        </div>
+      )}
 
       {/* Footer */}
       <div className="border-t border-slate-800 pt-3 flex items-center justify-between gap-2">

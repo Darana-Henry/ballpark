@@ -150,6 +150,38 @@ export async function fetchNFLLeagueLeaders() {
   }
 }
 
+/**
+ * One player worth watching per team, drawn from the leaderboards already
+ * fetched for the Leaders tab — so the game cards cost no extra request.
+ *
+ * Touchdowns rank first because that's the stat a casual viewer notices;
+ * otherwise the player standing highest on any board wins, which naturally
+ * surfaces a league leader over a mid-table name.
+ */
+const WATCH_PRIORITY = ['totalTouchdowns', 'passingYards', 'rushingYards', 'receptions']
+
+export function playersToWatch(boards) {
+  const byTeam = {}
+  for (const board of boards ?? []) {
+    const priority = WATCH_PRIORITY.indexOf(board.id)
+    board.players.forEach((player, index) => {
+      if (!player.teamId) return
+      const candidate = {
+        id: player.id,
+        name: player.name,
+        photo: player.photo,
+        position: player.position,
+        stat: board.title.replace(/^Most /, ''),
+        display: `${player.display}${board.unit}`,
+        score: (priority < 0 ? WATCH_PRIORITY.length : priority) * 100 + index,
+      }
+      const held = byTeam[player.teamId]
+      if (!held || candidate.score < held.score) byTeam[player.teamId] = candidate
+    })
+  }
+  return byTeam
+}
+
 // ─── Current starting quarterbacks ───────────────────────────────────────────
 
 // The starter is the rank-1 quarterback on the team's offensive depth chart.

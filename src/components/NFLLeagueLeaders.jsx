@@ -49,19 +49,26 @@ function Board({ board, teamAbbrById }) {
 // League-wide statistical leaders for the current season. Distinct from the
 // Stats tab's watched-game panel, which only counts games the user has marked
 // as watched — these are the season's actual leaders regardless.
-export default function NFLLeagueLeaders({ teamAbbrById }) {
-  const [data, setData]       = useState(null)
-  const [loading, setLoading] = useState(true)
+// `data` is the shared leaders payload the view already fetches for the game
+// cards' player-to-watch line. It's passed in rather than fetched again here;
+// the local fetch is the fallback for rendering this tab standalone.
+export default function NFLLeagueLeaders({ teamAbbrById, data: provided = null }) {
+  const [fetched, setFetched] = useState(null)
+  const [fetching, setFetching] = useState(true)
   const [error, setError]     = useState(null)
+  const data = provided ?? fetched
+  // Nothing is loading when the payload came from the view.
+  const loading = !provided && fetching && !fetched
 
   useEffect(() => {
+    if (provided) return
     let cancelled = false
     fetchNFLLeagueLeaders()
-      .then(d => { if (!cancelled) setData(d) })
+      .then(d => { if (!cancelled) setFetched(d) })
       .catch(err => { if (!cancelled) setError(err.message) })
-      .finally(() => { if (!cancelled) setLoading(false) })
+      .finally(() => { if (!cancelled) setFetching(false) })
     return () => { cancelled = true }
-  }, [])
+  }, [provided])
 
   if (loading) return <LoadingSpinner message="Loading league leaders…" />
   if (error) return (

@@ -1,8 +1,5 @@
 import { useState, useEffect, useMemo } from 'react'
-import { fetchMLBGames } from '../api/mlb'
-import { fetchNBAGames, fetchNFLGames } from '../api/espn'
-import { fetchMLSGames } from '../api/mls'
-import { fetchEPLGames } from '../api/epl'
+import { loadLeagueGames } from '../api/seasonSchedules'
 import { fetchBBLGames } from '../api/bbl'
 import { fetchIntlCricketGames } from '../api/intlCricket'
 import { expandTestDays } from '../utils/cricketDayRows'
@@ -410,11 +407,11 @@ export default function HomeView() {
         })
         .catch(err  => setStates(s => ({ ...s, [id]: { games: [], loading: false, error: err.message } })))
     }
-    load('mlb', fetchMLBGames())
-    load('nba', fetchNBAGames())
-    load('nfl', fetchNFLGames())
-    load('mls', fetchMLSGames())
-    load('epl', fetchEPLGames())
+    load('mlb', loadLeagueGames('mlb'))
+    load('nba', loadLeagueGames('nba'))
+    load('nfl', loadLeagueGames('nfl'))
+    load('mls', loadLeagueGames('mls'))
+    load('epl', loadLeagueGames('epl'))
     const cricApiKey = ENV_BBL_KEY || localStorage.getItem('cricapi_key')
     if (cricApiKey) {
       load('bbl', fetchBBLGames(cricApiKey))

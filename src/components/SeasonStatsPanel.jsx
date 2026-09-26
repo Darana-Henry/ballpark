@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo } from 'react'
 import { useWatched } from '../contexts/WatchedContext'
+import { LEAGUE_MAP } from '../constants/leagues'
 
 // ─── Glass style ──────────────────────────────────────────────────────────────
 
@@ -130,7 +131,35 @@ function PlayerRow({ player, rank }) {
 
 // ─── Main ─────────────────────────────────────────────────────────────────────
 
-export default function SeasonStatsPanel({ league, trackedTeamId = null }) {
+// Two progress lines for the league's landing page.
+//
+// Completion  — of the games already played, how many have been watched. This
+//               is the "10 of 10 played = 100%" measure.
+// Season      — of every game the season holds, how many have been watched.
+//               Always the smaller number early on, and the one that says how
+//               much of the whole season is still ahead.
+//
+// Both come from the schedule the view has already loaded, so this costs no
+// request and works for BBL and cricket, whose games need the user's API key.
+function ProgressLine({ label, watched, total, caption, accentColor }) {
+  const pct = total ? Math.min(100, Math.round((watched / total) * 100)) : 0
+  return (
+    <div>
+      <div className="flex items-baseline justify-between gap-2 mb-1">
+        <span className="text-[10px] font-bold uppercase tracking-widest text-slate-500">{label}</span>
+        <span className="text-sm font-bold tabular-nums leading-none" style={{ color: total ? accentColor : '#475569' }}>
+          {total ? `${pct}%` : '—'}
+        </span>
+      </div>
+      <div className="h-1.5 rounded-full overflow-hidden" style={{ background: 'rgba(255,255,255,0.08)' }}>
+        <div className="h-full rounded-full transition-all duration-500" style={{ width: `${pct}%`, background: accentColor }} />
+      </div>
+      <p className="text-[10px] text-slate-600 mt-1">{caption}</p>
+    </div>
+  )
+}
+
+export default function SeasonStatsPanel({ league, trackedTeamId = null, games = null }) {
   const { watchedGames } = useWatched()
   const [leaders, setLeaders] = useState([])
   const [loadingPlayers, setLoadingPlayers] = useState(!!FETCHERS[league])
@@ -186,6 +215,31 @@ export default function SeasonStatsPanel({ league, trackedTeamId = null }) {
   const hasDraw  = HAS_DRAW[league] ?? false
   const hasStats = stats.wins !== null
 
+  // Season progress, measured against the schedule this view already holds.
+  //
+  // Every league view loads exactly one season, so the games passed in *are*
+  // the season — no date filtering. Filtering by season year would actually be
+  // wrong near a boundary: in late September the NBA and BBL schedules are
+  // already next season's, which a "current season year" check discards.
+  const progress = useMemo(() => {
+    if (!games?.length) return null
+    const played = games.filter(g => g.status === 'final')
+    const playedIds = new Set(played.map(g => String(g.id)))
+    const seasonIds = new Set(games.map(g => String(g.id)))
+
+    const watchedRecords = Object.values(watchedGames).filter(
+      g => g.league === league && g.watched && seasonIds.has(String(g.gameId))
+    )
+    return {
+      total: games.length,
+      played: played.length,
+      watched: watchedRecords.length,
+      watchedPlayed: watchedRecords.filter(g => playedIds.has(String(g.gameId))).length,
+    }
+  }, [games, league, watchedGames])
+
+  const accentColor = LEAGUE_MAP[league]?.accentColor ?? '#64748b'
+
   return (
     <div className="rounded-2xl p-5 flex flex-col h-full" style={GLASS}>
 
@@ -200,6 +254,25 @@ export default function SeasonStatsPanel({ league, trackedTeamId = null }) {
           </p>
         </div>
       </div>
+
+      {progress && (
+        <div className="flex flex-col gap-2.5 mb-4 pb-4 border-b border-white/[0.06]">
+          <ProgressLine
+            label="Completion"
+            watched={progress.watchedPlayed}
+            total={progress.played}
+            caption={progress.played ? `${progress.watchedPlayed} of ${progress.played} played` : 'no games played yet'}
+            accentColor={accentColor}
+          />
+          <ProgressLine
+            label="Season"
+            watched={progress.watched}
+            total={progress.total}
+            caption={`${progress.watched} of ${progress.total} this season · ${progress.played} played so far`}
+            accentColor={accentColor}
+          />
+        </div>
+      )}
 
       {stats.total === 0 ? (
         <div className="flex-1 flex items-center justify-center">

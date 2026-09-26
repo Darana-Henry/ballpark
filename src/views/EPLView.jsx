@@ -61,7 +61,7 @@ function QueueTab({ games }) {
           <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Up Next For You</p>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <GameCard game={upNext} isUpNext showDismissAction trackedTeamId={MAN_UNITED_ID} />
-            <SeasonStatsPanel league="epl" trackedTeamId={MAN_UNITED_ID} />
+            <SeasonStatsPanel league="epl" trackedTeamId={MAN_UNITED_ID} games={games} />
           </div>
         </>
       )}

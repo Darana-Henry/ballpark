@@ -105,7 +105,7 @@ function QueueTab({ games, onTrack }) {
           <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Up Next For You</p>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <TrackableCard game={upNext} isUpNext showDismissAction onTrack={onTrack} />
-            <SeasonStatsPanel league="bbl" trackedTeamId={null} />
+            <SeasonStatsPanel league="bbl" trackedTeamId={null} games={games} />
           </div>
         </>
       )}

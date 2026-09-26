@@ -1,6 +1,8 @@
-import { useState } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { LEAGUES } from '../constants/leagues'
 import { useWatched } from '../contexts/WatchedContext'
+import SeasonBattery from './SeasonBattery'
+import { loadAllLeagueGames } from '../api/seasonSchedules'
 
 function LeagueIcon({ league }) {
   const [err, setErr] = useState(false)
@@ -23,9 +25,7 @@ function LeagueIcon({ league }) {
   )
 }
 
-function NavItem({ league, active, onClick }) {
-  const { watchedForLeague } = useWatched()
-  const watchedCount = watchedForLeague(league.id).length
+function NavItem({ league, active, onClick, coverage }) {
 
   return (
     <button
@@ -41,11 +41,11 @@ function NavItem({ league, active, onClick }) {
       <span className={`flex-1 text-sm font-semibold leading-tight ${active ? 'text-slate-100' : 'text-slate-300'}`}>
         {league.name}
       </span>
-      {watchedCount > 0 && (
-        <span className="shrink-0 text-xs font-bold text-blue-300 bg-blue-900/60 border border-blue-800/50 px-2 py-0.5 rounded-full">
-          {watchedCount}
-        </span>
-      )}
+      <SeasonBattery
+        watched={coverage?.watched ?? 0}
+        total={coverage?.total ?? 0}
+        accentColor={league.accentColor}
+      />
     </button>
   )
 }
@@ -80,7 +80,40 @@ function AlarmClockIcon() {
   )
 }
 
+// Season coverage per league: how many of this season's games have been
+// watched, out of every game the season holds. Schedules come from the shared
+// session cache, so this reuses whatever Home already fetched.
+function useSeasonCoverage() {
+  const { watchedGames } = useWatched()
+  const [schedules, setSchedules] = useState(null)
+
+  useEffect(() => {
+    let cancelled = false
+    loadAllLeagueGames()
+      .then(s => { if (!cancelled) setSchedules(s) })
+      .catch(() => {})
+    return () => { cancelled = true }
+  }, [])
+
+  return useMemo(() => {
+    const coverage = {}
+    for (const [league, games] of Object.entries(schedules ?? {})) {
+      if (!games.length) continue
+      // Membership of the season's own fixture list, not a date comparison —
+      // dates misfire at a season boundary.
+      const ids = new Set(games.map(g => String(g.id)))
+      const watched = Object.values(watchedGames).filter(
+        g => g.league === league && g.watched && ids.has(String(g.gameId))
+      ).length
+      coverage[league] = { watched, total: games.length }
+    }
+    return coverage
+  }, [schedules, watchedGames])
+}
+
 export default function Sidebar({ activeLeague, onLeagueChange }) {
+  const coverage = useSeasonCoverage()
+
   return (
     <aside className="hidden md:flex flex-col w-60 shrink-0 h-screen sticky top-0" style={{ background: 'rgba(6,8,22,0.75)', backdropFilter: 'blur(24px)', WebkitBackdropFilter: 'blur(24px)', borderRight: '1px solid rgba(255,255,255,0.07)' }}>
       {/* Logo */}
@@ -127,6 +160,7 @@ export default function Sidebar({ activeLeague, onLeagueChange }) {
             league={league}
             active={activeLeague === league.id}
             onClick={() => onLeagueChange(league.id)}
+            coverage={coverage[league.id]}
           />
         ))}
       </nav>

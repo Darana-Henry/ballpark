@@ -2,6 +2,23 @@ import { useState } from 'react'
 import { useWatched } from '../contexts/WatchedContext'
 import { LEAGUES } from '../constants/leagues'
 import { isFirebaseConfigured } from '../firebase'
+import { getSeasonYear, getCurrentSeasonYear } from '../utils/season'
+
+// Counters track the current season only. Cricket is the exception: its
+// calendar is a run of separate series rather than one season, so restricting
+// it to a single year would hide most of what's been watched.
+const ALL_TIME_LEAGUES = new Set(['cricket'])
+
+function inCurrentSeason(record) {
+  if (ALL_TIME_LEAGUES.has(record.league)) return true
+  if (!record.gameDate) return false
+  return getSeasonYear(record.league, record.gameDate) === getCurrentSeasonYear(record.league)
+}
+
+const watchedThisSeason = (watchedGames, league = null) =>
+  Object.values(watchedGames).filter(g =>
+    g.watched && inCurrentSeason(g) && (league == null || g.league === league)
+  )
 
 const FEATURED_TEAM_IDS = {
   mlb: '119',
@@ -79,7 +96,7 @@ function RecentGameRow({ game, league }) {
 
 function LeagueSection({ league }) {
   const { watchedForLeague } = useWatched()
-  const watched = watchedForLeague(league.id)
+  const watched = watchedForLeague(league.id).filter(inCurrentSeason)
   const finalGames = watched.filter(g => g.status === 'final' && g.homeScore !== null && g.awayScore !== null)
 
   let wins = 0, losses = 0
@@ -187,7 +204,8 @@ function Header() {
 
 export default function StatsView() {
   const { watchedGames } = useWatched()
-  const totalWatched = Object.values(watchedGames).filter(g => g.watched).length
+  const totalWatched = watchedThisSeason(watchedGames).length
+
 
   if (!isFirebaseConfigured) {
     return (
@@ -221,14 +239,15 @@ export default function StatsView() {
         >
           <p className="text-[10px] font-bold uppercase tracking-widest text-slate-500 mb-1">Total Watched</p>
           <p className="text-5xl font-bold text-slate-100 tabular-nums">{totalWatched}</p>
-          <p className="text-sm text-slate-600 mt-1">across all leagues</p>
+          <p className="text-sm text-slate-600 mt-1">this season · all leagues</p>
         </div>
       </div>
 
       {/* Per-league summary cards — all 6 in one row on xl */}
       <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3 mb-8">
         {LEAGUES.map(league => {
-          const count = Object.values(watchedGames).filter(g => g.league === league.id && g.watched).length
+          const seasonWatched = watchedThisSeason(watchedGames, league.id)
+          const count = seasonWatched.length
           return (
             <div
               key={league.id}
@@ -247,7 +266,9 @@ export default function StatsView() {
                 {league.name}
               </p>
               <p className="text-3xl font-bold text-slate-100 tabular-nums">{count}</p>
-              <p className="text-xs text-slate-600 mt-0.5">watched</p>
+              <p className="text-xs text-slate-600 mt-0.5">
+                {ALL_TIME_LEAGUES.has(league.id) ? 'watched · all time' : 'watched this season'}
+              </p>
             </div>
           )
         })}

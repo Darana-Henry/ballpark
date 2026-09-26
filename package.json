@@ -10,7 +10,8 @@
     "lint": "eslint .",
     "preview": "vite preview",
     "predeploy": "vite build --mode qa",
-    "deploy": "gh-pages -d dist"
+    "deploy": "gh-pages -d dist",
+    "qb:fetch": "node scripts/fetch-qb-history.mjs"
   },
   "dependencies": {
     "firebase": "^12.13.0",

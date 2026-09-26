@@ -7,71 +7,17 @@ import LoadingSpinner from '../components/LoadingSpinner'
 import EmptyState from '../components/EmptyState'
 import { useWatched } from '../contexts/WatchedContext'
 import { getSeasonYear, getAvailableSeasons } from '../utils/season'
+import { NFL_TEAMS, NFL_DIVISION_ORDER, nflLogo } from '../constants/nflTeams'
+import { getNFLPlayoffRound, buildWeekOptions, defaultWeekId, matchesWeek } from '../utils/nflWeeks'
+import { fetchNFLTeamRanks } from '../api/nfl'
+import NFLLeagueLeaders from '../components/NFLLeagueLeaders'
+import NFLQuarterbackHistory from '../components/NFLQuarterbackHistory'
+import NFLWeekFilter from '../components/NFLWeekFilter'
+import NFLPerformanceHistory from '../components/NFLPerformanceHistory'
+import { buildFormByTeam } from '../utils/teamForm'
+import { getNFLSeason, fetchNFLLeagueLeaders, playersToWatch } from '../api/nfl'
 
-// ─── NFL team map: name → { abbr, div, logo } ────────────────────────────────
 
-const NFL_TEAMS = {
-  'Buffalo Bills':          { abbr: 'BUF', div: 'AFC East'  },
-  'Miami Dolphins':         { abbr: 'MIA', div: 'AFC East'  },
-  'New England Patriots':   { abbr: 'NE',  div: 'AFC East'  },
-  'New York Jets':          { abbr: 'NYJ', div: 'AFC East'  },
-  'Baltimore Ravens':       { abbr: 'BAL', div: 'AFC North' },
-  'Cincinnati Bengals':     { abbr: 'CIN', div: 'AFC North' },
-  'Cleveland Browns':       { abbr: 'CLE', div: 'AFC North' },
-  'Pittsburgh Steelers':    { abbr: 'PIT', div: 'AFC North' },
-  'Houston Texans':         { abbr: 'HOU', div: 'AFC South' },
-  'Indianapolis Colts':     { abbr: 'IND', div: 'AFC South' },
-  'Jacksonville Jaguars':   { abbr: 'JAX', div: 'AFC South' },
-  'Tennessee Titans':       { abbr: 'TEN', div: 'AFC South' },
-  'Denver Broncos':         { abbr: 'DEN', div: 'AFC West'  },
-  'Kansas City Chiefs':     { abbr: 'KC',  div: 'AFC West'  },
-  'Las Vegas Raiders':      { abbr: 'LV',  div: 'AFC West'  },
-  'Los Angeles Chargers':   { abbr: 'LAC', div: 'AFC West'  },
-  'Dallas Cowboys':         { abbr: 'DAL', div: 'NFC East'  },
-  'New York Giants':        { abbr: 'NYG', div: 'NFC East'  },
-  'Philadelphia Eagles':    { abbr: 'PHI', div: 'NFC East'  },
-  'Washington Commanders':  { abbr: 'WAS', div: 'NFC East'  },
-  'Chicago Bears':          { abbr: 'CHI', div: 'NFC North' },
-  'Detroit Lions':          { abbr: 'DET', div: 'NFC North' },
-  'Green Bay Packers':      { abbr: 'GB',  div: 'NFC North' },
-  'Minnesota Vikings':      { abbr: 'MIN', div: 'NFC North' },
-  'Atlanta Falcons':        { abbr: 'ATL', div: 'NFC South' },
-  'Carolina Panthers':      { abbr: 'CAR', div: 'NFC South' },
-  'New Orleans Saints':     { abbr: 'NO',  div: 'NFC South' },
-  'Tampa Bay Buccaneers':   { abbr: 'TB',  div: 'NFC South' },
-  'Arizona Cardinals':      { abbr: 'ARI', div: 'NFC West'  },
-  'Los Angeles Rams':       { abbr: 'LAR', div: 'NFC West'  },
-  'Seattle Seahawks':       { abbr: 'SEA', div: 'NFC West'  },
-  'San Francisco 49ers':    { abbr: 'SF',  div: 'NFC West'  },
-}
-
-const NFL_DIVISION_ORDER = [
-  'AFC East', 'AFC North', 'AFC South', 'AFC West',
-  'NFC East', 'NFC North', 'NFC South', 'NFC West',
-]
-
-function nflLogo(abbr) {
-  return `https://a.espncdn.com/i/teamlogos/nfl/500/${abbr.toLowerCase()}.png`
-}
-
-function getNFLPlayoffRound(gameType, gameDate) {
-  if (!gameType || gameType === 'Regular Season') return null
-  const gt = gameType.toLowerCase()
-  if (gt.includes('super bowl')) return 'Super Bowl'
-  if (gt.includes('championship')) return 'Conference'
-  if (gt.includes('divisional') || gt.includes('division')) return 'Divisional'
-  if (gt.includes('wild card')) return 'Wild Card'
-  // Date-based fallback when gameType is generic 'Playoffs'
-  if (gameDate) {
-    const d = new Date(gameDate)
-    const m = d.getMonth(), day = d.getDate()
-    if (m === 1) return 'Super Bowl'           // February
-    if (m === 0 && day >= 24) return 'Conference'
-    if (m === 0 && day >= 16) return 'Divisional'
-    if (m === 0) return 'Wild Card'
-  }
-  return 'Wild Card'
-}
 
 function getConference(teamName) {
   return NFL_TEAMS[teamName]?.div.startsWith('AFC') ? 'AFC' : 'NFC'
@@ -218,19 +164,28 @@ function getResult(game) {
 
 // ─── My Queue ─────────────────────────────────────────────────────────────────
 
-function QueueTab({ games }) {
+function QueueTab({ games, ranks, form, watchList }) {
   const { isWatched, isDismissed } = useWatched()
   const [showWatched, setShowWatched] = useState(false)
 
+  const weekOptions = useMemo(() => buildWeekOptions(games), [games])
+  // Open on the week in progress rather than week 1. Derived rather than set
+  // in an effect: the schedule only arrives after first render, and once the
+  // user picks a week their choice takes over.
+  const currentWeek = useMemo(() => (games.length ? defaultWeekId(games) : 'all'), [games])
+  const [week, setWeek] = useState(null)
+  const activeWeek = week ?? currentWeek
+
   const { upNext, nextScheduled, unwatched, watched } = useMemo(() => {
-    const live = games.filter(g => g.status === 'live' && !isDismissed(g.id, 'nfl'))
-    const finalUnwatched = games
+    const inWeek = games.filter(g => matchesWeek(g, activeWeek))
+    const live = inWeek.filter(g => g.status === 'live' && !isDismissed(g.id, 'nfl'))
+    const finalUnwatched = inWeek
       .filter(g => g.status === 'final' && !isWatched(g.id, 'nfl') && !isDismissed(g.id, 'nfl'))
       .sort((a, b) => a.gameDate - b.gameDate)
-    const scheduled = games
+    const scheduled = inWeek
       .filter(g => g.status === 'scheduled' && !isDismissed(g.id, 'nfl'))
       .sort((a, b) => a.gameDate - b.gameDate)
-    const watchedList = games
+    const watchedList = inWeek
       .filter(g => isWatched(g.id, 'nfl'))
       .sort((a, b) => b.gameDate - a.gameDate)
 
@@ -242,21 +197,32 @@ function QueueTab({ games }) {
       ...scheduled.filter(g => g.id !== upNextId),
     ]
     return { upNext, nextScheduled: scheduled[0] ?? null, unwatched: remaining, watched: watchedList }
-  }, [games, isWatched, isDismissed])
+  }, [games, activeWeek, isWatched, isDismissed])
 
 
   return (
     <div className="flex flex-col gap-3">
+      <NFLWeekFilter
+        options={weekOptions}
+        value={activeWeek}
+        onChange={setWeek}
+        count={(upNext ? 1 : 0) + unwatched.length + watched.length}
+      />
+
       {!upNext && unwatched.length === 0 && watched.length === 0 && (
-        <EmptyState emoji="🏈" title="No games yet" message="Check back when the season starts." />
+        <EmptyState
+          emoji="🏈"
+          title={activeWeek === 'all' ? 'No games yet' : 'Nothing this week'}
+          message={activeWeek === 'all' ? 'Check back when the season starts.' : 'Try another week, or clear the filter.'}
+        />
       )}
 
       {upNext && (
         <>
           <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Up Next For You</p>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <GameCard game={upNext} isUpNext showDismissAction />
-            <SeasonStatsPanel league="nfl" trackedTeamId={null} />
+            <GameCard ranks={ranks} form={form} playersToWatch={watchList} game={upNext} isUpNext showDismissAction />
+            <SeasonStatsPanel league="nfl" trackedTeamId={null} games={games} />
           </div>
         </>
       )}
@@ -270,7 +236,7 @@ function QueueTab({ games }) {
       )}
 
       <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-3">
-        {unwatched.map(g => <GameCard key={g.id} game={g} showDismissAction />)}
+        {unwatched.map(g => <GameCard ranks={ranks} form={form} playersToWatch={watchList} key={g.id} game={g} showDismissAction />)}
       </div>
 
       {watched.length > 0 && (
@@ -287,7 +253,7 @@ function QueueTab({ games }) {
           </button>
           {showWatched && (
             <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-3 mt-2">
-              {watched.map(g => <GameCard key={g.id} game={g} resultColor={getResult(g)} />)}
+              {watched.map(g => <GameCard ranks={ranks} form={form} playersToWatch={watchList} key={g.id} game={g} resultColor={getResult(g)} />)}
             </div>
           )}
         </div>
@@ -304,7 +270,7 @@ const GAME_FILTERS = [
   { id: 'regular',  label: 'Regular Season' },
 ]
 
-function AllGamesTab({ games }) {
+function AllGamesTab({ games, ranks, form, watchList }) {
   const [filter, setFilter] = useState('all')
   const filtered = useMemo(() => {
     const sorted = [...games].sort((a, b) => b.gameDate - a.gameDate)
@@ -324,7 +290,7 @@ function AllGamesTab({ games }) {
         ))}
       </div>
       <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-3">
-        {filtered.map(g => <GameCard key={g.id} game={g} />)}
+        {filtered.map(g => <GameCard ranks={ranks} form={form} playersToWatch={watchList} key={g.id} game={g} />)}
       </div>
     </>
   )
@@ -332,7 +298,7 @@ function AllGamesTab({ games }) {
 
 // ─── Watched ──────────────────────────────────────────────────────────────────
 
-function WatchedTab({ games }) {
+function WatchedTab({ games, ranks, form, watchList }) {
   const { isWatched, isDismissed } = useWatched()
   const [showSkipped, setShowSkipped] = useState(false)
 
@@ -363,7 +329,7 @@ function WatchedTab({ games }) {
             <p className="text-xs text-slate-600">scores visible · toggle to unwatch</p>
           </div>
           <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-3">
-            {watched.map(g => <GameCard key={g.id} game={g} resultColor={getResult(g)} />)}
+            {watched.map(g => <GameCard ranks={ranks} form={form} playersToWatch={watchList} key={g.id} game={g} resultColor={getResult(g)} />)}
           </div>
         </>
       )}
@@ -382,7 +348,7 @@ function WatchedTab({ games }) {
           </button>
           {showSkipped && (
             <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-3 mt-2">
-              {skipped.map(g => <GameCard key={g.id} game={g} showDismissAction />)}
+              {skipped.map(g => <GameCard ranks={ranks} form={form} playersToWatch={watchList} key={g.id} game={g} showDismissAction />)}
             </div>
           )}
         </div>
@@ -649,13 +615,21 @@ function NFLBracketTab({ games }) {
 
 // ─── Main ─────────────────────────────────────────────────────────────────────
 
+// Stats is on hold. With no tab entry there is no way to select it, so
+// StatsTab never mounts and fetchNFLStatsFromWatchedGames is never called.
+// Flip this to bring the tab back.
+const SHOW_STATS_TAB = false
+
 const TABS = [
-  { id: 'queue',     label: 'My Queue'  },
-  { id: 'all',       label: 'All Games' },
-  { id: 'watched',   label: 'Watched'   },
-  { id: 'standings', label: 'Standings' },
-  { id: 'playoffs',  label: 'Playoffs'  },
-  { id: 'stats',     label: 'Stats'     },
+  { id: 'queue',     label: 'My Queue'    },
+  { id: 'all',       label: 'All Games'   },
+  { id: 'watched',   label: 'Watched'     },
+  { id: 'standings', label: 'Standings'   },
+  { id: 'playoffs',  label: 'Playoffs'    },
+  ...(SHOW_STATS_TAB ? [{ id: 'stats', label: 'Stats', view: StatsTab }] : []),
+  { id: 'leaders',   label: 'Leaders'     },
+  { id: 'form',      label: 'Performance' },
+  { id: 'qbs',       label: 'Quarterbacks'},
 ]
 
 export default function NFLView() {
@@ -663,12 +637,46 @@ export default function NFLView() {
   const [loading, setLoading] = useState(true)
   const [error, setError]     = useState(null)
   const [tab, setTab]         = useState('queue')
+  const [ranks, setRanks]     = useState(null)
+  const [teamAbbrById, setTeamAbbrById] = useState(null)
+  const [leaders, setLeaders] = useState(null)
+  const { watchedGames } = useWatched()
+
+  const season = getNFLSeason()
+  // Form is derived from watched games only, so it costs no request and can
+  // never show a result the user hasn't marked.
+  const form = useMemo(() => buildFormByTeam(watchedGames, 'nfl', season), [watchedGames, season])
+  const watchList = useMemo(() => playersToWatch(leaders?.boards), [leaders])
+
+  const teamIdByAbbr = useMemo(
+    () => Object.fromEntries(Object.entries(teamAbbrById ?? {}).map(([id, abbr]) => [abbr, id])),
+    [teamAbbrById]
+  )
 
   useEffect(() => {
     fetchNFLGames()
       .then(setGames)
       .catch(err => setError(err.message))
       .finally(() => setLoading(false))
+  }, [])
+
+  // Leaders are fetched once here and shared by the Leaders tab and the
+  // "player to watch" line on the cards, rather than each fetching its own.
+  useEffect(() => {
+    fetchNFLLeagueLeaders()
+      .then(setLeaders)
+      .catch(() => {})
+  }, [])
+
+  // League ranking is supplementary to the schedule: cards render without it
+  // and pick the bracket numbers up once standings land.
+  useEffect(() => {
+    fetchNFLTeamRanks()
+      .then(({ rankByTeamId, teams }) => {
+        setRanks(rankByTeamId)
+        setTeamAbbrById(Object.fromEntries(teams.map(t => [t.teamId, t.abbreviation])))
+      })
+      .catch(() => {})
   }, [])
 
   return (
@@ -704,12 +712,14 @@ export default function NFLView() {
         </div>
       )}
 
-      {!loading && !error && tab === 'queue'     && <QueueTab games={games} />}
-      {!loading && !error && tab === 'all'       && <AllGamesTab games={games} />}
-      {!loading && !error && tab === 'watched'   && <WatchedTab games={games} />}
+      {!loading && !error && tab === 'queue'     && <QueueTab games={games} ranks={ranks} form={form} watchList={watchList} />}
+      {!loading && !error && tab === 'all'       && <AllGamesTab games={games} ranks={ranks} form={form} watchList={watchList} />}
+      {!loading && !error && tab === 'watched'   && <WatchedTab games={games} ranks={ranks} form={form} watchList={watchList} />}
       {tab === 'standings' && <StandingsTab games={games} />}
       {tab === 'playoffs'  && <NFLBracketTab games={games} />}
-      {tab === 'stats'     && <StatsTab />}
+      {tab === 'leaders'   && <NFLLeagueLeaders teamAbbrById={teamAbbrById} data={leaders} />}
+      {tab === 'form'      && <NFLPerformanceHistory games={games} teamIdByAbbr={teamIdByAbbr} season={season} />}
+      {tab === 'qbs'       && <NFLQuarterbackHistory />}
     </div>
   )
 }

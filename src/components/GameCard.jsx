@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { LEAGUE_MAP } from '../constants/leagues'
+import RecentForm from './RecentForm'
 import { useWatched } from '../contexts/WatchedContext'
 import { isFirebaseConfigured } from '../firebase'
 import { useCountdown } from '../hooks/useCountdown'
@@ -111,13 +112,46 @@ function DismissButton({ dismissed, onToggle, dismissing }) {
 
 // resultColor: 'win' | 'loss' | null — used in Watched tab
 // showDismissAction: show the dismiss/un-dismiss X button
+// League rank shown in brackets beside a team name, e.g. "Tampa Bay (3)".
+// Teams level on the ranking measure share a rank, so repeated numbers across
+// cards early in a season are expected rather than a bug.
+function TeamRank({ rank }) {
+  if (!rank) return null
+  return (
+    <span className="text-slate-500 font-semibold tabular-nums" title={`League rank ${rank}`}>
+      {' '}({rank})
+    </span>
+  )
+}
+
+// A player worth watching from either side, shown on scheduled games only —
+// once a game is over the interesting thing is the result, not the preview.
+function PlayerToWatch({ game, players }) {
+  if (!players) return null
+  const picks = [players[game.awayTeam.id], players[game.homeTeam.id]].filter(Boolean)
+  if (!picks.length) return null
+  const pick = picks.reduce((a, b) => (a.score <= b.score ? a : b))
+
+  return (
+    <div className="flex items-center gap-2 px-4 pb-3 -mt-1">
+      {pick.photo
+        ? <img src={pick.photo} alt="" width={20} height={20} className="rounded-full object-cover object-top bg-slate-800 shrink-0" />
+        : <div className="w-5 h-5 rounded-full bg-slate-700 shrink-0" />}
+      <span className="text-[10px] text-slate-500 truncate">
+        <span className="text-slate-400 font-medium">{pick.name}</span>
+        {pick.position ? ` · ${pick.position}` : ''} · {pick.stat} {pick.display}
+      </span>
+    </div>
+  )
+}
+
 // trackedTeamId: used by hero card to compute Home/Away badge
 // forceWatched: treat the card as watched without an isWatched(game.id, ...)
 //   match — needed for Tests in the Results Log, where "watched" is tracked
 //   per day-row id, not the whole match's own id.
 // readOnly: suppress the watched-toggle/dismiss controls entirely (Results
 //   Log is a history view, not a queue you manage from).
-export default function GameCard({ game, isUpNext = false, resultColor = null, showDismissAction = false, trackedTeamId = null, className = '', forceWatched = false, readOnly = false }) {
+export default function GameCard({ game, isUpNext = false, resultColor = null, showDismissAction = false, trackedTeamId = null, className = '', forceWatched = false, readOnly = false, ranks = null, form = null, playersToWatch = null }) {
   const { isWatched, toggleWatched, isDismissed, toggleDismissed } = useWatched()
   const watched = forceWatched || isWatched(game.id, game.league)
   const dismissed = isDismissed(game.id, game.league)
@@ -208,9 +242,12 @@ export default function GameCard({ game, isUpNext = false, resultColor = null, s
         <div className="flex items-center px-4 mb-3">
           {/* Away team */}
           <div className="flex items-center gap-3 flex-1 justify-end">
-            <p className="text-right font-bold text-base text-slate-100 leading-snug max-w-[110px]">
-              {game.awayTeam.name}
-            </p>
+            <div className="max-w-[110px]">
+              <p className="text-right font-bold text-base text-slate-100 leading-snug">
+                {game.awayTeam.name}<TeamRank rank={ranks?.[game.awayTeam.id]} />
+              </p>
+              <RecentForm form={form?.[game.awayTeam.id]} align="right" className="mt-1 w-full" />
+            </div>
             <TeamLogo src={game.awayTeam.logo} alt={game.awayTeam.abbreviation} size={54} />
           </div>
 
@@ -246,9 +283,12 @@ export default function GameCard({ game, isUpNext = false, resultColor = null, s
           {/* Home team */}
           <div className="flex items-center gap-3 flex-1">
             <TeamLogo src={game.homeTeam.logo} alt={game.homeTeam.abbreviation} size={54} />
-            <p className="font-bold text-base text-slate-100 leading-snug max-w-[110px]">
-              {game.homeTeam.name}
-            </p>
+            <div className="max-w-[110px]">
+              <p className="font-bold text-base text-slate-100 leading-snug">
+                {game.homeTeam.name}<TeamRank rank={ranks?.[game.homeTeam.id]} />
+              </p>
+              <RecentForm form={form?.[game.homeTeam.id]} className="mt-1" />
+            </div>
           </div>
         </div>
 
@@ -259,6 +299,10 @@ export default function GameCard({ game, isUpNext = false, resultColor = null, s
             <span className="text-slate-700 mx-1.5">vs</span>
             <span className="text-slate-400">{game.probablePitchers.home?.lastName ?? '?'}</span>
           </p>
+        )}
+
+        {game.status === 'scheduled' && !dismissed && (
+          <PlayerToWatch game={game} players={playersToWatch} />
         )}
 
         {/* Venue */}
@@ -359,9 +403,12 @@ export default function GameCard({ game, isUpNext = false, resultColor = null, s
               <TeamLogo src={team.logo} alt={team.abbreviation} />
               <div className="min-w-0">
                 <p className={`font-semibold text-sm leading-tight truncate ${dismissed ? 'text-slate-600' : won ? 'text-slate-100' : 'text-slate-400'}`}>
-                  {team.name}
+                  {team.name}<TeamRank rank={ranks?.[team.id]} />
                 </p>
-                <p className="text-xs text-slate-600">{team.abbreviation} · {label}</p>
+                <p className="text-xs text-slate-600 flex items-center gap-1.5">
+                  <span>{team.abbreviation} · {label}</span>
+                  <RecentForm form={form?.[team.id]} />
+                </p>
               </div>
             </div>
             {game.status !== 'scheduled' && (
@@ -393,6 +440,12 @@ export default function GameCard({ game, isUpNext = false, resultColor = null, s
             <span className="text-slate-400">{game.probablePitchers.home?.lastName ?? '?'}</span>
           </span>
           <span className="text-xs text-slate-700">Starting pitchers</span>
+        </div>
+      )}
+
+      {game.status === 'scheduled' && !dismissed && (
+        <div className="-mx-4">
+          <PlayerToWatch game={game} players={playersToWatch} />
         </div>
       )}
 

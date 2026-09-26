@@ -1,5 +1,6 @@
 import { getDifficultyRating } from '../utils/difficulty'
 import { fetchScoreboardMonths } from './espnDates'
+import { getNFLSeason } from './nfl'
 
 const BASE = 'https://site.api.espn.com/apis/site/v2/sports'
 
@@ -48,6 +49,10 @@ function normalizeEvent(event, league) {
     statusDetail: event.status?.type?.shortDetail ?? comp.status?.type?.shortDetail ?? '',
     gameDate: new Date(event.date),
     gameType: gameTypeNote,
+    // Week number drives the NFL queue's week filter. Present on NFL events
+    // (regular season 1-18, then playoff rounds); absent for NBA.
+    week: event.week?.number ?? null,
+    seasonType: event.season?.type ?? null,
     highlightUrl: isFinal
       ? `https://www.espn.com/${league}/game/_/gameId/${event.id}`
       : (isLive ? `https://www.espn.com/${league}/game/_/gameId/${event.id}` : null),
@@ -315,11 +320,7 @@ function nflGameDifficulty(event, isPlayoff) {
 }
 
 export async function fetchNFLGames() {
-  const now = new Date()
-  // NFL schedules are announced ~mid-May for the season kicking off that
-  // September — months before games start — so switch over as soon as the
-  // new season's schedule would plausibly exist, not once games begin.
-  const seasonStartYear = now.getMonth() >= 4 ? now.getFullYear() : now.getFullYear() - 1
+  const seasonStartYear = getNFLSeason()
 
   // ESPN's scoreboard endpoint silently ignores season+week params for a
   // season that hasn't "started" per its own internal clock — season=2026,

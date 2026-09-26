@@ -9,6 +9,8 @@
 // it splits a season across two queries and mixes in the previous one —
 // months keep the caller's original season window intact.
 
+import { pooledMap } from '../utils/pool'
+
 const SITE_API = 'https://site.api.espn.com/apis/site/v2/sports'
 
 // Sweeping by month turns each former range into up to a dozen requests, and
@@ -36,29 +38,12 @@ export function monthsBetween(startDate, endDate) {
   return months
 }
 
-async function pooled(items, worker) {
-  const results = []
-  let next = 0
-  await Promise.all(
-    Array.from({ length: Math.min(MAX_CONCURRENT, items.length) }, async () => {
-      while (next < items.length) {
-        const i = next++
-        try {
-          results[i] = await worker(items[i])
-        } catch {
-          results[i] = []
-        }
-      }
-    })
-  )
-  return results
-}
 
 // Every event in `path`'s scoreboard between the two `YYYYMMDD` bounds.
 // A month that fails — an off-season gap, or a league slug ESPN no longer
 // serves — contributes nothing instead of failing the whole sweep.
 export async function fetchScoreboardMonths(path, startDate, endDate, params = {}) {
-  const pages = await pooled(monthsBetween(startDate, endDate), async month => {
+  const pages = await pooledMap(monthsBetween(startDate, endDate), async month => {
     const url = new URL(`${SITE_API}/${path}/scoreboard`)
     url.searchParams.set('dates', month)
     url.searchParams.set('limit', '300')
@@ -68,7 +53,7 @@ export async function fetchScoreboardMonths(path, startDate, endDate, params = {
     if (!res.ok) return []
     const data = await res.json()
     return data.events ?? []
-  })
+  }, { limit: MAX_CONCURRENT, fallback: [] })
 
   const seen = new Set()
   return pages.flat().filter(e => {

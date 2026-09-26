@@ -12,10 +12,16 @@ function qbSuffix(qb) {
   return ''
 }
 
+// Cells are a fixed width so the grid's columns stay aligned no matter how
+// many quarterbacks a season had; the full list is on the title tooltip.
+function cellTitle(quarterbacks) {
+  return quarterbacks.map(qb => `${qb.name} ${qbSuffix(qb)}`.trim()).join('  /  ')
+}
+
 function HistoryCell({ quarterbacks }) {
   if (!quarterbacks?.length) return <span className="text-slate-700">—</span>
   return (
-    <span className="text-slate-400">
+    <span className="text-slate-400 block truncate" title={cellTitle(quarterbacks)}>
       {quarterbacks.map((qb, i) => (
         <span key={`${qb.name}-${i}`}>
           {i > 0 && <span className="text-slate-700"> / </span>}
@@ -30,7 +36,7 @@ function HistoryCell({ quarterbacks }) {
 function CurrentCell({ qb }) {
   if (!qb) return <span className="text-slate-700">—</span>
   return (
-    <span className="flex items-center gap-2">
+    <span className="flex items-center gap-2 min-w-0" title={qb.name}>
       {qb.photo
         ? <img src={qb.photo} alt="" width={22} height={22} className="rounded-full object-cover object-top bg-slate-800 shrink-0" />
         : <div className="w-[22px] h-[22px] rounded-full bg-slate-700 shrink-0" />
@@ -95,15 +101,15 @@ export default function NFLQuarterbackHistory() {
       )}
 
       <div className="overflow-x-auto rounded-xl border border-slate-800">
-        <table className="w-full text-sm border-collapse">
+        <table className="text-sm border-collapse table-fixed">
           <thead>
             <tr className="bg-[#1a1a28]">
               <th className="text-left font-semibold text-slate-400 text-xs uppercase tracking-wider px-3 py-2 sticky left-0 bg-[#1a1a28] z-10">Team</th>
-              <th className="text-left font-semibold text-slate-500 text-xs uppercase tracking-wider px-3 py-2 whitespace-nowrap">
+              <th className="text-left font-semibold text-slate-500 text-xs uppercase tracking-wider px-3 py-2 w-44 min-w-44 max-w-44">
                 {current?.season ?? 'Current'}
               </th>
               {seasons.map(year => (
-                <th key={year} className="text-left font-semibold text-slate-500 text-xs uppercase tracking-wider px-3 py-2 whitespace-nowrap">
+                <th key={year} className="text-left font-semibold text-slate-500 text-xs uppercase tracking-wider px-3 py-2 w-44 min-w-44 max-w-44">
                   {year}
                 </th>
               ))}
@@ -120,11 +126,11 @@ export default function NFLQuarterbackHistory() {
                         <span className="text-slate-200 font-medium">{team.name}</span>
                       </span>
                     </td>
-                    <td className="px-3 py-2 whitespace-nowrap">
+                    <td className="px-3 py-2 w-44 min-w-44 max-w-44">
                       <CurrentCell qb={current?.byTeam?.[team.abbr]} />
                     </td>
                     {seasons.map(year => (
-                      <td key={year} className="px-3 py-2 whitespace-nowrap text-xs">
+                      <td key={year} className="px-3 py-2 text-xs w-44 min-w-44 max-w-44">
                         <HistoryCell quarterbacks={QB_HISTORY[team.abbr]?.[year]} />
                       </td>
                     ))}

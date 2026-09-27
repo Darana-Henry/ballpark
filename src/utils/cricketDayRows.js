@@ -59,24 +59,23 @@ export function expandTestDays(games, today = new Date()) {
   return games.flatMap(g => (g.matchType === 'test' ? buildTestDayRows(g, today) : [g]))
 }
 
-// Whether a (whole, un-expanded) match counts as watched. Tests are tracked
-// per day-row rather than as a single game, so a Test counts as watched once
-// at least one of its day-rows has been checked off — not all five, since
-// trailing days may never get played for a Test that finishes early.
-export function isMatchWatched(match, cricketWatchedIds) {
-  if (match.matchType === 'test') {
-    return cricketWatchedIds.some(id => id.startsWith(`${match.id}_d`))
-  }
-  return cricketWatchedIds.includes(match.id)
+// How many of a Test's day-rows correspond to days actually played. Day-rows
+// always number DAYS_PER_TEST (showing fewer would give away an early
+// finish), but once a Test is final its endDate is the real last day, so a
+// two-day Test is fully watched after two day-rows.
+function daysPlayed(match) {
+  if (match.status !== 'final' || !match.endDate) return DAYS_PER_TEST
+  const days = Math.round((new Date(match.endDate) - new Date(match.gameDate)) / 86400000) + 1
+  return Math.min(DAYS_PER_TEST, Math.max(1, days))
 }
 
-// Stricter than isMatchWatched: a Test only counts once EVERY day-row has
-// been checked off, not just one. Used by the Results Log tab, where the
-// point is to reveal the actual result sentence — a match you've only
-// partly watched shouldn't have its outcome spoiled.
+// A Test only counts as fully watched once every day-row for a
+// day actually played has been checked off, not just one. Used wherever a
+// result gets revealed (Series results, Results Log, Standings) — a match
+// you've only partly watched shouldn't have its outcome spoiled.
 export function isMatchFullyWatched(match, cricketWatchedIds) {
   if (match.matchType === 'test') {
-    return Array.from({ length: DAYS_PER_TEST }, (_, i) => `${match.id}_d${i + 1}`)
+    return Array.from({ length: daysPlayed(match) }, (_, i) => `${match.id}_d${i + 1}`)
       .every(id => cricketWatchedIds.includes(id))
   }
   return cricketWatchedIds.includes(match.id)

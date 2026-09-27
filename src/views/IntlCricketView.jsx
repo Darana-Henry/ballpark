@@ -1,7 +1,8 @@
 import { useState, useEffect, useMemo } from 'react'
 import { fetchIntlCricketGames, refreshIntlCricketGames, NATIONS, NATION_ABBR } from '../api/intlCricket'
-import { fetchWTCGames, refreshWTCGames } from '../api/wtc'
-import { expandTestDays, isMatchWatched, isMatchFullyWatched } from '../utils/cricketDayRows'
+import { withSeriesInfo, seriesYear, seriesActiveInYear, teamCode } from '../utils/cricketMatch'
+import leaders from '../data/cricketLeaders.json'
+import { expandTestDays, isMatchFullyWatched } from '../utils/cricketDayRows'
 import GameCard from '../components/GameCard'
 import BoundaryTracker from '../components/BoundaryTracker'
 import LoadingSpinner from '../components/LoadingSpinner'
@@ -70,24 +71,43 @@ function applyFormatFilter(games, format) {
   return games.filter(g => g.matchType === format)
 }
 
-// ─── Country filter ────────────────────────────────────────────────────────────
-// A dropdown rather than pills — 12 nations as pills would be a wall of
-// buttons, so this stays a single compact control per tab.
+// ─── Dropdown filters ──────────────────────────────────────────────────────────
+// Styled to sit alongside FormatPills as one more pill, rather than as a
+// separate control pushed to the far edge of the row.
 
-function CountrySelect({ value, onChange, placeholder = 'All Countries' }) {
+function PillSelect({ value, onChange, options }) {
+  const active = value !== options[0]?.value
   return (
-    <select
-      value={value}
-      onChange={e => onChange(e.target.value)}
-      className="px-3 py-1.5 rounded-full text-xs font-semibold bg-transparent text-slate-300 border border-slate-700/50 focus:outline-none focus:border-cyan-500/40 hover:border-slate-600 transition-colors cursor-pointer"
-      style={{ background: 'rgba(255,255,255,0.03)' }}
-    >
-      <option value="" className="bg-[#161622] text-slate-300">{placeholder}</option>
-      {NATIONS.map(n => (
-        <option key={n} value={n} className="bg-[#161622] text-slate-300">{n}</option>
-      ))}
-    </select>
+    <div className="relative">
+      <select
+        value={value}
+        onChange={e => onChange(e.target.value)}
+        className={[
+          'appearance-none pl-3 pr-7 py-1 rounded-full text-xs font-semibold border transition-colors cursor-pointer focus:outline-none',
+          active
+            ? 'bg-cyan-500/20 text-cyan-300 border-cyan-500/40'
+            : 'bg-transparent text-slate-500 border-slate-700/50 hover:text-slate-300 hover:border-slate-600',
+        ].join(' ')}
+      >
+        {options.map(o => (
+          <option key={o.value} value={o.value} className="bg-[#161622] text-slate-300">{o.label}</option>
+        ))}
+      </select>
+      <svg className="w-3 h-3 absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none text-slate-500"
+        fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M19 9l-7 7-7-7" />
+      </svg>
+    </div>
   )
+}
+
+const COUNTRY_OPTIONS = [
+  { value: '', label: 'All Countries' },
+  ...[...NATIONS].sort().map(n => ({ value: n, label: n })),
+]
+
+function CountrySelect({ value, onChange }) {
+  return <PillSelect value={value} onChange={onChange} options={COUNTRY_OPTIONS} />
 }
 
 function applyCountryFilter(games, country) {
@@ -108,22 +128,23 @@ function getResult(game) {
 }
 
 // ─── Series tab ─────────────────────────────────────────────────────────────────
+// One row per tour or tournament, oldest first, like Wikipedia's season
+// overview tables. Bilateral tours get one block per match in each format
+// column — green once you've watched it, grey once it's been played, outlined
+// while still to come. Tri-series and tournaments, which can run to dozens of
+// games, get one battery for the whole event split into the same three shades.
+// The result is revealed only once the series is over and every match in it
+// has been fully watched, as one compact line (full sentence on hover).
 
-function ordinal(n) {
-  const s = ['th', 'st', 'nd', 'rd']
-  const v = n % 100
-  return `${n}${s[(v - 20) % 10] || s[v] || s[0]}`
-}
+const SERIES_FORMATS = ['test', 'odi', 't20i']
+const FORMAT_PLURAL = { test: 'Tests', odi: 'ODIs', t20i: 'T20Is' }
 
-// Groups matches by format and tallies wins by team name (not home/away role,
-// which can vary match-to-match within a series) to describe the result of
-// each format played. Only called once every match in the series has been
-// watched — this is the spoiler-reveal step, not the default.
-function formatResultLine(matches, matchType) {
+// Tallies wins by team name (not home/away role, which can vary
+// match-to-match within a series). Returns the full sentence for the hover
+// text and a short form with team codes for the one-line Result column.
+function formatResult(matches, matchType) {
   const single = matches.length === 1
-  const label = single
-    ? { test: 'Test', odi: 'ODI', t20i: 'T20I' }[matchType]
-    : { test: 'Tests', odi: 'ODIs', t20i: 'T20Is' }[matchType]
+  const label = single ? FORMAT_LABEL[matchType] : FORMAT_PLURAL[matchType]
 
   const tally = {}
   for (const m of matches) {
@@ -131,168 +152,346 @@ function formatResultLine(matches, matchType) {
     else if (m.awayWon) tally[m.awayTeam.name] = (tally[m.awayTeam.name] || 0) + 1
   }
   const entries = Object.entries(tally).sort((a, b) => b[1] - a[1])
-  if (entries.length === 0) return `${label}: drawn`
+  if (entries.length === 0) return { full: `${label}: drawn`, short: `${label} drawn` }
 
-  const [winner, winCount] = entries[0]
-  const loseCount = entries[1]?.[1] ?? 0
-  if (winCount === loseCount) return `${label}: series drawn ${winCount}-${loseCount}`
-  return single ? `${label}: ${winner} won` : `${label}: ${winner} won ${winCount}-${loseCount}`
+  const [winner, w] = entries[0]
+  const l = entries[1]?.[1] ?? 0
+  if (w === l) return { full: `${label}: series drawn ${w}-${l}`, short: `${label} ${w}–${l}` }
+  if (single) return { full: `${label}: ${winner} won`, short: `${label} ${teamCode(winner)}` }
+  return { full: `${label}: ${winner} won ${w}-${l}`, short: `${label} ${teamCode(winner)} ${w}–${l}` }
 }
 
-function buildResultSummary(matches) {
-  const byType = new Map()
+function bilateralResult(matches) {
+  const parts = SERIES_FORMATS
+    .map(t => matches.filter(m => m.matchType === t))
+    .filter(ms => ms.length)
+    .map(ms => formatResult(ms, ms[0].matchType))
+  return { short: parts.map(p => p.short).join(' · '), full: parts.map(p => p.full).join('\n') }
+}
+
+// Tri-series and multi-nation tournaments aren't a head-to-head scoreline —
+// their result is whoever won the final (or, for a round-robin with no final
+// among the tracked nations, whoever won the most).
+function tournamentResult(matches) {
+  const final = matches.filter(m => /final$/i.test(m.gameType) && !/semi|quarter/i.test(m.gameType)).pop()
+  if (final) {
+    const winner = final.homeWon ? final.homeTeam.name : final.awayWon ? final.awayTeam.name : null
+    return winner
+      ? { short: `Won by ${teamCode(winner)}`, full: `Won by ${winner}` }
+      : { short: 'Final: no result', full: 'Final: no result' }
+  }
+  const wins = {}
   for (const m of matches) {
-    if (!byType.has(m.matchType)) byType.set(m.matchType, [])
-    byType.get(m.matchType).push(m)
+    const w = m.homeWon ? m.homeTeam.name : m.awayWon ? m.awayTeam.name : null
+    if (w) wins[w] = (wins[w] || 0) + 1
   }
-  return [...byType.entries()].map(([type, ms]) => formatResultLine(ms, type))
+  const [top] = Object.entries(wins).sort((a, b) => b[1] - a[1])
+  return top ? { short: `Most wins: ${teamCode(top[0])} (${top[1]})`, full: `Most wins: ${top[0]} (${top[1]})` } : null
 }
 
-// Schedule/progress only, UNLESS the series is both finished in real life and
-// every one of its matches has been watched — only then does it reveal the
-// actual result. Never reveals a score, result, or series leader otherwise.
-function seriesProgress(matches, today, cricketWatchedIds) {
+// Every game reaching the tabs has passed through withSeriesInfo.
+const seriesKindOf = g => g.seriesKind
+
+// "24 Sep 2026" — built by hand because en-GB's short month is "Sept".
+const MONTH_ABBR = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+function formatStartDate(d) {
+  return `${d.getUTCDate()} ${MONTH_ABBR[d.getUTCMonth()]} ${d.getUTCFullYear()}`
+}
+
+function blockState(m, cricketWatchedIds) {
+  if (m.status !== 'final') return 'upcoming'
+  return isMatchFullyWatched(m, cricketWatchedIds) ? 'watched' : 'played'
+}
+
+function summarizeSeries(name, matches, cricketWatchedIds, kind) {
   const sorted = [...matches].sort((a, b) => a.gameDate - b.gameDate)
-  const live = sorted.filter(m => m.status === 'live')
-  const scheduled = sorted.filter(m => m.status === 'scheduled')
-  const completedCount = sorted.filter(m => m.status === 'final').length
-  const lastDate = sorted[sorted.length - 1]?.gameDate ?? today
-
-  if (live.length > 0) {
-    const m = live[0]
-    const idx = sorted.indexOf(m) + 1
-    const label = FORMAT_LABEL[m.matchType] || m.matchType
-    if (m.matchType === 'test') {
-      const dayNum = Math.min(5, Math.max(1, Math.floor((today - m.gameDate) / 86400000) + 1))
-      return { state: 'live', text: `${ordinal(idx)} ${label} in progress · Day ${dayNum} of 5`, sortDate: today }
-    }
-    return { state: 'live', text: `${ordinal(idx)} ${label} · Live now`, sortDate: today }
+  const blocks = {}
+  for (const m of sorted) {
+    (blocks[m.matchType] ||= []).push({ match: m, state: blockState(m, cricketWatchedIds) })
   }
-  if (scheduled.length > 0) {
-    const m = scheduled[0]
-    const idx = sorted.indexOf(m) + 1
-    const label = FORMAT_LABEL[m.matchType] || m.matchType
-    const dateStr = m.gameDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
-    return { state: 'upcoming', text: `Next: ${ordinal(idx)} ${label} · ${dateStr}`, sortDate: m.gameDate }
-  }
-
-  const allWatched = sorted.every(m => isMatchWatched(m, cricketWatchedIds))
-  if (allWatched) {
-    return { state: 'done', lines: buildResultSummary(sorted), sortDate: lastDate }
-  }
+  const states = sorted.map(m => blockState(m, cricketWatchedIds))
+  const fullyWatched = states.every(st => st === 'watched')
+  // seriesTeams includes associates (e.g. host Namibia); older stored games
+  // lack it, so fall back to the sides seen in the tracked matches.
+  const teams = sorted[0].seriesTeams ?? [...new Set(sorted.flatMap(m => [m.homeTeam.name, m.awayTeam.name]))]
+  // A plain year is dropped (the year dropdown shows it); a span like
+  // "2026–27" stays, since it says the tour runs on into the next year.
+  const title = name.replace(/, \d{4}$/, '')
+  const teamCodes = kind === 'tri-series' ? `(${teams.map(teamCode).join(', ')})` : null
   return {
-    state: 'completed',
-    text: `Series complete · ${completedCount} match${completedCount !== 1 ? 'es' : ''}`,
-    sortDate: lastDate,
+    key: name,
+    title,
+    teamCodes,
+    label: teamCodes ? `${title} ${teamCodes}` : title,
+    start: sorted[0].gameDate,
+    blocks,
+    states,
+    fullyWatched,
+    result: !fullyWatched ? null : kind === 'bilateral' ? bilateralResult(sorted) : tournamentResult(sorted),
   }
 }
 
-const SERIES_STATE_STYLE = {
-  live:      'bg-red-500/10 text-red-400 border-red-500/25',
-  upcoming:  'bg-cyan-500/10 text-cyan-400 border-cyan-500/25',
-  completed: 'bg-slate-700/20 text-slate-500 border-slate-700/40',
-  done:      'bg-emerald-500/10 text-emerald-400 border-emerald-500/25',
+const BLOCK_CLASS = {
+  watched:  'bg-emerald-500',
+  played:   'bg-slate-500',
+  upcoming: 'border border-slate-600',
+}
+const BLOCK_WORD = { watched: 'watched', played: 'played, not watched', upcoming: 'to come' }
+const BLOCK_TEXT = { watched: 'text-emerald-400', played: 'text-slate-400', upcoming: 'text-slate-600' }
+
+function countStates(states) {
+  const n = { watched: 0, played: 0, upcoming: 0 }
+  for (const st of states) n[st]++
+  return n
 }
 
-function SeriesCard({ seriesName, matches, cricketWatchedIds }) {
-  const today = new Date()
-  const sorted = [...matches].sort((a, b) => a.gameDate - b.gameDate)
-  const first = sorted[0]
-  const last = sorted[sorted.length - 1]
-
-  const formatCounts = {}
-  for (const m of matches) formatCounts[m.matchType] = (formatCounts[m.matchType] || 0) + 1
-  const formatTags = Object.entries(formatCounts)
-    .map(([type, count]) => `${count} ${FORMAT_LABEL[type] || type}${count !== 1 ? 's' : ''}`)
-    .join(' · ')
-
-  const lastEnd = last.matchType === 'test'
-    ? new Date(last.gameDate.getTime() + 4 * 86400000)
-    : last.gameDate
-  const rangeStr = `${first.gameDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} – ${lastEnd.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`
-
-  const progress = seriesProgress(matches, today, cricketWatchedIds)
-
+// One battery for a whole event: green = watched, grey = played but not
+// watched, empty = still to come. With showCounts, the three numbers sit
+// beside it in the matching colours.
+function Battery({ states, showCounts = false }) {
+  const n = countStates(states)
+  const pct = k => `${(n[k] / states.length) * 100}%`
   return (
-    <div className="rounded-xl p-4" style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)' }}>
-      <div className="flex items-start justify-between gap-3 mb-3">
-        <div className="min-w-0">
-          <p className="font-semibold text-sm text-slate-100 truncate">{seriesName}</p>
-          <p className="text-xs text-slate-600 mt-0.5">{formatTags} · {rangeStr}</p>
+    <div className="flex items-center justify-center gap-2"
+      title={`${states.length} matches · ${n.watched} watched · ${n.played} played, not watched · ${n.upcoming} to come`}>
+      <div className="flex items-center shrink-0">
+        <div className="flex h-3.5 w-[66px] rounded-[4px] border border-slate-500 p-[2px]">
+          <span className="h-full bg-emerald-500 rounded-l-[2px]" style={{ width: pct('watched') }} />
+          <span className="h-full bg-slate-500" style={{ width: pct('played') }} />
         </div>
-        <span className="text-xs text-slate-500 shrink-0">
-          {first.awayTeam.abbreviation} vs {first.homeTeam.abbreviation}
-        </span>
+        <span className="w-[3px] h-1.5 rounded-r-sm bg-slate-500" />
       </div>
-      {progress.state === 'done' ? (
-        <div className="flex flex-col gap-1 items-start">
-          {progress.lines.map((line, i) => (
-            <span key={i} className={`inline-flex items-center text-xs px-2.5 py-1 rounded-full border ${SERIES_STATE_STYLE.done}`}>
-              {line}
+      {showCounts && (
+        <span className="text-[11px] tabular-nums whitespace-nowrap">
+          {['watched', 'played', 'upcoming'].map((k, i) => (
+            <span key={k}>
+              {i > 0 && <span className="text-slate-700"> · </span>}
+              <span className={BLOCK_TEXT[k]}>{n[k]}</span>
             </span>
           ))}
-        </div>
-      ) : (
-        <span className={`inline-flex items-center text-xs px-2.5 py-1 rounded-full border ${SERIES_STATE_STYLE[progress.state]}`}>
-          {progress.state === 'live' && <span className="w-1.5 h-1.5 rounded-full bg-red-400 live-pulse mr-1.5" />}
-          {progress.text}
         </span>
       )}
     </div>
   )
 }
 
-// live/upcoming come first (still in play); completed and done share the last
-// tier — a fully-revealed series and a still-locked one are equally "nothing
-// left to do here," tie-broken by most-recently-finished.
-const SERIES_SORT_ORDER = { live: 0, upcoming: 1, completed: 2, done: 2 }
+// Up to five blocks, all on one line so every row stays the same height; a
+// longer bilateral series (a 7-match T20I series, say) gets a battery instead.
+const MAX_BLOCKS = 5
 
-function SeriesTab({ games }) {
+function MatchBlocks({ blocks }) {
+  if (!blocks) return <span className="text-slate-700">–</span>
+  if (blocks.length > MAX_BLOCKS) return <Battery states={blocks.map(b => b.state)} />
+  return (
+    <div className="flex gap-1 w-[66px] mx-auto">
+      {blocks.map(({ match, state }) => (
+        <span key={match.id}
+          title={`${match.gameType} · ${formatStartDate(match.gameDate)} · ${BLOCK_WORD[state]}`}
+          className={`w-2.5 h-2.5 rounded-[3px] ${BLOCK_CLASS[state]}`} />
+      ))}
+    </div>
+  )
+}
+
+function BlockLegend() {
+  return (
+    <div className="flex items-center gap-4 text-[11px] text-slate-600">
+      {Object.entries(BLOCK_WORD).map(([state, word]) => (
+        <span key={state} className="flex items-center gap-1.5">
+          <span className={`w-2.5 h-2.5 rounded-[3px] ${BLOCK_CLASS[state]}`} />
+          {word.replace(', not watched', '')}
+        </span>
+      ))}
+    </div>
+  )
+}
+
+// Tour and Result share one width: just enough for the longest tour name or
+// result line, measured in the page's own font so there's no dead space.
+// Start and the format columns are narrow and fixed.
+const SNUG_COL_PX = 112
+const PROGRESS_COL_PX = 176
+const CELL_PADDING_PX = 34
+let measureCtx = null
+function textWidth(text, font) {
+  measureCtx ||= document.createElement('canvas').getContext('2d')
+  measureCtx.font = font
+  return measureCtx.measureText(text).width
+}
+function flexColumnWidth(rows) {
+  const family = getComputedStyle(document.body).fontFamily
+  const widest = Math.max(
+    140,
+    ...rows.map(r => textWidth(r.label, `500 14px ${family}`)),
+    ...rows.map(r => (r.result ? textWidth(r.result.short, `400 12px ${family}`) : 0)),
+  )
+  return Math.ceil(widest) + CELL_PADDING_PX
+}
+
+function TogglePill({ active, onClick, children }) {
+  return (
+    <button
+      onClick={onClick}
+      className={[
+        'px-3 py-1 rounded-full text-xs font-semibold transition-colors border',
+        active
+          ? 'bg-cyan-500/20 text-cyan-300 border-cyan-500/40'
+          : 'bg-transparent text-slate-500 border-slate-700/50 hover:text-slate-300 hover:border-slate-600',
+      ].join(' ')}
+    >
+      {children}
+    </button>
+  )
+}
+
+// kind: 'bilateral' for the Series tab, 'tri-series' / 'tournament' for the
+// Tournaments tab's sub-tabs — same table, different slice of the schedule.
+function SeriesTab({ games, kind = 'bilateral' }) {
   const { watchedForLeague } = useWatched()
+  // Series are grouped by the year they start in, whole — a tour running
+  // December to February sits under the December year with all its matches.
+  const yearOptions = useMemo(() => {
+    const years = [...new Set(games.filter(g => seriesKindOf(g) === kind).map(seriesYear))].sort((a, b) => b - a)
+    return years.map(y => ({ value: String(y), label: String(y) }))
+  }, [games, kind])
+  const [year, setYear] = useState(() => String(new Date().getFullYear()))
   const [format, setFormat] = useState('all')
   const [country, setCountry] = useState('')
-  const filtered = useMemo(
-    () => applyCountryFilter(applyFormatFilter(games, format), country),
-    [games, format, country]
-  )
+  const [hideWatched, setHideWatched] = useState(false)
   const cricketWatchedIds = useMemo(() => watchedForLeague('cricket').map(g => g.gameId), [watchedForLeague])
 
-  const bySeries = useMemo(() => {
+  const rows = useMemo(() => {
     const map = new Map()
-    for (const g of filtered) {
+    for (const g of applyCountryFilter(applyFormatFilter(games, format), country)) {
+      if (seriesKindOf(g) !== kind || String(seriesYear(g)) !== year) continue
       const key = g.seriesLabel || 'Cricket'
       if (!map.has(key)) map.set(key, [])
       map.get(key).push(g)
     }
-    const today = new Date()
     return [...map.entries()]
-      .map(([name, matches]) => ({ name, matches, progress: seriesProgress(matches, today, cricketWatchedIds) }))
-      .sort((a, b) => {
-        if (SERIES_SORT_ORDER[a.progress.state] !== SERIES_SORT_ORDER[b.progress.state]) {
-          return SERIES_SORT_ORDER[a.progress.state] - SERIES_SORT_ORDER[b.progress.state]
-        }
-        return SERIES_SORT_ORDER[a.progress.state] === 2
-          ? b.progress.sortDate - a.progress.sortDate
-          : a.progress.sortDate - b.progress.sortDate
-      })
-  }, [filtered, cricketWatchedIds])
+      .map(([name, matches]) => summarizeSeries(name, matches, cricketWatchedIds, kind))
+      .sort((a, b) => a.start - b.start)
+  }, [games, format, country, cricketWatchedIds, kind, year])
+
+  const visible = hideWatched ? rows.filter(r => !r.fullyWatched) : rows
+  const isBilateral = kind === 'bilateral'
+  // Bilateral tours get a block column per format; tri-series and tournaments
+  // one Progress battery for the whole event.
+  const columns = !isBilateral ? [] : format === 'all' ? SERIES_FORMATS : [format]
+  const hiddenCount = rows.length - visible.length
+  // Sized from every row, not just visible ones, so toggling Hide watched
+  // doesn't make the columns jump.
+  const flexPx = useMemo(() => flexColumnWidth(rows), [rows])
+  const tableWidth = flexPx * 2 + SNUG_COL_PX * (1 + columns.length) + (isBilateral ? 0 : PROGRESS_COL_PX)
 
   return (
     <div className="flex flex-col gap-4">
-      <div className="flex items-center justify-between gap-3 flex-wrap">
+      <div className="flex items-center gap-2 flex-wrap">
+        {yearOptions.length > 0 && <PillSelect value={year} onChange={setYear} options={yearOptions} />}
         <FormatPills active={format} onChange={setFormat} />
         <CountrySelect value={country} onChange={setCountry} />
+        <TogglePill active={hideWatched} onClick={() => setHideWatched(h => !h)}>Hide watched</TogglePill>
       </div>
 
-      {bySeries.length === 0 && (
-        <EmptyState emoji="🏏" title="No series found" message="Try a different format or country filter, or refresh." />
+      {visible.length === 0 ? (
+        <EmptyState emoji="🏏" title="No series found"
+          message={hiddenCount ? `All ${hiddenCount} matching series are watched.` : 'Try a different format or country filter, or refresh.'} />
+      ) : (
+        <div className="rounded-2xl overflow-hidden w-fit max-w-full"
+          style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)' }}>
+          <div className="overflow-x-auto">
+            <table className="text-sm" style={{ tableLayout: 'fixed', width: tableWidth }}>
+              <colgroup>
+                <col style={{ width: flexPx }} />
+                <col style={{ width: SNUG_COL_PX }} />
+                {columns.map(f => <col key={f} style={{ width: SNUG_COL_PX }} />)}
+                {!isBilateral && <col style={{ width: PROGRESS_COL_PX }} />}
+                <col style={{ width: flexPx }} />
+              </colgroup>
+              <thead>
+                <tr className="text-[10px] font-bold uppercase tracking-widest text-slate-600 border-b border-white/[0.06]">
+                  <th className="text-left px-4 py-2.5">{isBilateral ? 'Tour' : 'Tournament'}</th>
+                  <th className="text-left px-3 py-2.5">Start</th>
+                  {columns.map(f => <th key={f} className="text-center px-3 py-2.5">{FORMAT_PLURAL[f]}</th>)}
+                  {!isBilateral && <th className="text-center px-3 py-2.5">Progress</th>}
+                  <th className="text-left px-4 py-2.5">Result</th>
+                </tr>
+              </thead>
+              <tbody>
+                {visible.map(r => (
+                  <tr key={r.key} className="border-t border-white/[0.04]">
+                    <td className="px-4 py-2.5 text-slate-200 font-medium whitespace-nowrap overflow-hidden text-ellipsis" title={r.label}>
+                      {r.title}
+                      {r.teamCodes && <span className="text-slate-500 font-normal"> {r.teamCodes}</span>}
+                    </td>
+                    <td className="px-3 py-2.5 text-slate-400 whitespace-nowrap tabular-nums">
+                      {formatStartDate(r.start)}
+                    </td>
+                    {columns.map(f => (
+                      <td key={f} className="px-3 py-2.5 text-center">
+                        <MatchBlocks blocks={r.blocks[f]} />
+                      </td>
+                    ))}
+                    {!isBilateral && (
+                      <td className="px-3 py-2.5">
+                        <Battery states={r.states} showCounts />
+                      </td>
+                    )}
+                    <td className="px-4 py-2.5 text-xs whitespace-nowrap overflow-hidden text-ellipsis" title={r.result?.full}>
+                      {r.result
+                        ? <span className="text-emerald-400">{r.result.short}</span>
+                        : <span className="text-slate-700">–</span>}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
       )}
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-        {bySeries.map(({ name, matches }) => (
-          <SeriesCard key={name} seriesName={name} matches={matches} cricketWatchedIds={cricketWatchedIds} />
-        ))}
+      <div className="flex items-center gap-4 flex-wrap">
+        <BlockLegend />
+        {hideWatched && hiddenCount > 0 && visible.length > 0 && (
+          <p className="text-xs text-slate-600">{hiddenCount} watched series hidden</p>
+        )}
       </div>
+    </div>
+  )
+}
+
+// ─── Tournaments tab ────────────────────────────────────────────────────────────
+// Tri-series and multi-nation events are one-off competitions rather than part
+// of the ongoing bilateral rivalry between two nations, so they live here
+// instead of the Series tab, and don't count towards Standings.
+
+const SERIES_KINDS = [
+  { id: 'bilateral',  label: 'Bilateral' },
+  { id: 'tri-series', label: 'Tri-Nations' },
+  { id: 'tournament', label: 'Multi-Nation' },
+]
+const TOURNAMENT_KINDS = SERIES_KINDS.filter(k => k.id !== 'bilateral')
+
+function SubTabs({ tabs, active, onChange }) {
+  return (
+    <div className="flex gap-0.5 rounded-xl p-0.5 w-fit"
+      style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)' }}>
+      {tabs.map(t => (
+        <button key={t.id} onClick={() => onChange(t.id)}
+          className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${active === t.id ? 'bg-white/10 text-slate-100' : 'text-slate-500 hover:text-slate-300'}`}>
+          {t.label}
+        </button>
+      ))}
+    </div>
+  )
+}
+
+function TournamentsTab({ games }) {
+  const [kind, setKind] = useState('tri-series')
+  return (
+    <div className="flex flex-col gap-4">
+      <SubTabs tabs={TOURNAMENT_KINDS} active={kind} onChange={setKind} />
+      <SeriesTab key={kind} games={games} kind={kind} />
     </div>
   )
 }
@@ -302,7 +501,20 @@ function SeriesTab({ games }) {
 // day (see src/utils/cricketDayRows.js) — each row never carries score data,
 // so GameCard has nothing to leak even once marked watched.
 
+// One queue per series type. Home's single Up Next pick deliberately still
+// spans all three (see getUpNext in HomeView.jsx).
 function MatchesTab({ games, onTrack }) {
+  const [kind, setKind] = useState('bilateral')
+  const kindGames = useMemo(() => seriesActiveInYear(games).filter(g => seriesKindOf(g) === kind), [games, kind])
+  return (
+    <div className="flex flex-col gap-4">
+      <SubTabs tabs={SERIES_KINDS} active={kind} onChange={setKind} />
+      <MatchQueue key={kind} games={kindGames} onTrack={onTrack} />
+    </div>
+  )
+}
+
+function MatchQueue({ games, onTrack }) {
   const { isWatched, isDismissed } = useWatched()
   const [format, setFormat] = useState('all')
   const [country, setCountry] = useState('')
@@ -334,7 +546,7 @@ function MatchesTab({ games, onTrack }) {
 
   return (
     <div className="flex flex-col gap-4">
-      <div className="flex items-center justify-between gap-3 flex-wrap">
+      <div className="flex items-center gap-2 flex-wrap">
         <FormatPills active={format} onChange={setFormat} />
         <CountrySelect value={country} onChange={setCountry} />
       </div>
@@ -420,7 +632,7 @@ function WatchedTab({ games }) {
 
   return (
     <div className="flex flex-col gap-4">
-      <div className="flex items-center justify-between gap-3 flex-wrap">
+      <div className="flex items-center gap-2 flex-wrap">
         <FormatPills active={format} onChange={setFormat} />
         <CountrySelect value={country} onChange={setCountry} />
       </div>
@@ -496,7 +708,7 @@ function ResultsLogTab({ games }) {
   const countryGames = useMemo(() => {
     if (!country) return []
     return applyFormatFilter(
-      games.filter(g => g.homeTeam.name === country || g.awayTeam.name === country),
+      seriesActiveInYear(games).filter(g => g.homeTeam.name === country || g.awayTeam.name === country),
       format
     ).sort((a, b) => a.gameDate - b.gameDate)
   }, [games, country, format])
@@ -514,7 +726,7 @@ function ResultsLogTab({ games }) {
 
   return (
     <div className="flex flex-col gap-4">
-      <div className="flex items-center justify-between gap-3 flex-wrap">
+      <div className="flex items-center gap-2 flex-wrap">
         <FormatPills active={format} onChange={setFormat} />
         <CountrySelect value={country} onChange={setCountry} />
       </div>
@@ -552,223 +764,212 @@ function ResultsLogTab({ games }) {
 }
 
 // ─── Standings tab ────────────────────────────────────────────────────────────
-// Ported from the old standalone WTCView. Uses its own CricAPI cache (the full
-// 2025-27 WTC cycle spans years, unlike the year-scoped Matches/Series data) and
-// its own refresh control, since it's a separate API cost.
+// A league table per format for one calendar year, laid out like Wikipedia's
+// Premier League tables. Spoiler-safe like the Results Log: only matches
+// you've fully watched count. Win 3 · Draw/Tie 1 · No result 1 · Loss 0.
 
-function buildStandings(watchedGames) {
-  const t = {}
-  const ensure = (name, logo) => {
-    if (!t[name]) t[name] = { name, logo, M: 0, W: 0, L: 0, D: 0, NR: 0, Pts: 0 }
-  }
-  for (const g of watchedGames) {
-    if (g.status !== 'final') continue
-    const h = g.homeTeam.name, a = g.awayTeam.name
-    ensure(h, g.homeTeam.logo)
-    ensure(a, g.awayTeam.logo)
-    t[h].M++; t[a].M++
+const POINTS = { W: 3, D: 1, NR: 1, L: 0 }
 
-    if (g.homeWon) {
-      t[h].W++; t[h].Pts += 12; t[a].L++
-    } else if (g.awayWon) {
-      t[a].W++; t[a].Pts += 12; t[h].L++
-    } else {
-      const d = (g.statusDetail || '').toLowerCase()
-      if (d.includes('abandon') || d.includes('no result')) {
-        t[h].NR++; t[h].Pts += 4; t[a].NR++; t[a].Pts += 4
-      } else if (d.includes('tied') || d.includes('tie')) {
-        t[h].D++; t[h].Pts += 6; t[a].D++; t[a].Pts += 6
-      } else {
-        t[h].D++; t[h].Pts += 4; t[a].D++; t[a].Pts += 4
-      }
-    }
-  }
-  return Object.values(t)
-    .map(row => ({ ...row, PCT: row.M > 0 ? (row.Pts / (row.M * 12)) * 100 : 0 }))
-    .sort((a, b) => b.PCT - a.PCT || b.W - a.W)
+function matchOutcome(g) {
+  if (g.homeWon) return 'home'
+  if (g.awayWon) return 'away'
+  const d = (g.statusDetail || '').toLowerCase()
+  if (d.includes('abandon') || d.includes('no result') || d.includes('cancel')) return 'nr'
+  return 'draw' // drawn Tests and tied limited-overs matches
 }
 
-function StandingsTable({ standings, watchedCount }) {
+function buildTable(games) {
+  const t = {}
+  const row = team => (t[team.name] ||= { name: team.name, logo: team.logo, P: 0, W: 0, D: 0, L: 0, NR: 0, Pts: 0 })
+  const add = (r, key) => { r.P++; r[key]++; r.Pts += POINTS[key] }
+  for (const g of games) {
+    const home = row(g.homeTeam), away = row(g.awayTeam)
+    const outcome = matchOutcome(g)
+    if (outcome === 'home')      { add(home, 'W'); add(away, 'L') }
+    else if (outcome === 'away') { add(away, 'W'); add(home, 'L') }
+    else if (outcome === 'nr')   { add(home, 'NR'); add(away, 'NR') }
+    else                         { add(home, 'D'); add(away, 'D') }
+  }
+  return Object.values(t).sort((a, b) => b.Pts - a.Pts || b.W - a.W || a.P - b.P || a.name.localeCompare(b.name))
+}
+
+function LeagueTable({ title, rows, matchCount, year }) {
   return (
     <div className="rounded-2xl overflow-hidden"
       style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)' }}>
-      <div className="px-4 py-3 border-b border-white/[0.06] flex items-center justify-between">
-        <div>
-          <h3 className="text-sm font-semibold text-slate-300">Points Table</h3>
-          <p className="text-[10px] text-slate-600 mt-0.5">Based on your {watchedCount} watched test{watchedCount !== 1 ? 's' : ''} · Win=12 · Draw=4 · NR=4 · ranked by PCT</p>
-        </div>
-        <span className="text-[10px] text-sky-600">Top 2 → Final</span>
+      <div className="px-4 py-3 border-b border-white/[0.06] flex items-baseline justify-between gap-3">
+        <h3 className="text-sm font-semibold text-slate-200">{title}</h3>
+        <p className="text-[10px] text-slate-600">
+          {matchCount} watched match{matchCount !== 1 ? 'es' : ''}
+        </p>
       </div>
-      <div className="overflow-x-auto">
+      {rows.length === 0 ? (
+        <p className="px-4 py-4 text-xs text-slate-600">No watched {title} in {year} yet.</p>
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="text-[10px] font-bold uppercase tracking-widest text-slate-600">
+                <th className="text-left px-4 py-2 w-8">Pos</th>
+                <th className="text-left px-3 py-2">Team</th>
+                <th className="text-center px-3 py-2">Pld</th>
+                <th className="text-center px-3 py-2">W</th>
+                <th className="text-center px-3 py-2">D</th>
+                <th className="text-center px-3 py-2">L</th>
+                <th className="text-center px-3 py-2">NR</th>
+                <th className="text-center px-3 py-2">Pts</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((r, i) => (
+                <tr key={r.name} className="border-t border-white/[0.04] text-slate-300">
+                  <td className="px-4 py-2.5 text-slate-600 text-xs tabular-nums">{i + 1}</td>
+                  <td className="px-3 py-2.5">
+                    <div className="flex items-center gap-2">
+                      {r.logo
+                        ? <img src={r.logo} alt="" className="w-5 h-5 object-contain rounded-full bg-slate-800/50" />
+                        : <div className="w-5 h-5 rounded-full bg-slate-800 shrink-0" />}
+                      <span className="font-medium whitespace-nowrap">{r.name}</span>
+                    </div>
+                  </td>
+                  <td className="text-center px-3 py-2.5 tabular-nums text-slate-400">{r.P}</td>
+                  <td className="text-center px-3 py-2.5 tabular-nums text-emerald-400">{r.W}</td>
+                  <td className="text-center px-3 py-2.5 tabular-nums text-slate-400">{r.D}</td>
+                  <td className="text-center px-3 py-2.5 tabular-nums text-red-400">{r.L}</td>
+                  <td className="text-center px-3 py-2.5 tabular-nums text-slate-600">{r.NR}</td>
+                  <td className="text-center px-3 py-2.5 tabular-nums font-bold text-slate-100">{r.Pts}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  )
+}
+
+function StandingsTab({ games }) {
+  const { watchedForLeague } = useWatched()
+  const cricketWatchedIds = useMemo(() => watchedForLeague('cricket').map(g => g.gameId), [watchedForLeague])
+
+  // Standings go by match date, like the Leaders stats, so they cover the
+  // same matches. Only the current year is offered: stored data holds whole
+  // series starting last year or this year, which covers every match played
+  // this year but not every match of last year.
+  const currentYear = String(new Date().getFullYear())
+  const yearOptions = [{ value: currentYear, label: currentYear }]
+  const [year, setYear] = useState(currentYear)
+
+  const counted = useMemo(() => games.filter(g =>
+    seriesKindOf(g) === 'bilateral' &&
+    String(g.gameDate.getUTCFullYear()) === year &&
+    g.status === 'final' &&
+    isMatchFullyWatched(g, cricketWatchedIds)
+  ), [games, year, cricketWatchedIds])
+
+  return (
+    <div className="flex flex-col gap-4">
+      <div className="flex items-center gap-2 flex-wrap">
+        <PillSelect value={year} onChange={setYear} options={yearOptions} />
+        <p className="text-xs text-slate-600">Win 3 · Draw/Tie 1 · No result 1 · Loss 0 · bilateral series only · matches you've fully watched</p>
+      </div>
+      {SERIES_FORMATS.map(f => {
+        const formatGames = counted.filter(g => g.matchType === f)
+        return <LeagueTable key={f} title={FORMAT_PLURAL[f]} rows={buildTable(formatGames)} matchCount={formatGames.length} year={year} />
+      })}
+    </div>
+  )
+}
+
+// ─── Leaders tab ───────────────────────────────────────────────────────────────
+// Top 5 per format for the year, from ESPNcricinfo Statsguru: matches between
+// the 12 tracked nations, all series types. Statsguru can't be read from the
+// browser, so scripts/fetch-cricket-stats.mjs saves it to
+// src/data/cricketLeaders.json whenever the site is deployed.
+
+const fixed = (n, digits) => (n == null ? '–' : n.toFixed(digits))
+const oppAbbr = name => NATION_ABBR[name] || name
+
+const LEADER_SECTIONS = [
+  { key: 'runs', title: 'Most Runs', columns: [
+    { label: 'M',    value: r => r.matches },
+    { label: 'Runs', value: r => r.runs, strong: true },
+    { label: 'Ave',  value: r => fixed(r.average, 2) },
+  ] },
+  { key: 'wickets', title: 'Most Wickets', columns: [
+    { label: 'M',    value: r => r.matches },
+    { label: 'Wkts', value: r => r.wickets, strong: true },
+    { label: 'SR',   value: r => fixed(r.strikeRate, 1) },
+  ] },
+  { key: 'innings', title: 'Highest Scores', columns: [
+    { label: 'Score', value: r => r.score, strong: true },
+    { label: 'Balls', value: r => r.balls ?? '–' },
+    { label: 'vs',    value: r => oppAbbr(r.opposition), title: r => `v ${r.opposition}, ${r.date}` },
+  ] },
+  { key: 'bowling', title: 'Best Bowling', columns: [
+    { label: 'Figures', value: r => r.figures, strong: true },
+    { label: 'Overs',   value: r => r.overs },
+    { label: 'vs',      value: r => oppAbbr(r.opposition), title: r => `v ${r.opposition}, ${r.date}` },
+  ] },
+]
+
+function LeaderTable({ format, rows, columns }) {
+  return (
+    <div className="rounded-2xl overflow-hidden"
+      style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)' }}>
+      <p className="px-4 py-2.5 text-xs font-semibold text-cyan-400 border-b border-white/[0.06]">{FORMAT_PLURAL[format]}</p>
+      {rows.length === 0 ? (
+        <p className="px-4 py-4 text-xs text-slate-600">No {FORMAT_PLURAL[format]} yet.</p>
+      ) : (
+        <div className="overflow-x-auto">
         <table className="w-full text-sm">
           <thead>
-            <tr className="text-[10px] font-bold uppercase tracking-widest text-slate-600 border-b border-white/[0.04]">
-              <th className="text-left px-4 py-2 w-6">#</th>
-              <th className="text-left px-4 py-2">Nation</th>
-              <th className="text-center px-3 py-2">M</th>
-              <th className="text-center px-3 py-2">W</th>
-              <th className="text-center px-3 py-2">L</th>
-              <th className="text-center px-3 py-2">D</th>
-              <th className="text-center px-3 py-2">NR</th>
-              <th className="text-center px-3 py-2">Pts</th>
-              <th className="text-center px-3 py-2 text-sky-500">PCT</th>
+            <tr className="text-[10px] font-bold uppercase tracking-widest text-slate-600">
+              <th className="text-left pl-4 pr-1 py-2 w-6">#</th>
+              <th className="text-left px-2 py-2">Player</th>
+              <th className="text-left px-2 py-2">Team</th>
+              {columns.map(c => <th key={c.label} className="text-right px-2 py-2 last:pr-4">{c.label}</th>)}
             </tr>
           </thead>
           <tbody>
-            {standings.map((row, i) => (
-              <tr
-                key={row.name}
-                className={`border-t border-white/[0.04] ${i < 2 ? 'text-slate-200' : 'text-slate-500'}`}
-                style={i === 1 ? { borderBottom: '1px solid rgba(14,165,233,0.18)' } : {}}
-              >
-                <td className="px-4 py-3 text-slate-600 text-xs">{i + 1}</td>
-                <td className="px-4 py-3">
-                  <div className="flex items-center gap-2">
-                    {row.logo
-                      ? <img src={row.logo} alt={row.name} className="w-6 h-6 object-contain rounded-full bg-slate-800/50" />
-                      : <div className="w-6 h-6 rounded-full bg-slate-800 shrink-0" />
-                    }
-                    <span className="font-medium">{row.name}</span>
-                    {i < 2 && (
-                      <span className="text-[9px] px-1.5 py-0.5 rounded font-bold tracking-wide"
-                        style={{ background: 'rgba(14,165,233,0.15)', color: '#0ea5e9' }}>F</span>
-                    )}
-                  </div>
-                </td>
-                <td className="text-center px-3 py-3 text-slate-400">{row.M}</td>
-                <td className="text-center px-3 py-3 text-emerald-400 font-medium">{row.W}</td>
-                <td className="text-center px-3 py-3 text-red-400">{row.L}</td>
-                <td className="text-center px-3 py-3 text-slate-500">{row.D}</td>
-                <td className="text-center px-3 py-3 text-slate-600">{row.NR}</td>
-                <td className="text-center px-3 py-3 font-medium">{row.Pts}</td>
-                <td className="text-center px-3 py-3 font-bold text-sky-400">{row.PCT.toFixed(2)}</td>
+            {rows.map((r, i) => (
+              <tr key={`${r.name}-${i}`} className="border-t border-white/[0.04]">
+                <td className="pl-4 pr-1 py-2 text-xs text-slate-600 tabular-nums">{i + 1}</td>
+                <td className="px-2 py-2 text-slate-200 font-medium">{r.name}</td>
+                <td className="px-2 py-2 text-xs text-slate-500">{r.team}</td>
+                {columns.map(c => (
+                  <td key={c.label} title={c.title?.(r)}
+                    className={`text-right px-2 py-2 last:pr-4 tabular-nums whitespace-nowrap ${c.strong ? 'font-bold text-slate-100' : 'text-slate-400'}`}>
+                    {c.value(r)}
+                  </td>
+                ))}
               </tr>
             ))}
           </tbody>
         </table>
-      </div>
-      {standings.length < 9 && (
-        <p className="px-4 py-3 text-[11px] text-slate-600 border-t border-white/[0.04]">
-          Watch more tests to see all 9 WTC nations in the table
-        </p>
+        </div>
       )}
     </div>
   )
 }
 
-function wtcTimeAgo(date) {
-  if (!date) return null
-  const mins = Math.floor((Date.now() - date.getTime()) / 60000)
-  if (mins < 1) return 'just now'
-  if (mins < 60) return `${mins}m ago`
-  const hrs = Math.floor(mins / 60)
-  if (hrs < 24) return `${hrs}h ago`
-  return `${Math.floor(hrs / 24)}d ago`
-}
-
-function StandingsTab({ apiKey }) {
-  const { isWatched, watchedForLeague } = useWatched()
-  const [games, setGames] = useState([])
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState(null)
-  const [updatedAt, setUpdatedAt] = useState(null)
-  const [refreshing, setRefreshing] = useState(false)
-
-  useEffect(() => {
-    setLoading(true)
-    setError(null)
-    fetchWTCGames(apiKey)
-      .then(({ games, updatedAt }) => { setGames(games); setUpdatedAt(updatedAt) })
-      .catch(err => setError(err.message))
-      .finally(() => setLoading(false))
-  }, [apiKey])
-
-  async function handleRefresh() {
-    if (refreshing) return
-    setRefreshing(true)
-    setError(null)
-    try {
-      const { games, updatedAt } = await refreshWTCGames(apiKey)
-      setGames(games)
-      setUpdatedAt(updatedAt)
-    } catch (err) {
-      setError(err.message)
-    } finally {
-      setRefreshing(false)
-    }
-  }
-
-  // A WTC test counts as "watched" for standings either via the legacy direct
-  // toggle (isWatched(id, 'wtc') — how the old standalone WTC tab recorded it),
-  // or — for matches also covered by the year-scoped Matches tab — if any of
-  // its day-rows have been checked off there. This avoids double-marking the
-  // same real match as watched in two places.
-  const watchedGames = useMemo(() => {
-    const cricketWatchedIds = watchedForLeague('cricket').map(g => g.gameId)
-    return games.filter(g =>
-      g.status === 'final' &&
-      (isWatched(g.id, 'wtc') || isMatchWatched(g, cricketWatchedIds))
-    )
-  }, [games, isWatched, watchedForLeague])
-
-  const standings = useMemo(() => buildStandings(watchedGames), [watchedGames])
-  const sequence = useMemo(() => [...watchedGames].sort((a, b) => a.gameDate - b.gameDate), [watchedGames])
-
-  if (loading) return <LoadingSpinner message="Loading WTC standings…" />
-  if (error) return (
-    <div className="rounded-xl bg-red-900/20 border border-red-800 p-4 text-red-400 text-sm flex items-start gap-3">
-      <span className="shrink-0">⚠</span>
-      <div>
-        <p className="font-medium mb-1">Failed to load WTC standings</p>
-        <p>{error}</p>
-      </div>
-    </div>
-  )
-
+function LeadersTab() {
+  const fetched = new Date(leaders.fetchedAt)
   return (
-    <div className="flex flex-col gap-4">
-      <div className="flex items-center justify-between gap-3">
-        <p className="text-xs text-slate-500">
-          World Test Championship 2025-27 · 9 nations
-          {updatedAt && <span className="text-slate-700"> · updated {wtcTimeAgo(updatedAt)}</span>}
-        </p>
-        <button
-          onClick={handleRefresh}
-          disabled={refreshing}
-          className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg border border-sky-800/50 bg-sky-950/30 text-sky-400 hover:bg-sky-900/40 disabled:opacity-40 disabled:cursor-not-allowed transition-colors shrink-0"
-        >
-          {refreshing ? (
-            <>
-              <span className="w-3 h-3 border border-sky-500/30 border-t-sky-400 rounded-full animate-spin" />
-              Updating…
-            </>
-          ) : 'Update Standings'}
-        </button>
-      </div>
-
-      {watchedGames.length === 0 ? (
-        <EmptyState emoji="📊" title="No watched WTC tests yet"
-          message="Mark WTC test days as watched from the Matches tab to build your personal standings." />
-      ) : (
-        <>
-          <StandingsTable standings={standings} watchedCount={watchedGames.length} />
-
-          <div className="rounded-xl px-4 py-3 flex items-start gap-3"
-            style={{ background: 'rgba(14,165,233,0.05)', border: '1px solid rgba(14,165,233,0.12)' }}>
-            <span className="text-sky-500 shrink-0 text-sm">ℹ</span>
-            <p className="text-xs text-slate-500 leading-relaxed">
-              PCT = Points ÷ (Matches × 12) × 100. Normalises across series of different lengths — a team that plays 2 tests isn't penalised vs one that plays 5.
-              {' '}<a href="https://www.icc-cricket.com/world-test-championship" target="_blank" rel="noopener noreferrer"
-                className="text-sky-500 hover:text-sky-400 underline">Official ICC standings →</a>
-            </p>
+    <div className="flex flex-col gap-6">
+      <p className="text-xs text-slate-600">
+        Top 5 · {leaders.year} · matches between the 12 nations, all series · {leaders.source}, updated {formatStartDate(fetched)}
+      </p>
+      {LEADER_SECTIONS.map(section => (
+        <section key={section.key}>
+          <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-3">{section.title}</p>
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
+            {SERIES_FORMATS.map(f => (
+              <LeaderTable key={f} format={f} rows={leaders.formats[f]?.[section.key] ?? []} columns={section.columns} />
+            ))}
           </div>
-
-          <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mt-2">Results That Built This Table</p>
-          <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-3">
-            {sequence.map(g => <GameCard key={g.id} game={g} />)}
-          </div>
-        </>
-      )}
+        </section>
+      ))}
     </div>
   )
 }
@@ -777,13 +978,15 @@ function StandingsTab({ apiKey }) {
 
 const TABS = [
   { id: 'series',    label: 'Series'      },
+  { id: 'tournaments', label: 'Tournaments' },
   { id: 'matches',   label: 'Matches'     },
   { id: 'watched',   label: 'Watched'     },
   { id: 'results',   label: 'Results Log' },
   { id: 'standings', label: 'Standings'   },
+  { id: 'leaders',   label: 'Leaders'     },
 ]
 
-const ENV_KEY = import.meta.env.VITE_CRICAPI_KEY || ''
+const AUTO_REFRESH_MS = 5 * 60 * 1000
 
 function timeAgo(date) {
   if (!date) return null
@@ -796,9 +999,10 @@ function timeAgo(date) {
 }
 
 export default function IntlCricketView() {
-  const [apiKey, setApiKey]         = useState(() => ENV_KEY || localStorage.getItem('cricapi_key') || '')
-  const [games, setGames]           = useState([])
-  const [loading, setLoading]       = useState(false)
+  const [rawGames, setGames]        = useState([])
+  const games = useMemo(() => withSeriesInfo(rawGames), [rawGames])
+  const [staleNotice, setStaleNotice] = useState(null)
+  const [loading, setLoading]       = useState(true)
   const [error, setError]           = useState(null)
   const [tab, setTab]               = useState('series')
   const [updatedAt, setUpdatedAt]   = useState(null)
@@ -807,28 +1011,39 @@ export default function IntlCricketView() {
   const [trackedGame, setTrackedGame] = useState(null)
 
   useEffect(() => {
-    if (!apiKey) return
-    setLoading(true)
-    setError(null)
-    fetchIntlCricketGames(apiKey)
-      .then(({ games, updatedAt }) => { setGames(games); setUpdatedAt(updatedAt) })
+    fetchIntlCricketGames()
+      .then(({ games, updatedAt, refreshError }) => { setGames(games); setUpdatedAt(updatedAt); setStaleNotice(refreshError ?? null) })
       .catch(err => setError(err.message))
       .finally(() => setLoading(false))
-  }, [apiKey])
+  }, [])
+
+  // While the tab is open, re-check every few minutes. fetchIntlCricketGames
+  // only goes back to Wikipedia once the stored copy is stale (5 min with a
+  // match in progress, 30 min otherwise), so most ticks are free.
+  useEffect(() => {
+    const timer = setInterval(() => {
+      fetchIntlCricketGames()
+        .then(({ games, updatedAt, refreshError }) => { setGames(games); setUpdatedAt(updatedAt); setStaleNotice(refreshError ?? null) })
+        .catch(() => { /* keep showing what we have; the next tick retries */ })
+    }, AUTO_REFRESH_MS)
+    return () => clearInterval(timer)
+  }, [])
 
   async function handleRefresh() {
-    if (!apiKey || refreshing) return
+    if (refreshing) return
     setRefreshing(true)
     setError(null)
     setRefreshSummary(null)
     try {
-      const { games, updatedAt, fetched, resolved, pendingResolution } = await refreshIntlCricketGames(apiKey)
+      const { games, updatedAt, newResults, articlesFetched, migration } = await refreshIntlCricketGames()
       setGames(games)
       setUpdatedAt(updatedAt)
+      setStaleNotice(null)
       const parts = [`${games.length} matches loaded`]
-      parts.push(fetched > 0 ? `${fetched} new score${fetched !== 1 ? 's' : ''} fetched` : 'all scores already cached')
-      if (resolved > 0) parts.push(`${resolved} new series discovered`)
-      if (pendingResolution > 0) parts.push(`${pendingResolution} series left to discover — click Update again to continue`)
+      parts.push(newResults > 0 ? `${newResults} new result${newResults !== 1 ? 's' : ''}` : 'no new results')
+      parts.push(`${articlesFetched} tour page${articlesFetched !== 1 ? 's' : ''} read`)
+      if (migration?.migrated) parts.push(`${migration.migrated} watched mark${migration.migrated !== 1 ? 's' : ''} carried over`)
+      if (migration?.unmatched) parts.push(`${migration.unmatched} watched mark${migration.unmatched !== 1 ? 's' : ''} couldn't be matched (see console)`)
       setRefreshSummary(parts.join(' · '))
     } catch (err) {
       setError(err.message)
@@ -836,46 +1051,6 @@ export default function IntlCricketView() {
       setRefreshing(false)
     }
   }
-
-  if (!apiKey) return (
-    <div className="p-4 md:p-6">
-      <div className="flex items-center gap-4 mb-7">
-        <div className="w-[72px] h-[72px] rounded-full bg-cyan-950/40 border border-cyan-900/40 flex items-center justify-center text-3xl shrink-0">🏏</div>
-        <div>
-          <h2 className="text-2xl font-bold text-slate-100 leading-tight">Cricket</h2>
-          <p className="text-sm text-slate-500 mt-0.5">Tests · ODIs · T20Is · All 12 nations</p>
-        </div>
-      </div>
-      <div className="rounded-2xl p-8 flex flex-col items-center text-center gap-5 max-w-md mx-auto"
-        style={{ background: 'rgba(255,255,255,0.04)', backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)', border: '1px solid rgba(255,255,255,0.08)' }}>
-        <span className="text-5xl">🏏</span>
-        <div>
-          <h3 className="text-lg font-semibold text-slate-200 mb-1">CricAPI Key Required</h3>
-          <p className="text-sm text-slate-500">
-            Cricket data comes from{' '}
-            <a href="https://www.cricapi.com" target="_blank" rel="noopener noreferrer"
-              className="text-cyan-400 hover:text-cyan-300 underline">cricapi.com</a>.
-            {' '}Get a free key (100 req/day) — it powers Series, Matches, and Standings below.
-          </p>
-        </div>
-        <div className="w-full flex flex-col gap-2">
-          <input
-            type="text" value={apiKey} onChange={e => setApiKey(e.target.value)}
-            placeholder="Paste your CricAPI key here"
-            className="w-full px-3 py-2.5 rounded-xl text-sm text-slate-200 placeholder-slate-600 focus:outline-none"
-            style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)' }}
-            onKeyDown={e => { if (e.key === 'Enter' && apiKey.trim()) localStorage.setItem('cricapi_key', apiKey.trim()) }}
-          />
-          <button onClick={() => { const k = apiKey.trim(); if (k) { localStorage.setItem('cricapi_key', k); setApiKey(k) } }}
-            disabled={!apiKey.trim()}
-            className="px-4 py-2.5 rounded-xl bg-cyan-600 hover:bg-cyan-500 disabled:opacity-40 disabled:cursor-not-allowed text-white text-sm font-semibold transition-colors">
-            Save Key & Load Matches
-          </button>
-        </div>
-        <p className="text-xs text-slate-600">Key stored locally in your browser only · Discovering the full year's schedule takes ~5 Update clicks (~15-25 calls each) from your 100/day free quota</p>
-      </div>
-    </div>
-  )
 
   return (
     <div className="p-4 md:p-6">
@@ -936,6 +1111,16 @@ export default function IntlCricketView() {
         </div>
       )}
 
+      {staleNotice && !error && (
+        <div className="flex items-start gap-2 mb-4 px-4 py-2.5 rounded-xl text-sm text-amber-300"
+          style={{ background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.2)' }}>
+          <span className="shrink-0">⚠</span>
+          <span>
+            Couldn't update from Wikipedia ({staleNotice}). Showing the copy saved {timeAgo(updatedAt) ?? 'earlier'} — it'll retry automatically, or press Update.
+          </span>
+        </div>
+      )}
+
       {loading && <LoadingSpinner message="Loading international cricket matches…" />}
 
       {error && (
@@ -948,22 +1133,23 @@ export default function IntlCricketView() {
         </div>
       )}
 
-      {!loading && !error && tab !== 'standings' && games.length === 0 && (
+      {!loading && !error && tab !== 'standings' && tab !== 'leaders' && games.length === 0 && (
         <div className="flex flex-col items-center text-center gap-3 py-16">
           <span className="text-4xl">🏏</span>
           <p className="text-slate-300 font-medium">No cricket data loaded yet</p>
           <p className="text-sm text-slate-500 max-w-xs">
-            Click <span className="text-cyan-400 font-medium">Update</span> above to fetch matches from CricAPI.
-            Uses ~15-25 API calls per click while the year's series are being discovered (~5 clicks total), then far fewer on later refreshes.
+            Click <span className="text-cyan-400 font-medium">Update</span> above to load this year's matches from Wikipedia.
           </p>
         </div>
       )}
 
       {!loading && !error && tab === 'series'    && games.length > 0 && <SeriesTab games={games} />}
+      {!loading && !error && tab === 'tournaments' && games.length > 0 && <TournamentsTab games={games} />}
       {!loading && !error && tab === 'matches'   && games.length > 0 && <MatchesTab games={games} onTrack={setTrackedGame} />}
       {!loading && !error && tab === 'watched'   && games.length > 0 && <WatchedTab games={games} />}
       {!loading && !error && tab === 'results'   && games.length > 0 && <ResultsLogTab games={games} />}
-      {!loading && !error && tab === 'standings' && <StandingsTab apiKey={apiKey} />}
+      {!loading && !error && tab === 'standings' && <StandingsTab games={games} />}
+      {tab === 'leaders' && <LeadersTab />}
 
       {trackedGame && (
         <BoundaryTracker game={trackedGame} onClose={() => setTrackedGame(null)} />

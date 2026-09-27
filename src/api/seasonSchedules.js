@@ -4,14 +4,16 @@ import { fetchMLSGames } from './mls'
 import { fetchEPLGames } from './epl'
 import { fetchBBLGames } from './bbl'
 import { fetchIntlCricketGames } from './intlCricket'
+import { seriesActiveInYear } from '../utils/cricketMatch'
 
 // Counting "games played so far" needs each league's schedule, which Home
 // already loads on every visit. The promises are memoised for the session so
 // the Stats page reuses that work instead of paying for it a second time —
 // EPL alone is a dozen requests per competition.
 //
-// BBL and international cricket need the user's CricAPI key; without one they
-// simply resolve empty, and anything reading them shows no season total.
+// BBL needs the user's CricAPI key; without one it simply resolves empty, and
+// anything reading it shows no season total. International cricket comes from
+// Wikipedia and needs no key.
 const cricApiKey = () => {
   try {
     return import.meta.env.VITE_CRICAPI_KEY || localStorage.getItem('cricapi_key') || ''
@@ -32,7 +34,8 @@ const FETCHERS = {
   mls: fetchMLSGames,
   epl: fetchEPLGames,
   bbl: withKey(fetchBBLGames),
-  cricket: withKey(fetchIntlCricketGames),
+  // Stored cricket spans last year's series too; the season is this year's.
+  cricket: () => fetchIntlCricketGames().then(r => ({ ...r, games: seriesActiveInYear(r.games) })),
 }
 
 export const SCHEDULED_LEAGUES = Object.keys(FETCHERS)

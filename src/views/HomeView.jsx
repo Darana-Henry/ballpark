@@ -3,6 +3,7 @@ import { loadLeagueGames } from '../api/seasonSchedules'
 import { fetchBBLGames } from '../api/bbl'
 import { fetchIntlCricketGames } from '../api/intlCricket'
 import { expandTestDays } from '../utils/cricketDayRows'
+import { seriesActiveInYear } from '../utils/cricketMatch'
 import GameCard from '../components/GameCard'
 import BoundaryTracker from '../components/BoundaryTracker'
 import FantasyDeadlineStrip from '../components/FantasyDeadlineStrip'
@@ -394,7 +395,8 @@ export default function HomeView() {
 
   const [states, setStates] = useState(() => {
     const hasCricApiKey = !!(ENV_BBL_KEY || localStorage.getItem('cricapi_key'))
-    const ids = [...FETCH_ORDER, ...(hasCricApiKey ? ['bbl', 'cricket'] : [])]
+    // BBL needs the CricAPI key; international cricket comes from Wikipedia.
+    const ids = [...FETCH_ORDER, ...(hasCricApiKey ? ['bbl'] : []), 'cricket']
     return Object.fromEntries(ids.map(id => [id, { games: [], loading: true, error: null }]))
   })
 
@@ -413,13 +415,11 @@ export default function HomeView() {
     load('mls', loadLeagueGames('mls'))
     load('epl', loadLeagueGames('epl'))
     const cricApiKey = ENV_BBL_KEY || localStorage.getItem('cricapi_key')
-    if (cricApiKey) {
-      load('bbl', fetchBBLGames(cricApiKey))
-      // Tests are expanded into per-day rows — same spoiler-safe convention
-      // the Cricket tab's Matches queue uses — so a live/multi-day Test
-      // surfaces today's day-row instead of the whole match's status.
-      load('cricket', fetchIntlCricketGames(cricApiKey).then(({ games, updatedAt }) => ({ games: expandTestDays(games), updatedAt })))
-    }
+    if (cricApiKey) load('bbl', fetchBBLGames(cricApiKey))
+    // Tests are expanded into per-day rows — same spoiler-safe convention
+    // the Cricket tab's Matches queue uses — so a live/multi-day Test
+    // surfaces today's day-row instead of the whole match's status.
+    load('cricket', fetchIntlCricketGames().then(({ games, updatedAt }) => ({ games: expandTestDays(seriesActiveInYear(games)), updatedAt })))
   }, [])
 
   const nflForm = useMemo(

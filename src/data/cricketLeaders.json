@@ -1,0 +1,487 @@
+{
+  "year": 2026,
+  "source": "ESPNcricinfo Statsguru",
+  "fetchedAt": "2026-09-27T17:47:44.428Z",
+  "formats": {
+    "test": {
+      "runs": [
+        {
+          "name": "GS Dinusha",
+          "team": "SL",
+          "matches": 4,
+          "runs": 595,
+          "average": 99.16
+        },
+        {
+          "name": "HC Brook",
+          "team": "ENG",
+          "matches": 7,
+          "runs": 558,
+          "average": 46.5
+        },
+        {
+          "name": "JE Root",
+          "team": "ENG",
+          "matches": 7,
+          "runs": 501,
+          "average": 41.75
+        },
+        {
+          "name": "Babar Azam",
+          "team": "PAK",
+          "matches": 5,
+          "runs": 405,
+          "average": 50.62
+        },
+        {
+          "name": "Najmul Hossain Shanto",
+          "team": "BAN",
+          "matches": 5,
+          "runs": 396,
+          "average": 44
+        }
+      ],
+      "wickets": [
+        {
+          "name": "JC Tongue",
+          "team": "ENG",
+          "matches": 7,
+          "wickets": 33,
+          "strikeRate": 36.7
+        },
+        {
+          "name": "Mohammad Abbas",
+          "team": "PAK",
+          "matches": 6,
+          "wickets": 31,
+          "strikeRate": 43.9
+        },
+        {
+          "name": "OE Robinson",
+          "team": "ENG",
+          "matches": 4,
+          "wickets": 28,
+          "strikeRate": 24.3
+        },
+        {
+          "name": "NG Smith",
+          "team": "NZ",
+          "matches": 4,
+          "wickets": 24,
+          "strikeRate": 30.6
+        },
+        {
+          "name": "JC Archer",
+          "team": "ENG",
+          "matches": 5,
+          "wickets": 23,
+          "strikeRate": 39.5
+        }
+      ],
+      "innings": [
+        {
+          "name": "AA Jangoo",
+          "team": "WI",
+          "score": "233",
+          "balls": 373,
+          "opposition": "Sri Lanka",
+          "date": "25 Jun 2026"
+        },
+        {
+          "name": "RL Chase",
+          "team": "WI",
+          "score": "194",
+          "balls": 324,
+          "opposition": "Sri Lanka",
+          "date": "25 Jun 2026"
+        },
+        {
+          "name": "Lahiru Udara",
+          "team": "SL",
+          "score": "188",
+          "balls": 248,
+          "opposition": "West Indies",
+          "date": "3 Jul 2026"
+        },
+        {
+          "name": "TA Blundell",
+          "team": "NZ",
+          "score": "186",
+          "balls": 292,
+          "opposition": "Ireland",
+          "date": "27 May 2026"
+        },
+        {
+          "name": "JP Greaves",
+          "team": "WI",
+          "score": "180",
+          "balls": 325,
+          "opposition": "Sri Lanka",
+          "date": "3 Jul 2026"
+        }
+      ],
+      "bowling": [
+        {
+          "name": "Shoriful Islam",
+          "team": "BAN",
+          "figures": "7/48",
+          "overs": "15.0",
+          "opposition": "Australia",
+          "date": "22 Aug 2026"
+        },
+        {
+          "name": "Taijul Islam",
+          "team": "BAN",
+          "figures": "7/138",
+          "overs": "40.2",
+          "opposition": "Zimbabwe",
+          "date": "28 Jun 2026"
+        },
+        {
+          "name": "MA Starc",
+          "team": "AUS",
+          "figures": "6/12",
+          "overs": "10.0",
+          "opposition": "Bangladesh",
+          "date": "22 Aug 2026"
+        },
+        {
+          "name": "MJ Henry",
+          "team": "NZ",
+          "figures": "6/29",
+          "overs": "18.1",
+          "opposition": "England",
+          "date": "17 Jun 2026"
+        },
+        {
+          "name": "MJ Suthar",
+          "team": "IND",
+          "figures": "6/33",
+          "overs": "22.0",
+          "opposition": "Afghanistan",
+          "date": "6 Jun 2026"
+        }
+      ]
+    },
+    "odi": {
+      "runs": [
+        {
+          "name": "Shubman Gill",
+          "team": "IND",
+          "matches": 10,
+          "runs": 671,
+          "average": 95.85
+        },
+        {
+          "name": "JE Root",
+          "team": "ENG",
+          "matches": 9,
+          "runs": 573,
+          "average": 114.6
+        },
+        {
+          "name": "V Kohli",
+          "team": "IND",
+          "matches": 7,
+          "runs": 523,
+          "average": 87.16
+        },
+        {
+          "name": "Tanzid Hasan",
+          "team": "BAN",
+          "matches": 12,
+          "runs": 486,
+          "average": 44.18
+        },
+        {
+          "name": "DJ Mitchell",
+          "team": "NZ",
+          "matches": 6,
+          "runs": 473,
+          "average": 94.6
+        }
+      ],
+      "wickets": [
+        {
+          "name": "Nahid Rana",
+          "team": "BAN",
+          "matches": 10,
+          "wickets": 27,
+          "strikeRate": 21.3
+        },
+        {
+          "name": "NT Ellis",
+          "team": "AUS",
+          "matches": 10,
+          "wickets": 22,
+          "strikeRate": 22.4
+        },
+        {
+          "name": "JR Lennox",
+          "team": "NZ",
+          "matches": 10,
+          "wickets": 22,
+          "strikeRate": 25.3
+        },
+        {
+          "name": "Taskin Ahmed",
+          "team": "BAN",
+          "matches": 11,
+          "wickets": 20,
+          "strikeRate": 27.6
+        },
+        {
+          "name": "Mustafizur Rahman",
+          "team": "BAN",
+          "matches": 8,
+          "wickets": 16,
+          "strikeRate": 22.5
+        }
+      ],
+      "innings": [
+        {
+          "name": "Shubman Gill",
+          "team": "IND",
+          "score": "154",
+          "balls": 110,
+          "opposition": "Afghanistan",
+          "date": "17 Jun 2026"
+        },
+        {
+          "name": "CPL Connolly",
+          "team": "AUS",
+          "score": "149",
+          "balls": 134,
+          "opposition": "Bangladesh",
+          "date": "14 Jun 2026"
+        },
+        {
+          "name": "Rahmat Shah",
+          "team": "AFG",
+          "score": "143*",
+          "balls": 133,
+          "opposition": "Ireland",
+          "date": "15 Aug 2026"
+        },
+        {
+          "name": "Sediqullah Atal",
+          "team": "AFG",
+          "score": "143",
+          "balls": 120,
+          "opposition": "Ireland",
+          "date": "12 Aug 2026"
+        },
+        {
+          "name": "DA Miller",
+          "team": "SA",
+          "score": "142",
+          "balls": 93,
+          "opposition": "Australia",
+          "date": "27 Sep 2026"
+        }
+      ],
+      "bowling": [
+        {
+          "name": "Nahid Rana",
+          "team": "BAN",
+          "figures": "6/21",
+          "overs": "10.0",
+          "opposition": "Zimbabwe",
+          "date": "6 Jul 2026"
+        },
+        {
+          "name": "Rashid Khan",
+          "team": "AFG",
+          "figures": "6/34",
+          "overs": "7.4",
+          "opposition": "Ireland",
+          "date": "7 Aug 2026"
+        },
+        {
+          "name": "Shoriful Islam",
+          "team": "BAN",
+          "figures": "6/48",
+          "overs": "10.0",
+          "opposition": "Australia",
+          "date": "14 Jun 2026"
+        },
+        {
+          "name": "JR Lennox",
+          "team": "NZ",
+          "figures": "5/19",
+          "overs": "8.0",
+          "opposition": "West Indies",
+          "date": "13 Jul 2026"
+        },
+        {
+          "name": "WG Jacks",
+          "team": "ENG",
+          "figures": "5/22",
+          "overs": "7.0",
+          "opposition": "Sri Lanka",
+          "date": "22 Sep 2026"
+        }
+      ]
+    },
+    "t20i": {
+      "runs": [
+        {
+          "name": "Ishan Kishan",
+          "team": "IND",
+          "matches": 23,
+          "runs": 803,
+          "average": 36.5
+        },
+        {
+          "name": "Abhishek Sharma",
+          "team": "IND",
+          "matches": 24,
+          "runs": 743,
+          "average": 32.3
+        },
+        {
+          "name": "HC Brook",
+          "team": "ENG",
+          "matches": 16,
+          "runs": 619,
+          "average": 56.27
+        },
+        {
+          "name": "SV Samson",
+          "team": "IND",
+          "matches": 16,
+          "runs": 495,
+          "average": 33
+        },
+        {
+          "name": "JC Buttler",
+          "team": "ENG",
+          "matches": 16,
+          "runs": 483,
+          "average": 34.5
+        }
+      ],
+      "wickets": [
+        {
+          "name": "Arshdeep Singh",
+          "team": "IND",
+          "matches": 18,
+          "wickets": 27,
+          "strikeRate": 15
+        },
+        {
+          "name": "AU Rashid",
+          "team": "ENG",
+          "matches": 16,
+          "wickets": 22,
+          "strikeRate": 15
+        },
+        {
+          "name": "PVD Chameera",
+          "team": "SL",
+          "matches": 12,
+          "wickets": 20,
+          "strikeRate": 13.5
+        },
+        {
+          "name": "JC Archer",
+          "team": "ENG",
+          "matches": 13,
+          "wickets": 19,
+          "strikeRate": 14.8
+        },
+        {
+          "name": "JJ Bumrah",
+          "team": "IND",
+          "matches": 13,
+          "wickets": 19,
+          "strikeRate": 14.5
+        }
+      ],
+      "innings": [
+        {
+          "name": "JC Buttler",
+          "team": "ENG",
+          "score": "131",
+          "balls": 64,
+          "opposition": "India",
+          "date": "11 Jul 2026"
+        },
+        {
+          "name": "Q de Kock",
+          "team": "SA",
+          "score": "115",
+          "balls": 49,
+          "opposition": "West Indies",
+          "date": "29 Jan 2026"
+        },
+        {
+          "name": "HC Brook",
+          "team": "ENG",
+          "score": "114*",
+          "balls": 49,
+          "opposition": "Sri Lanka",
+          "date": "15 Sep 2026"
+        },
+        {
+          "name": "Abhishek Sharma",
+          "team": "IND",
+          "score": "108",
+          "balls": 34,
+          "opposition": "Afghanistan",
+          "date": "17 Sep 2026"
+        },
+        {
+          "name": "JG Bethell",
+          "team": "ENG",
+          "score": "105",
+          "balls": 48,
+          "opposition": "India",
+          "date": "5 Mar 2026"
+        }
+      ],
+      "bowling": [
+        {
+          "name": "Mohammad Nawaz",
+          "team": "PAK",
+          "figures": "5/18",
+          "overs": "4.0",
+          "opposition": "Australia",
+          "date": "1 Feb 2026"
+        },
+        {
+          "name": "PVD Chameera",
+          "team": "SL",
+          "figures": "5/24",
+          "overs": "4.0",
+          "opposition": "England",
+          "date": "3 Feb 2026"
+        },
+        {
+          "name": "S Joseph",
+          "team": "WI",
+          "figures": "5/33",
+          "overs": "4.0",
+          "opposition": "Sri Lanka",
+          "date": "14 Jun 2026"
+        },
+        {
+          "name": "Arshdeep Singh",
+          "team": "IND",
+          "figures": "5/51",
+          "overs": "4.0",
+          "opposition": "New Zealand",
+          "date": "31 Jan 2026"
+        },
+        {
+          "name": "JG Bethell",
+          "team": "ENG",
+          "figures": "4/11",
+          "overs": "3.3",
+          "opposition": "Sri Lanka",
+          "date": "3 Feb 2026"
+        }
+      ]
+    }
+  }
+}

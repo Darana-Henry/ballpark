@@ -3,6 +3,11 @@ name: Deploy to GitHub Pages
 on:
   push:
     branches: [main]
+  # Daily rebuild so the Cricket tab's Leaders stats (fetched from
+  # ESPNcricinfo at build time) stay current. 06:00 UTC is after the day's
+  # Asian, European and Caribbean matches have finished.
+  schedule:
+    - cron: '0 6 * * *'
   workflow_dispatch:
 
 permissions:
@@ -29,6 +34,11 @@ jobs:
           cache: npm
 
       - run: npm install
+
+      # Never fails the build: if Cricinfo can't be reached, the committed
+      # src/data/cricketLeaders.json is used and the log says so.
+      - name: Fetch cricket leaders
+        run: npm run stats:cricket
 
       - name: Build
         env:

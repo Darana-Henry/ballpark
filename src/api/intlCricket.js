@@ -25,9 +25,10 @@ const yearDoc = y => `games-${y}`
 const SOURCE = 'wikipedia'
 // Bumped when stored games change in a way the tabs rely on (2: seriesKind
 // and seriesTeams; 3: tournaments keep every game, not just tracked nations';
-// 4: whole series from last year and this year, grouped by start year), so an
-// older stored copy is refreshed instead of shown.
-const SCHEMA = 4
+// 4: whole series from last year and this year, grouped by start year;
+// 5: bilateral tours with one non-Test side, e.g. South Africa in Namibia),
+// so an older stored copy is refreshed instead of shown.
+const SCHEMA = 5
 
 // Series starting in this many previous years are kept alongside this
 // year's, so the Series tab can show last year and tours that cross New
@@ -41,7 +42,7 @@ const LIVE_STALE_MS =  5 * 60 * 1000
 
 // ─── Session cache ─────────────────────────────────────────────────────────────
 
-const SESSION_KEY = 'ballpark_intlcricket_session_v6'
+const SESSION_KEY = 'ballpark_intlcricket_session_v7'
 
 // Dates come back from Firestore as Timestamps and from sessionStorage as
 // ISO strings.

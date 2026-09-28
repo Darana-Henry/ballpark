@@ -3,8 +3,9 @@
 // Cricket tab's Leaders view imports. Statsguru can't be read from the
 // browser (no cross-origin access), so this runs at deploy time instead.
 //
-// Only matches between the 12 nations the Cricket tab tracks are counted
-// (Statsguru's team + opposition filters), across all series types.
+// Counts players of the 12 nations the Cricket tab tracks (Statsguru's team
+// filter), in all their matches — against any opponent, Namibia and Japan
+// included — across all series types.
 //
 // Usage: node scripts/fetch-cricket-stats.mjs [year]
 // On failure the existing JSON is left untouched and the script exits 0, so a
@@ -30,10 +31,9 @@ const TABLES = {
 
 function statsguruUrl(formatClass, { type, extra }) {
   const teams = TEAM_IDS.map(id => `team=${id}`).join(';')
-  const opps = TEAM_IDS.map(id => `opposition=${id}`).join(';')
   return 'https://stats.espncricinfo.com/ci/engine/stats/index.html?' + [
     `class=${formatClass}`, `spanmin1=01+Jan+${YEAR}`, `spanmax1=31+Dec+${YEAR}`, 'spanval1=span',
-    'template=results', `type=${type}`, teams, opps, extra,
+    'template=results', `type=${type}`, teams, extra,
   ].join(';')
 }
 

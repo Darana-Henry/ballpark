@@ -45,6 +45,40 @@ const FLAG_FILES = {
   'Zimbabwe':     'Flag of Zimbabwe.svg',
   'Afghanistan':  'Flag of Afghanistan (2013–2021).svg',
   'Ireland':      'Cricket Ireland flag.svg',
+  // Non-Test sides that play the tracked nations in bilateral tours and
+  // tournaments (names as ASSOCIATE_NAMES spells them).
+  'Namibia':          'Flag of Namibia.svg',
+  'Scotland':         'Flag of Scotland.svg',
+  'Netherlands':      'Flag of the Netherlands.svg',
+  'Nepal':            'Flag of Nepal.svg',
+  'UAE':              'Flag of the United Arab Emirates.svg',
+  'Oman':             'Flag of Oman.svg',
+  'United States':    'Flag of the United States.svg',
+  'Canada':           'Flag of Canada.svg',
+  'Hong Kong':        'Flag of Hong Kong.svg',
+  'Japan':            'Flag of Japan.svg',
+  'Malaysia':         'Flag of Malaysia.svg',
+  'Papua New Guinea': 'Flag of Papua New Guinea.svg',
+  'Kenya':            'Flag of Kenya.svg',
+  'Uganda':           'Flag of Uganda.svg',
+  'Italy':            'Flag of Italy.svg',
+  'Kuwait':           'Flag of Kuwait.svg',
+  'Bahrain':          'Flag of Bahrain.svg',
+  'Qatar':            'Flag of Qatar.svg',
+  'Singapore':        'Flag of Singapore.svg',
+  'Thailand':         'Flag of Thailand.svg',
+  'Jersey':           'Flag of Jersey.svg',
+  'Tanzania':         'Flag of Tanzania.svg',
+  'Nigeria':          'Flag of Nigeria.svg',
+  'Bermuda':          'Flag of Bermuda.svg',
+}
+
+// Section headings spell some non-Test sides differently from the flag
+// templates used in tournament tables; align them so a side has one name.
+const HEADING_ALIASES = {
+  'United Arab Emirates': 'UAE',
+  'USA': 'United States',
+  'Hong Kong, China': 'Hong Kong',
 }
 
 const MONTHS = [
@@ -195,22 +229,31 @@ function buildTeam({ name, placeholder }) {
   }
 }
 
-// "Australia in Zimbabwe"             → Zimbabwe host Australia
-// "Sri Lanka in the West Indies"      → West Indies host Sri Lanka
-// "India against Afghanistan in India" → Afghanistan's home series, played in India
+// One side of a tour heading: a tracked nation (typo-tolerant), or any other
+// team named plainly — no digits, at most three words — so a heading like
+// "2026 Asia Cup in Sri Lanka" can't pass for a tour.
+function headingSide(raw) {
+  const tracked = matchNation(raw)
+  if (tracked) return { name: tracked, tracked: true }
+  const name = raw.replace(/^the\s+/i, '').trim()
+  if (/\d/.test(name) || name.split(' ').length > 3) return null
+  return { name: HEADING_ALIASES[name] || name, tracked: false }
+}
+
+// A bilateral tour needs at least one of the tracked nations — South Africa
+// in Namibia counts, Namibia in Scotland doesn't.
+//   "Australia in Zimbabwe"             → Zimbabwe host Australia
+//   "Sri Lanka in the West Indies"      → West Indies host Sri Lanka
+//   "India against Afghanistan in India" → Afghanistan's home series, played in India
+//   "South Africa in Namibia"           → Namibia host South Africa
 function parseTourHeading(heading) {
   const h = heading.replace(/\s+/g, ' ').trim()
-  let m = h.match(/^(.+?) against (.+?) in (?:the )?(.+)$/i)
-  if (m) {
-    const away = matchNation(m[1]), home = matchNation(m[2])
-    return away && home ? { home, away, hostedIn: m[3] } : null
-  }
-  m = h.match(/^(.+?) in (?:the )?(.+)$/i)
-  if (m) {
-    const away = matchNation(m[1]), home = matchNation(m[2])
-    return away && home ? { home, away, hostedIn: null } : null
-  }
-  return null
+  const m = h.match(/^(.+?) against (.+?) in (?:the )?(.+)$/i) || h.match(/^(.+?) in (?:the )?(.+)$/i)
+  if (!m) return null
+  const hostedIn = m.length === 4 && /against/i.test(h) ? m[3] : null
+  const away = headingSide(m[1]), home = headingSide(m[2])
+  if (!away || !home || !(away.tracked || home.tracked)) return null
+  return { home: home.name, away: away.name, hostedIn }
 }
 
 // ─── Dates ─────────────────────────────────────────────────────────────────────
@@ -393,9 +436,9 @@ export function parseSeasonPage(text, seasonLabel) {
 
     for (const r of rows) {
       const teams = [r.home, r.away]
-      // Bilateral tours are between two tracked nations by construction;
+      // Bilateral tours always involve a tracked nation (parseTourHeading);
       // tournament games are all kept (see above).
-      if (!isTournament && !teams.every(t => INTL_NATIONS.has(t.name))) continue
+      if (!isTournament && !teams.some(t => INTL_NATIONS.has(t.name))) continue
 
       const formatWord = FORMAT_WORD[r.matchType]
       const numbered = /\d{3,}/.test(r.label)

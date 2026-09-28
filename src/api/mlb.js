@@ -71,6 +71,9 @@ function normalizeGame(game) {
     status: isLive ? 'live' : isFinal ? 'final' : 'scheduled',
     statusDetail: game.status?.detailedState || '',
     gameDate,
+    // MLB lists postseason games before their start times are set, with a
+    // placeholder time (07:33 UTC) and this flag — cards show "Time TBD".
+    timeTBD: !!game.status?.startTimeTBD,
     gameType: GAME_TYPE_LABELS[game.gameType] || game.gameType,
     highlightUrl: isFinal ? youtubeHighlightUrl(away.team.name, home.team.name, gameDate) : null,
     venue: game.venue?.name || null,

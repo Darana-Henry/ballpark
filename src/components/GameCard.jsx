@@ -46,7 +46,10 @@ function RealLifeStatus({ status, detail }) {
   return <span className="text-xs text-slate-500">{detail || 'Scheduled'}</span>
 }
 
-function formatGameDate(date) {
+// timeTBD: the date is set but the start time isn't (e.g. MLB postseason
+// games before the round is scheduled) — show "Time TBD" rather than a
+// placeholder time.
+function formatGameDate(date, timeTBD = false) {
   if (!date) return ''
   const now = new Date()
   const isToday = date.toDateString() === now.toDateString()
@@ -55,7 +58,7 @@ function formatGameDate(date) {
   const yest = new Date(now); yest.setDate(now.getDate() - 1)
   const isYesterday = date.toDateString() === yest.toDateString()
 
-  const time = date.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })
+  const time = timeTBD ? 'Time TBD' : date.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })
   const dateStr = date.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })
 
   if (isToday) return `Today · ${time}`
@@ -227,7 +230,7 @@ export default function GameCard({ game, isUpNext = false, resultColor = null, s
 
         {/* Date */}
         <p className="text-center text-sm text-slate-400 mt-1 mb-3">
-          {formatGameDate(game.gameDate)}
+          {formatGameDate(game.gameDate, game.timeTBD)}
         </p>
 
         {/* Countdown — scheduled games only */}
@@ -376,7 +379,7 @@ export default function GameCard({ game, isUpNext = false, resultColor = null, s
         )}
 
         <div className="flex-1 flex items-center justify-end gap-2 min-w-0">
-          <span className="text-xs text-slate-500 truncate">{formatGameDate(game.gameDate)}</span>
+          <span className="text-xs text-slate-500 truncate">{formatGameDate(game.gameDate, game.timeTBD)}</span>
           {!dismissed && <RealLifeStatus status={game.status} detail={showScore ? game.statusDetail : null} />}
         </div>
 

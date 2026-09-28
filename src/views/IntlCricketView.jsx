@@ -882,8 +882,9 @@ function StandingsTab({ games }) {
 }
 
 // ─── Leaders tab ───────────────────────────────────────────────────────────────
-// Top 5 per format for the year, from ESPNcricinfo Statsguru: matches between
-// the 12 tracked nations, all series types. Statsguru can't be read from the
+// Top 5 per format for the year, from ESPNcricinfo Statsguru: players of the
+// 12 tracked nations, in all their matches against any opponent, all series
+// types. Statsguru can't be read from the
 // browser, so scripts/fetch-cricket-stats.mjs saves it to
 // src/data/cricketLeaders.json whenever the site is deployed.
 
@@ -958,7 +959,7 @@ function LeadersTab() {
   return (
     <div className="flex flex-col gap-6">
       <p className="text-xs text-slate-600">
-        Top 5 · {leaders.year} · matches between the 12 nations, all series · {leaders.source}, updated {formatStartDate(fetched)}
+        Top 5 · {leaders.year} · players from the 12 nations, all their matches · {leaders.source}, updated {formatStartDate(fetched)}
       </p>
       {LEADER_SECTIONS.map(section => (
         <section key={section.key}>

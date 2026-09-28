@@ -1,7 +1,7 @@
 {
   "year": 2026,
   "source": "ESPNcricinfo Statsguru",
-  "fetchedAt": "2026-09-27T17:47:44.428Z",
+  "fetchedAt": "2026-09-28T03:56:49.116Z",
   "formats": {
     "test": {
       "runs": [
@@ -248,6 +248,14 @@
           "date": "17 Jun 2026"
         },
         {
+          "name": "J Hermann",
+          "team": "SA",
+          "score": "150",
+          "balls": 126,
+          "opposition": "Namibia",
+          "date": "9 Sep 2026"
+        },
+        {
           "name": "CPL Connolly",
           "team": "AUS",
           "score": "149",
@@ -270,14 +278,6 @@
           "balls": 120,
           "opposition": "Ireland",
           "date": "12 Aug 2026"
-        },
-        {
-          "name": "DA Miller",
-          "team": "SA",
-          "score": "142",
-          "balls": 93,
-          "opposition": "Australia",
-          "date": "27 Sep 2026"
         }
       ],
       "bowling": [
@@ -328,74 +328,74 @@
         {
           "name": "Ishan Kishan",
           "team": "IND",
-          "matches": 23,
-          "runs": 803,
-          "average": 36.5
+          "matches": 27,
+          "runs": 905,
+          "average": 34.8
         },
         {
           "name": "Abhishek Sharma",
           "team": "IND",
-          "matches": 24,
+          "matches": 27,
           "runs": 743,
-          "average": 32.3
+          "average": 28.57
         },
         {
           "name": "HC Brook",
           "team": "ENG",
-          "matches": 16,
-          "runs": 619,
-          "average": 56.27
+          "matches": 19,
+          "runs": 690,
+          "average": 49.28
         },
         {
-          "name": "SV Samson",
-          "team": "IND",
+          "name": "SO Hetmyer",
+          "team": "WI",
           "matches": 16,
-          "runs": 495,
-          "average": 33
+          "runs": 566,
+          "average": 40.42
         },
         {
-          "name": "JC Buttler",
-          "team": "ENG",
-          "matches": 16,
-          "runs": 483,
-          "average": 34.5
+          "name": "BJ Bennett",
+          "team": "ZIM",
+          "matches": 17,
+          "runs": 533,
+          "average": 41
         }
       ],
       "wickets": [
         {
           "name": "Arshdeep Singh",
           "team": "IND",
-          "matches": 18,
+          "matches": 22,
+          "wickets": 30,
+          "strikeRate": 15.5
+        },
+        {
+          "name": "B Evans",
+          "team": "ZIM",
+          "matches": 17,
           "wickets": 27,
-          "strikeRate": 15
+          "strikeRate": 13.4
         },
         {
           "name": "AU Rashid",
           "team": "ENG",
-          "matches": 16,
-          "wickets": 22,
-          "strikeRate": 15
-        },
-        {
-          "name": "PVD Chameera",
-          "team": "SL",
-          "matches": 12,
-          "wickets": 20,
-          "strikeRate": 13.5
+          "matches": 19,
+          "wickets": 26,
+          "strikeRate": 15.3
         },
         {
           "name": "JC Archer",
           "team": "ENG",
-          "matches": 13,
-          "wickets": 19,
-          "strikeRate": 14.8
+          "matches": 16,
+          "wickets": 24,
+          "strikeRate": 14.7
         },
         {
-          "name": "JJ Bumrah",
-          "team": "IND",
-          "matches": 13,
-          "wickets": 19,
-          "strikeRate": 14.5
+          "name": "B Muzarabani",
+          "team": "ZIM",
+          "matches": 16,
+          "wickets": 24,
+          "strikeRate": 15.7
         }
       ],
       "innings": [
@@ -450,6 +450,14 @@
           "date": "1 Feb 2026"
         },
         {
+          "name": "R Shepherd",
+          "team": "WI",
+          "figures": "5/20",
+          "overs": "3.0",
+          "opposition": "Scotland",
+          "date": "7 Feb 2026"
+        },
+        {
           "name": "PVD Chameera",
           "team": "SL",
           "figures": "5/24",
@@ -472,14 +480,6 @@
           "overs": "4.0",
           "opposition": "New Zealand",
           "date": "31 Jan 2026"
-        },
-        {
-          "name": "JG Bethell",
-          "team": "ENG",
-          "figures": "4/11",
-          "overs": "3.3",
-          "opposition": "Sri Lanka",
-          "date": "3 Feb 2026"
         }
       ]
     }

@@ -113,6 +113,100 @@ function DismissButton({ dismissed, onToggle, dismissing }) {
   )
 }
 
+// Accepts a pasted link, adding https:// when the scheme was left off, and
+// rejects anything that isn't a plain web URL. Returns null if invalid.
+function normalizeLinkUrl(input) {
+  const trimmed = input.trim()
+  if (!trimmed) return null
+  try {
+    const url = new URL(/^[a-z][a-z0-9+.-]*:/i.test(trimmed) ? trimmed : `https://${trimmed}`)
+    return url.protocol === 'http:' || url.protocol === 'https:' ? url.href : null
+  } catch {
+    return null
+  }
+}
+
+// Shown on the button instead of the page title, which often has the score.
+function linkDomain(url) {
+  try { return new URL(url).hostname.replace(/^www\./, '') } catch { return 'link' }
+}
+
+function LinkIcon({ className = 'w-3.5 h-3.5' }) {
+  return (
+    <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+        d="M13.8 10.2a4 4 0 0 0-5.6 0l-3 3a4 4 0 0 0 5.6 5.6l1.5-1.5M10.2 13.8a4 4 0 0 0 5.6 0l3-3a4 4 0 0 0-5.6-5.6l-1.5 1.5" />
+    </svg>
+  )
+}
+
+function PencilIcon() {
+  return (
+    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+        d="M15.2 5.2l3.6 3.6M4 20l1-4.6L16.4 4a1.5 1.5 0 0 1 2.1 0l1.5 1.5a1.5 1.5 0 0 1 0 2.1L8.6 19 4 20z" />
+    </svg>
+  )
+}
+
+// Inline form for pasting, changing or removing the user's own link.
+function LinkEditor({ initialUrl, onSave, onRemove, onCancel }) {
+  const [value, setValue] = useState(initialUrl ?? '')
+  const [error, setError] = useState(null)
+  const [saving, setSaving] = useState(false)
+
+  async function run(action) {
+    setSaving(true)
+    setError(null)
+    try { await action() } catch (e) {
+      console.error('Highlight link save failed:', e)
+      setError('Could not save — try again.')
+      setSaving(false)
+    }
+  }
+
+  function handleSubmit(e) {
+    e.preventDefault()
+    const url = normalizeLinkUrl(value)
+    if (!url) { setError('Enter a valid http(s) URL.'); return }
+    run(() => onSave(url))
+  }
+
+  return (
+    <form onSubmit={handleSubmit} className="flex flex-col gap-2 w-full">
+      <div className="flex items-center gap-2">
+        <input
+          type="url" inputMode="url" autoFocus
+          value={value}
+          onChange={e => { setValue(e.target.value); setError(null) }}
+          onKeyDown={e => { if (e.key === 'Escape') onCancel() }}
+          placeholder="Paste highlight URL"
+          className="flex-1 min-w-0 text-xs px-3 py-1.5 rounded-lg bg-slate-900/70 border border-slate-700 text-slate-200 placeholder-slate-600 focus:outline-none focus:border-slate-500"
+        />
+        <button type="submit" disabled={saving}
+          className="text-xs font-medium px-3 py-1.5 rounded-lg bg-slate-700 hover:bg-slate-600 text-slate-100 disabled:opacity-40 transition-colors">
+          Save
+        </button>
+      </div>
+      <div className="flex items-center justify-between gap-2">
+        <span className="text-[11px] text-red-400 truncate">{error}</span>
+        <div className="flex items-center gap-3 shrink-0">
+          {initialUrl && (
+            <button type="button" disabled={saving} onClick={() => run(onRemove)}
+              className="text-[11px] text-red-400/80 hover:text-red-300 disabled:opacity-40">
+              Remove
+            </button>
+          )}
+          <button type="button" disabled={saving} onClick={onCancel}
+            className="text-[11px] text-slate-500 hover:text-slate-300 disabled:opacity-40">
+            Cancel
+          </button>
+        </div>
+      </div>
+    </form>
+  )
+}
+
 // resultColor: 'win' | 'loss' | null — used in Watched tab
 // showDismissAction: show the dismiss/un-dismiss X button
 // League rank shown in brackets beside a team name, e.g. "Tampa Bay (3)".
@@ -155,7 +249,7 @@ function PlayerToWatch({ game, players }) {
 // readOnly: suppress the watched-toggle/dismiss controls entirely (Results
 //   Log is a history view, not a queue you manage from).
 export default function GameCard({ game, isUpNext = false, resultColor = null, showDismissAction = false, trackedTeamId = null, className = '', forceWatched = false, readOnly = false, ranks = null, form = null, playersToWatch = null }) {
-  const { isWatched, toggleWatched, isDismissed, toggleDismissed } = useWatched()
+  const { isWatched, toggleWatched, isDismissed, toggleDismissed, getHighlightLink, saveHighlightLink, removeHighlightLink } = useWatched()
   const watched = forceWatched || isWatched(game.id, game.league)
   const dismissed = isDismissed(game.id, game.league)
   const league = LEAGUE_MAP[game.league]
@@ -169,6 +263,11 @@ export default function GameCard({ game, isUpNext = false, resultColor = null, s
   const canToggle = !readOnly && isFirebaseConfigured && game.status === 'final' && !dismissed
   const canDismiss = !readOnly && showDismissAction && isFirebaseConfigured && game.status !== 'live' && !watched
   const showHighlight = !dismissed && game.status === 'final' && game.highlightUrl
+  // The user's own pasted link (one per game, finished games only).
+  const [editingLink, setEditingLink] = useState(false)
+  const myLink = getHighlightLink(game.id, game.league)
+  const canEditLink = isFirebaseConfigured && !dismissed && game.status === 'final'
+  const showMyLink = !dismissed && game.status === 'final' && myLink
   const hasPitchers = !dismissed && (game.probablePitchers?.away || game.probablePitchers?.home)
 
   const homeWon = game.homeWon ?? (showScore && game.status === 'final' && game.homeScore > game.awayScore)
@@ -185,6 +284,15 @@ export default function GameCard({ game, isUpNext = false, resultColor = null, s
     setDismissing(true)
     try { await toggleDismissed(game) } finally { setDismissing(false) }
   }
+
+  const linkEditor = editingLink && canEditLink && (
+    <LinkEditor
+      initialUrl={myLink}
+      onSave={async (url) => { await saveHighlightLink(game, url); setEditingLink(false) }}
+      onRemove={async () => { await removeHighlightLink(game); setEditingLink(false) }}
+      onCancel={() => setEditingLink(false)}
+    />
+  )
 
   // ── Hero card layout ───────────────────────────────────────────────────────
   if (isUpNext) {
@@ -324,6 +432,32 @@ export default function GameCard({ game, isUpNext = false, resultColor = null, s
             >
               Watch Highlights
             </a>
+          )}
+          {linkEditor ? (
+            <div className="px-2 pt-1">{linkEditor}</div>
+          ) : showMyLink ? (
+            <div className="flex items-center gap-2">
+              <a
+                href={myLink}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex-1 flex items-center justify-center gap-2 py-3 rounded-xl bg-slate-800/80 hover:bg-slate-700/80 text-slate-200 text-sm font-medium transition-colors border border-slate-700/40 min-w-0"
+              >
+                <LinkIcon className="w-4 h-4 shrink-0" />
+                <span className="truncate">My link · {linkDomain(myLink)}</span>
+              </a>
+              {canEditLink && (
+                <button onClick={() => setEditingLink(true)} title="Change or remove your link"
+                  className="w-11 h-11 rounded-xl flex items-center justify-center bg-slate-800/80 hover:bg-slate-700/80 text-slate-400 hover:text-slate-200 border border-slate-700/40 transition-colors shrink-0">
+                  <PencilIcon />
+                </button>
+              )}
+            </div>
+          ) : canEditLink && (
+            <button onClick={() => setEditingLink(true)}
+              className="self-center flex items-center gap-1.5 text-xs text-slate-500 hover:text-slate-300 transition-colors py-1">
+              <LinkIcon /> Add your own link
+            </button>
           )}
           {(canDismiss || canToggle) && (
             <div className="flex justify-center gap-3 pt-1">
@@ -472,6 +606,27 @@ export default function GameCard({ game, isUpNext = false, resultColor = null, s
               {watched ? 'Highlights' : 'Watch Highlights'}
             </a>
           )}
+          {!linkEditor && showMyLink && (
+            <a
+              href={myLink}
+              target="_blank"
+              rel="noopener noreferrer"
+              title={myLink}
+              className="flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg bg-slate-700/30 hover:bg-slate-700/50 text-slate-300 hover:text-slate-100 border border-slate-600/40 transition-colors max-w-[150px]"
+            >
+              <LinkIcon className="w-3.5 h-3.5 shrink-0" />
+              <span className="truncate">{linkDomain(myLink)}</span>
+            </a>
+          )}
+          {!linkEditor && canEditLink && (
+            <button
+              onClick={() => setEditingLink(true)}
+              title={myLink ? 'Change or remove your link' : 'Add your own highlight link'}
+              className="w-7 h-7 rounded-lg flex items-center justify-center text-slate-500 hover:text-slate-200 hover:bg-slate-700/40 border border-slate-700/60 transition-colors"
+            >
+              {myLink ? <PencilIcon /> : <LinkIcon />}
+            </button>
+          )}
           {!dismissed && game.status === 'live' && game.highlightUrl && (
             <a
               href={game.highlightUrl}
@@ -485,6 +640,7 @@ export default function GameCard({ game, isUpNext = false, resultColor = null, s
           )}
         </div>
       </div>
+      {linkEditor && <div className="pt-3">{linkEditor}</div>}
     </div>
   )
 }

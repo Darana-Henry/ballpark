@@ -74,6 +74,10 @@ Collection: `watchedGames`
 Document ID: `{league}_{gameId}` (e.g. `mlb_778556`)
 Fields: `{ watched, league, gameId, homeTeam, awayTeam, homeTeamId, awayTeamId, homeScore, awayScore, statusDetail, gameDate, status, gameType, updatedAt }`
 
+Collection: `matchdayProgress` (Europe tab)
+Document ID: `{competition}_{season}` (e.g. `ucl_2026`)
+Fields: `{ competition, season, watchedThrough, updatedAt }` — last league-phase matchday marked watched; later matchdays are spoiler-locked
+
 Firestore rules should allow read/write (personal use, no auth):
 ```
 match /{document=**} { allow read, write: if true; }

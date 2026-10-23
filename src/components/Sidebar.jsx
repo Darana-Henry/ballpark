@@ -3,6 +3,9 @@ import { LEAGUES } from '../constants/leagues'
 import { useWatched } from '../contexts/WatchedContext'
 import SeasonBattery from './SeasonBattery'
 import { loadAllLeagueGames } from '../api/seasonSchedules'
+import { EUROPE_COMPETITIONS } from '../api/europe'
+import { useMatchdayProgress } from '../hooks/useMatchdayProgress'
+import { useEuropeCoverage } from '../hooks/useEuropeCoverage'
 
 function LeagueIcon({ league }) {
   const [err, setErr] = useState(false)
@@ -113,6 +116,8 @@ function useSeasonCoverage() {
 
 export default function Sidebar({ activeLeague, onLeagueChange }) {
   const coverage = useSeasonCoverage()
+  const { watchedThrough } = useMatchdayProgress()
+  const europe = useEuropeCoverage(watchedThrough).combined
 
   return (
     <aside className="hidden md:flex flex-col w-60 shrink-0 h-screen sticky top-0" style={{ background: 'rgba(6,8,22,0.75)', backdropFilter: 'blur(24px)', WebkitBackdropFilter: 'blur(24px)', borderRight: '1px solid rgba(255,255,255,0.07)' }}>
@@ -164,6 +169,39 @@ export default function Sidebar({ activeLeague, onLeagueChange }) {
           />
         ))}
       </nav>
+
+      {/* Previews section */}
+      <div className="px-4 mt-5 mb-1">
+        <p className="text-[10px] font-semibold text-slate-600 uppercase tracking-widest">Previews</p>
+      </div>
+      <div className="px-3">
+        <button
+          onClick={() => onLeagueChange('europe')}
+          className={[
+            'flex items-center gap-3 w-full px-3 py-2.5 rounded-xl text-left transition-all duration-150',
+            activeLeague === 'europe'
+              ? 'bg-slate-800/80 text-slate-100'
+              : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/40',
+          ].join(' ')}
+        >
+          <img
+            src="https://upload.wikimedia.org/wikipedia/en/f/f5/UEFA_Champions_League.svg"
+            alt="UEFA Champions League"
+            width={32}
+            height={32}
+            className="w-8 h-8 rounded-full object-contain p-1 shrink-0 bg-white"
+          />
+          <span className={`flex-1 text-sm font-semibold ${activeLeague === 'europe' ? 'text-slate-100' : 'text-slate-300'}`}>
+            Europe
+          </span>
+          <SeasonBattery
+            watched={europe.watched}
+            total={europe.total}
+            accentColor={EUROPE_COMPETITIONS[0].accentColor}
+            title={europe.total ? `${europe.watched} of ${europe.total} league-phase games watched across all three competitions` : undefined}
+          />
+        </button>
+      </div>
 
       {/* Fantasy section */}
       <div className="px-4 mt-5 mb-1">

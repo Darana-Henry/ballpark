@@ -11,6 +11,7 @@ import BBLView from './views/BBLView'
 import IntlCricketView from './views/IntlCricketView'
 import MLSView from './views/MLSView'
 import EPLView from './views/EPLView'
+import EuropeView from './views/EuropeView'
 import DeadlinesView from './views/DeadlinesView'
 import StatsView from './views/StatsView'
 import { isFirebaseConfigured } from './firebase'
@@ -44,6 +45,7 @@ const VIEWS = {
   cricket: IntlCricketView,
   mls: MLSView,
   epl: EPLView,
+  europe: EuropeView,
   deadlines: DeadlinesView,
   stats: StatsView,
 }

@@ -101,6 +101,14 @@ When the user provides their CricAPI key:
 3. Update `BBLView.jsx` to call the API once the key is in localStorage
 4. Match BBL on team names (no numeric IDs in CricAPI)
 
+## Fantasy Deadlines
+
+`scripts/fetch-fantasy-deadlines.mjs` (`npm run fantasy:deadlines`) runs in the deploy workflow every 6 hours and writes:
+- `src/data/fantasyDeadlines.json`: every round's deadline, imported by the Deadlines tab and Home strip (committed as the fallback when a source is down)
+- `public/fantasy-deadlines.ics`: subscribable calendar, gitignored; each event runs from 1 hour before a deadline to the deadline
+
+Sources: Premier League, Eliteserien and Allsvenskan fantasy expose official deadlines at `/api/bootstrap-static/` on their fantasy domains. Bundesliga, Serie A and Champions League fantasy lock 5 minutes before the matchday's first kickoff, computed from ESPN fixtures (UEFA's fantasy site blocks non-browser clients). None allow browser CORS, so nothing here is fetched client-side.
+
 ## Key Commands
 
 ```bash

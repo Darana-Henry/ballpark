@@ -1,13 +1,14 @@
-// type: 'static' rounds come from fantasyDeadlines.js (hand-maintained).
-// type: 'dynamic' rounds are fetched live via src/api/fantasyFixtures.js.
+// Round deadlines for every league come from src/data/fantasyDeadlines.json,
+// written by scripts/fetch-fantasy-deadlines.mjs. calendarName is the short
+// name used in that script's calendar event titles.
 // emoji is the fallback shown if logoUrl fails to load (see FantasyLeagueIcon).
 export const FANTASY_LEAGUES = [
   {
     id: 'eliteserien',
     name: 'Eliteserien Fantasy',
+    calendarName: 'Eliteserien',
     emoji: '🇳🇴',
     logoUrl: 'https://upload.wikimedia.org/wikipedia/en/5/50/Eliteserien_logo.svg',
-    type: 'static',
     accentColor: '#6366f1',
     accentClass: 'bg-indigo-600',
     borderClass: 'border-l-indigo-500',
@@ -18,9 +19,9 @@ export const FANTASY_LEAGUES = [
   {
     id: 'allsvenskan',
     name: 'Allsvenskan Fantasy',
+    calendarName: 'Allsvenskan',
     emoji: '🇸🇪',
     logoUrl: 'https://upload.wikimedia.org/wikipedia/en/4/4a/Allsvenskan_logo.svg',
-    type: 'static',
     accentColor: '#eab308',
     accentClass: 'bg-yellow-600',
     borderClass: 'border-l-yellow-500',
@@ -31,9 +32,9 @@ export const FANTASY_LEAGUES = [
   {
     id: 'premierLeague',
     name: 'Premier League Fantasy',
+    calendarName: 'FPL',
     emoji: '🇬🇧',
     logoUrl: 'https://upload.wikimedia.org/wikipedia/en/f/f2/Premier_League_Logo.svg',
-    type: 'static',
     accentColor: '#8b5cf6',
     accentClass: 'bg-violet-600',
     borderClass: 'border-l-violet-500',
@@ -44,9 +45,9 @@ export const FANTASY_LEAGUES = [
   {
     id: 'bundesliga',
     name: 'Bundesliga Fantasy',
+    calendarName: 'Bundesliga',
     emoji: '🇩🇪',
     logoUrl: 'https://upload.wikimedia.org/wikipedia/en/d/df/Bundesliga_logo_%282017%29.svg',
-    type: 'dynamic',
     accentColor: '#f97316',
     accentClass: 'bg-orange-600',
     borderClass: 'border-l-orange-500',
@@ -57,9 +58,9 @@ export const FANTASY_LEAGUES = [
   {
     id: 'serieA',
     name: 'Serie A Fantasy',
+    calendarName: 'Serie A',
     emoji: '🇮🇹',
     logoUrl: 'https://upload.wikimedia.org/wikipedia/en/a/ab/Serie_A_ENILIVE_logo.svg',
-    type: 'dynamic',
     accentColor: '#14b8a6',
     accentClass: 'bg-teal-600',
     borderClass: 'border-l-teal-500',
@@ -70,9 +71,9 @@ export const FANTASY_LEAGUES = [
   {
     id: 'championsLeague',
     name: 'Champions League Fantasy',
+    calendarName: 'UCL',
     emoji: '⭐',
     logoUrl: 'https://upload.wikimedia.org/wikipedia/en/f/f5/UEFA_Champions_League.svg',
-    type: 'static',
     accentColor: '#3b82f6',
     accentClass: 'bg-blue-600',
     borderClass: 'border-l-blue-500',

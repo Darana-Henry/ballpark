@@ -4,7 +4,7 @@ import FantasyLeagueIcon from './FantasyLeagueIcon'
 
 function DeadlineChip({ league, nextRound, loading, failed }) {
   const countdown = useCountdown(nextRound ? nextRound.deadline : null)
-  const display = loading ? '…' : failed ? '—' : !nextRound ? 'Done' : (countdown ?? 'Locked')
+  const display = loading ? '…' : failed ? '—' : !nextRound ? 'Done' : nextRound.provisional ? 'TBC' : (countdown ?? 'Locked')
 
   return (
     <div

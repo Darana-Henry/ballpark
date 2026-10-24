@@ -3,11 +3,12 @@ name: Deploy to GitHub Pages
 on:
   push:
     branches: [main]
-  # Daily rebuild so the Cricket tab's Leaders stats (fetched from
-  # ESPNcricinfo at build time) stay current. 06:00 UTC is after the day's
-  # Asian, European and Caribbean matches have finished.
+  # Rebuild every 6 hours so data fetched at build time stays current: fantasy
+  # deadlines (and the calendar built from them) pick up rescheduled kickoffs,
+  # and the Cricket tab's Leaders stats refresh. The 06:00 UTC run falls after
+  # the day's Asian, European and Caribbean matches have finished.
   schedule:
-    - cron: '0 6 * * *'
+    - cron: '0 */6 * * *'
   workflow_dispatch:
 
 permissions:
@@ -39,6 +40,12 @@ jobs:
       # src/data/cricketLeaders.json is used and the log says so.
       - name: Fetch cricket leaders
         run: npm run stats:cricket
+
+      # Never fails the build either: a league whose source is down keeps the
+      # rounds in the committed src/data/fantasyDeadlines.json. Also writes
+      # public/fantasy-deadlines.ics, served as the subscribable calendar.
+      - name: Fetch fantasy deadlines
+        run: npm run fantasy:deadlines
 
       - name: Build
         env:

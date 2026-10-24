@@ -14,6 +14,8 @@ lerna-debug.log*
 
 node_modules
 dist
+# Built by scripts/fetch-fantasy-deadlines.mjs at deploy time
+public/fantasy-deadlines.ics
 dist-ssr
 *.local
 

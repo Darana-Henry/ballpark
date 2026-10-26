@@ -13,7 +13,8 @@
     "deploy": "gh-pages -d dist",
     "qb:fetch": "node scripts/fetch-qb-history.mjs",
     "stats:cricket": "node scripts/fetch-cricket-stats.mjs",
-    "fantasy:deadlines": "node scripts/fetch-fantasy-deadlines.mjs"
+    "fantasy:deadlines": "node scripts/fetch-fantasy-deadlines.mjs",
+    "pl:gameweeks": "node scripts/fetch-pl-gameweeks.mjs"
   },
   "dependencies": {
     "firebase": "^12.13.0",

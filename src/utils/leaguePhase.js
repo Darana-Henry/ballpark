@@ -1,48 +1,117 @@
-// League-phase maths for the UEFA competitions: grouping fixtures into
-// matchdays, rebuilding the 36-team table as it stood before any matchday,
-// and tagging each fixture by where both sides sit in that table.
+// League maths for the Europe tab's competitions: grouping fixtures into
+// rounds, rebuilding the table as it stood before any round, and tagging each
+// fixture by where both sides sit in that table.
 //
 // Everything is derived from the competition's own fixtures rather than
-// ESPN's standings/form fields, so a past matchday shows the table and form
-// as they were going into it, not as they are today.
+// ESPN's standings/form fields, so a past round shows the table and form as
+// they were going into it, not as they are today.
+//
+// Each competition carries a rules object (below) for what differs between
+// the UEFA league phase and a domestic league: zones, tag thresholds,
+// tiebreakers and wording.
+
+const ZONE_STYLES = {
+  green: { bar: 'bg-emerald-500', className: 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30' },
+  blue:  { bar: 'bg-sky-500',     className: 'bg-sky-500/15 text-sky-300 border-sky-500/30' },
+  amber: { bar: 'bg-amber-500',   className: 'bg-amber-500/15 text-amber-300 border-amber-500/30' },
+  grey:  { bar: 'bg-slate-500',   className: 'bg-slate-500/15 text-slate-300 border-slate-500/30' },
+  red:   { bar: 'bg-red-500',     className: 'bg-red-500/15 text-red-300 border-red-500/30' },
+}
 
 // Places 1–8 go straight to the Round of 16; 9–16 are seeded and 17–24
 // unseeded in the knockout playoff (seeded sides play the second leg at
 // home); 25–36 are out. Same cut lines in all three competitions.
-export const ZONES = {
-  top:      { label: 'Round of 16',        maxRank: 8,        bar: 'bg-emerald-500', className: 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30' },
-  seeded:   { label: 'Playoff · seeded',   maxRank: 16,       bar: 'bg-sky-500',     className: 'bg-sky-500/15 text-sky-300 border-sky-500/30' },
-  unseeded: { label: 'Playoff · unseeded', maxRank: 24,       bar: 'bg-amber-500',   className: 'bg-amber-500/15 text-amber-300 border-amber-500/30' },
-  out:      { label: 'Eliminated',         maxRank: Infinity, bar: 'bg-red-500',     className: 'bg-red-500/15 text-red-300 border-red-500/30' },
+export const UEFA_LEAGUE_PHASE = {
+  roundName: 'Matchday',
+  zones: {
+    top:      { label: 'Round of 16',        maxRank: 8,        ...ZONE_STYLES.green },
+    seeded:   { label: 'Playoff · seeded',   maxRank: 16,       ...ZONE_STYLES.blue },
+    unseeded: { label: 'Playoff · unseeded', maxRank: 24,       ...ZONE_STYLES.amber },
+    out:      { label: 'Eliminated',         maxRank: Infinity, ...ZONE_STYLES.red },
+  },
+  // Tags: both sides at or above topMax, both at or below bottomFrom, both
+  // within two places of a cut line, or mismatchGap places apart.
+  topMax: 8,
+  bottomFrom: 25,
+  cutLines: [8, 24],
+  mismatchGap: 20,
+  tagHints: {
+    top:      'Both sides in the top 8',
+    bottom:   'Both sides in the elimination zone',
+    bubble:   'Both sides within two places of the top-8 or top-24 line',
+    mismatch: 'Twenty or more places apart',
+  },
+  awayGoalsTiebreak: true,
+  // Every team has played the same number of games going into a matchday.
+  showPlayed: false,
 }
 
-const PLAYOFF_CUT = ZONES.unseeded.maxRank
+// Standard places only: extra European spots from cup winners or UEFA's
+// coefficient places change every season.
+export const PREMIER_LEAGUE = {
+  roundName: 'Gameweek',
+  zones: {
+    ucl:  { label: 'Champions League',  maxRank: 4,        ...ZONE_STYLES.green },
+    uel:  { label: 'Europa League',     maxRank: 5,        ...ZONE_STYLES.blue },
+    uecl: { label: 'Conference League', maxRank: 6,        ...ZONE_STYLES.amber },
+    mid:  { label: 'Mid-table',         maxRank: 17,       ...ZONE_STYLES.grey },
+    drop: { label: 'Relegation',        maxRank: Infinity, ...ZONE_STYLES.red },
+  },
+  topMax: 6,
+  bottomFrom: 15,
+  cutLines: [4, 17],
+  mismatchGap: 12,
+  tagHints: {
+    top:      'Both sides in the top 6',
+    bottom:   'Both sides in the bottom 6',
+    bubble:   'Both sides within two places of the top-4 or relegation line',
+    mismatch: 'Twelve or more places apart',
+  },
+  awayGoalsTiebreak: false,
+  // Postponements leave teams with games in hand.
+  showPlayed: true,
+}
 
-export function zoneFor(rank) {
-  return Object.keys(ZONES).find(id => rank <= ZONES[id].maxRank)
+export function zoneFor(rank, rules) {
+  return Object.keys(rules.zones).find(id => rank <= rules.zones[id].maxRank)
 }
 
 // A league-phase round spans a Tue–Thu window and rounds are at least a week
 // apart, so a gap of more than three days always starts a new matchday.
 const MATCHDAY_GAP_MS = 3 * 24 * 60 * 60 * 1000
 
+function finishMatchday(number, fixtures) {
+  return {
+    number,
+    fixtures,
+    start: fixtures[0].date,
+    end:   fixtures[fixtures.length - 1].date,
+    done:  fixtures.every(f => f.status === 'final'),
+  }
+}
+
 export function groupMatchdays(fixtures) {
   const sorted = [...fixtures].sort((a, b) => a.date - b.date)
-  const matchdays = []
+  const groups = []
   for (const fixture of sorted) {
-    const current = matchdays[matchdays.length - 1]
-    if (current && fixture.date - current.fixtures[current.fixtures.length - 1].date <= MATCHDAY_GAP_MS) {
-      current.fixtures.push(fixture)
-    } else {
-      matchdays.push({ number: matchdays.length + 1, fixtures: [fixture] })
-    }
+    const current = groups[groups.length - 1]
+    if (current && fixture.date - current[current.length - 1].date <= MATCHDAY_GAP_MS) current.push(fixture)
+    else groups.push([fixture])
   }
-  return matchdays.map(md => ({
-    ...md,
-    start: md.fixtures[0].date,
-    end:   md.fixtures[md.fixtures.length - 1].date,
-    done:  md.fixtures.every(f => f.status === 'final'),
-  }))
+  return groups.map((group, i) => finishMatchday(i + 1, group))
+}
+
+// For fixtures that already know their round (the Premier League's official
+// FPL gameweeks), where date gaps would misplace rescheduled matches.
+export function groupByRound(fixtures) {
+  const byRound = new Map()
+  for (const f of [...fixtures].sort((a, b) => a.date - b.date)) {
+    if (!byRound.has(f.round)) byRound.set(f.round, [])
+    byRound.get(f.round).push(f)
+  }
+  return [...byRound.entries()]
+    .sort(([a], [b]) => a - b)
+    .map(([round, group]) => finishMatchday(round, group))
 }
 
 // The matchday worth previewing: the first one still to be completed, or the
@@ -54,8 +123,10 @@ export function currentMatchdayIndex(matchdays) {
 
 // Where to open for someone who has watched up to `watchedThrough`: the
 // first matchday they haven't finished, but never past the one being played.
+// Looked up by number, since gameweek numbering can skip a round.
 export function openingMatchdayIndex(matchdays, watchedThrough) {
-  return Math.min(watchedThrough, currentMatchdayIndex(matchdays), matchdays.length - 1)
+  const unwatched = matchdays.findIndex(md => md.number > watchedThrough)
+  return Math.min(unwatched === -1 ? matchdays.length - 1 : unwatched, currentMatchdayIndex(matchdays))
 }
 
 /**
@@ -81,10 +152,11 @@ export function watchCoverage(matchdays, watchedThrough) {
  * before `beforeMatchday` (1-based). Teams are seeded from every fixture so a
  * side that hasn't played yet still gets a row.
  *
- * Tiebreakers follow UEFA's league-phase order as far as fixtures allow:
- * points, goal difference, goals scored, away goals scored, wins, away wins.
+ * Tiebreakers go as far as fixtures allow: points, goal difference, goals
+ * scored, then — in UEFA's league phase — away goals scored, wins and away
+ * wins. The Premier League's next step is head-to-head, which isn't modelled.
  */
-export function buildTable(matchdays, beforeMatchday) {
+export function buildTable(matchdays, beforeMatchday, rules = UEFA_LEAGUE_PHASE) {
   const rows = new Map()
   const rowFor = team => {
     if (!rows.has(team.id)) {
@@ -120,36 +192,42 @@ export function buildTable(matchdays, beforeMatchday) {
     b.points - a.points ||
     (b.gf - b.ga) - (a.gf - a.ga) ||
     b.gf - a.gf ||
-    b.awayGf - a.awayGf ||
-    b.wins - a.wins ||
-    b.awayWins - a.awayWins ||
+    (rules.awayGoalsTiebreak && (
+      b.awayGf - a.awayGf ||
+      b.wins - a.wins ||
+      b.awayWins - a.awayWins
+    )) ||
     a.team.name.localeCompare(b.team.name)
   )
   table.forEach((row, i) => { row.rank = i + 1 })
   return new Map(table.map(row => [row.team.id, row]))
 }
 
-export const MATCHUP_TAGS = {
-  top:      { label: 'Top clash',     emoji: '🔥', className: 'bg-orange-500/15 text-orange-300 border-orange-500/30', hint: 'Both sides in the top 8' },
-  bottom:   { label: 'Bottom scrap',  emoji: '⚠️', className: 'bg-red-500/15 text-red-300 border-red-500/30',          hint: 'Both sides in the elimination zone' },
-  bubble:   { label: 'Bubble battle', emoji: '⚖️', className: 'bg-violet-500/15 text-violet-300 border-violet-500/30', hint: 'Both sides within two places of the same cut line' },
-  mismatch: { label: 'Mismatch',      emoji: '⚡', className: 'bg-slate-500/15 text-slate-300 border-slate-500/30',    hint: 'Twenty or more places apart' },
+const TAG_STYLES = {
+  top:      { label: 'Top clash',     emoji: '🔥', className: 'bg-orange-500/15 text-orange-300 border-orange-500/30' },
+  bottom:   { label: 'Bottom scrap',  emoji: '⚠️', className: 'bg-red-500/15 text-red-300 border-red-500/30' },
+  bubble:   { label: 'Bubble battle', emoji: '⚖️', className: 'bg-violet-500/15 text-violet-300 border-violet-500/30' },
+  mismatch: { label: 'Mismatch',      emoji: '⚡', className: 'bg-slate-500/15 text-slate-300 border-slate-500/30' },
 }
 
-const CUT_LINES = [ZONES.top.maxRank, PLAYOFF_CUT]
+// The tags with this competition's hover hints.
+export function matchupTags(rules) {
+  return Object.fromEntries(Object.entries(TAG_STYLES).map(([id, tag]) => [id, { ...tag, hint: rules.tagHints[id] }]))
+}
+
 const nearCut = (rank, cut) => rank > cut - 2 && rank <= cut + 2
 
 /**
  * One tag per fixture, most interesting first. Untagged before anyone has
  * played: on matchday 1 the "table" is just alphabetical.
  */
-export function matchupTag(homeRow, awayRow) {
+export function matchupTag(homeRow, awayRow, rules = UEFA_LEAGUE_PHASE) {
   if (!homeRow?.played || !awayRow?.played) return null
   const a = homeRow.rank
   const b = awayRow.rank
-  if (a <= ZONES.top.maxRank && b <= ZONES.top.maxRank) return 'top'
-  if (a > PLAYOFF_CUT && b > PLAYOFF_CUT) return 'bottom'
-  if (CUT_LINES.some(cut => nearCut(a, cut) && nearCut(b, cut))) return 'bubble'
-  if (Math.abs(a - b) >= 20) return 'mismatch'
+  if (a <= rules.topMax && b <= rules.topMax) return 'top'
+  if (a >= rules.bottomFrom && b >= rules.bottomFrom) return 'bottom'
+  if (rules.cutLines.some(cut => nearCut(a, cut) && nearCut(b, cut))) return 'bubble'
+  if (Math.abs(a - b) >= rules.mismatchGap) return 'mismatch'
   return null
 }

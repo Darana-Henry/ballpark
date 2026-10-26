@@ -47,6 +47,12 @@ jobs:
       - name: Fetch fantasy deadlines
         run: npm run fantasy:deadlines
 
+      # Never fails the build: if FPL or ESPN can't be reached, the committed
+      # src/data/plGameweeks.json is used. Maps each Premier League match to
+      # its official FPL gameweek for the Europe tab.
+      - name: Fetch Premier League gameweeks
+        run: npm run pl:gameweeks
+
       - name: Build
         env:
           VITE_FIREBASE_API_KEY: ${{ secrets.VITE_FIREBASE_API_KEY }}

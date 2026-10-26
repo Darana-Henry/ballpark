@@ -113,6 +113,10 @@ When the user provides their CricAPI key:
 
 Sources: Premier League, Eliteserien and Allsvenskan fantasy expose official deadlines at `/api/bootstrap-static/` on their fantasy domains. Bundesliga, Serie A and Champions League fantasy lock 5 minutes before the matchday's first kickoff, computed from ESPN fixtures (UEFA's fantasy site blocks non-browser clients). None allow browser CORS, so nothing here is fetched client-side.
 
+## Europe Tab: Premier League Gameweeks
+
+ESPN has no gameweek field, so `scripts/fetch-pl-gameweeks.mjs` (`npm run pl:gameweeks`, in the deploy workflow) maps every ESPN Premier League match id to its official FPL gameweek in `src/data/plGameweeks.json` (committed as the fallback). Teams are paired across the two sources by their sets of kickoff times, not by name. Per-competition differences (zones, tag thresholds, tiebreakers, round wording) live in rules objects in `src/utils/leaguePhase.js`.
+
 ## Key Commands
 
 ```bash

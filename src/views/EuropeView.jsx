@@ -1,7 +1,7 @@
-import { useState, useEffect, useMemo } from 'react'
-import { EUROPE_COMPETITIONS, fetchLeaguePhaseFixtures, getSeason } from '../api/europe'
+import { useState, useEffect, useMemo, useContext, createContext } from 'react'
+import { EUROPE_COMPETITIONS, loadMatchdays, getSeason } from '../api/europe'
 import {
-  ZONES, MATCHUP_TAGS, zoneFor, groupMatchdays, currentMatchdayIndex, openingMatchdayIndex, buildTable, matchupTag,
+  UEFA_LEAGUE_PHASE, zoneFor, matchupTags, currentMatchdayIndex, openingMatchdayIndex, buildTable, matchupTag,
 } from '../utils/leaguePhase'
 import { useMatchdayProgress } from '../hooks/useMatchdayProgress'
 import { useEuropeCoverage } from '../hooks/useEuropeCoverage'
@@ -18,14 +18,23 @@ function formatRange(start, end) {
   return dayKey(start) === dayKey(end) ? fmt(start) : `${fmt(start)} – ${fmt(end)}`
 }
 
+// The competition on screen: its rules (zones, tag thresholds, wording) and
+// the matchup tags with its hover hints. Provided by MatchdayPreview.
+const CompetitionContext = createContext({ rules: UEFA_LEAGUE_PHASE, tags: matchupTags(UEFA_LEAGUE_PHASE) })
+
+// How many rounds of position history the table shows, most recent last.
+const HISTORY_LIMIT = 7
+
 // ─── Fixture row ──────────────────────────────────────────────────────────────
 
 function RankBadge({ row }) {
+  const { rules } = useContext(CompetitionContext)
   if (!row?.played) return <span className="w-7 shrink-0" />
+  const zone = rules.zones[zoneFor(row.rank, rules)]
   return (
     <span
-      className={`inline-flex items-center justify-center w-7 h-6 rounded-md border text-[11px] font-bold tabular-nums shrink-0 ${ZONES[zoneFor(row.rank)].className}`}
-      title={`#${row.rank} · ${ZONES[zoneFor(row.rank)].label} zone`}
+      className={`inline-flex items-center justify-center w-7 h-6 rounded-md border text-[11px] font-bold tabular-nums shrink-0 ${zone.className}`}
+      title={`#${row.rank} · ${zone.label} zone`}
     >
       {row.rank}
     </span>
@@ -42,9 +51,11 @@ function TeamSide({ team, row, align, result }) {
   return (
     <div className={`flex items-center gap-1.5 sm:gap-2 min-w-0 ${right ? 'flex-row-reverse text-right' : ''}`}>
       <RankBadge row={row} />
+      {/* Crest and points give way beside the table on a laptop, where the
+          table right next to the row shows both and names need the room */}
       {team.logo
-        ? <img src={team.logo} alt="" width={28} height={28} className="hidden sm:block w-7 h-7 object-contain shrink-0" />
-        : <span className="hidden sm:block w-7 h-7 shrink-0" />}
+        ? <img src={team.logo} alt="" width={28} height={28} className="hidden sm:block xl:hidden 2xl:block w-7 h-7 object-contain shrink-0" />
+        : <span className="hidden sm:block xl:hidden 2xl:block w-7 h-7 shrink-0" />}
       <div className="min-w-0">
         <p className={`text-sm font-semibold truncate ${RESULT_NAME_CLASS[result] ?? 'text-slate-200'}`}>
           {/* Short names on phones, and beside the table where the tag column squeezes the row */}
@@ -53,9 +64,12 @@ function TeamSide({ team, row, align, result }) {
         </p>
         <div className={`flex items-center gap-1.5 mt-0.5 ${right ? 'justify-end' : ''}`}>
           {row?.played > 0 && (
-            <span className="text-[10px] text-slate-500 tabular-nums whitespace-nowrap">{row.points} pts</span>
+            <span className="text-[10px] text-slate-500 tabular-nums whitespace-nowrap xl:hidden 2xl:inline">{row.points} pts</span>
           )}
-          <RecentForm form={row?.form} align={align} />
+          {/* Five results where there's room; three on phones and beside the
+              table, where five would push past the row's edge */}
+          <span className="sm:hidden xl:inline 2xl:hidden"><RecentForm form={row?.form} max={3} align={align} /></span>
+          <span className="hidden sm:inline xl:hidden 2xl:inline"><RecentForm form={row?.form} max={5} align={align} /></span>
         </div>
       </div>
     </div>
@@ -125,9 +139,10 @@ function TagCell({ tag, score }) {
 // `seen` shows the score; `ticked` is a game marked off mid-matchday, styled as
 // watched. `onToggle` is only passed for rows that can be ticked.
 function FixtureRow({ fixture, table, showDay, seen, ticked, onToggle }) {
+  const { rules, tags } = useContext(CompetitionContext)
   const homeRow = table.get(fixture.home.id)
   const awayRow = table.get(fixture.away.id)
-  const tag = MATCHUP_TAGS[matchupTag(homeRow, awayRow)]
+  const tag = tags[matchupTag(homeRow, awayRow, rules)]
   const score = seen ? { home: fixture.homeScore, away: fixture.awayScore } : null
   const homeResult = score && (score.home > score.away ? 'W' : score.home < score.away ? 'L' : 'D')
   const awayResult = homeResult && ({ W: 'L', L: 'W', D: 'D' })[homeResult]
@@ -160,7 +175,8 @@ function FixtureRow({ fixture, table, showDay, seen, ticked, onToggle }) {
 // ─── Matchday ─────────────────────────────────────────────────────────────────
 
 function TagFilter({ counts, active, onChange }) {
-  const entries = Object.entries(MATCHUP_TAGS).filter(([id]) => counts[id])
+  const { tags } = useContext(CompetitionContext)
+  const entries = Object.entries(tags).filter(([id]) => counts[id])
   return (
     <>
       {entries.map(([id, tag]) => (
@@ -178,14 +194,15 @@ function TagFilter({ counts, active, onChange }) {
 }
 
 function ZoneLegend() {
+  const { rules } = useContext(CompetitionContext)
   return (
     <div className="grid grid-cols-2 gap-x-3 gap-y-1 mt-3 pt-3 px-1 border-t border-white/[0.07] text-[10px] text-slate-500">
-      {Object.entries(ZONES).map(([id, zone], i, all) => {
+      {Object.entries(rules.zones).map(([id, zone], i, all) => {
         const from = i === 0 ? 1 : all[i - 1][1].maxRank + 1
         return (
           <span key={id} className="inline-flex items-center gap-1.5">
             <span className={`w-1 h-3 rounded-full ${zone.bar}`} />
-            {zone.maxRank === Infinity ? `${from}+` : `${from}–${zone.maxRank}`} {zone.label}
+            {zone.maxRank === Infinity ? `${from}+` : from === zone.maxRank ? from : `${from}–${zone.maxRank}`} {zone.label}
           </span>
         )
       })}
@@ -198,30 +215,34 @@ function ZoneLegend() {
 const panelStyle = { background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.07)' }
 
 // Width of one position-history cell plus its gap, in rem. The right-hand
-// column grows by this much per completed matchday.
+// column grows by this much per completed round, up to HISTORY_LIMIT.
 const HISTORY_CELL_REM = 1.25
+
+// Width of the table's played column plus its gap, in rem.
+const PLAYED_COL_REM = 2
 
 // The table as it stood going into the matchday on screen, so it lines up with
 // the ranks on the fixtures. When a tag filter is on, the teams in those
 // fixtures stay lit and the rest fade back.
 //
-// After Pts, one zone-coloured cell per completed matchday shows the team's
-// position after it, so a row reads as its climb or slide. `history` stops at
-// the matchday on screen, the same point as the table, so it can't run ahead
-// of what the user has watched.
+// After Pts, one zone-coloured cell per completed round (the last
+// HISTORY_LIMIT of them) shows the team's position after it, so a row reads
+// as its climb or slide. `history` stops at the round on screen, the same
+// point as the table, so it can't run ahead of what the user has watched.
 function StandingsPanel({ table, history, matchdayNumber, locked, highlight }) {
+  const { rules } = useContext(CompetitionContext)
   const rows = [...table.values()].sort((a, b) => a.rank - b.rank)
   const played = rows.some(r => r.played > 0)
-  // No "played" column: every team has played the same number of league-phase
-  // games going into a matchday, which the heading already says.
-  const cols = { gridTemplateColumns: `1.5rem minmax(0,1fr) 2rem 2rem${history.length ? ' auto' : ''}` }
+  // The played column only shows where teams can have games in hand: in the
+  // UEFA league phase everyone has played the same number going into a round.
+  const cols = { gridTemplateColumns: `1.5rem minmax(0,1fr)${rules.showPlayed ? ' 1.5rem' : ''} 2rem 2rem${history.length ? ' auto' : ''}` }
   const historyCells = history.length > 0 && 'flex gap-0.5 border-l border-white/[0.07] pl-1.5'
 
   return (
     <aside className="rounded-xl p-3" style={panelStyle}>
       <div className="flex items-baseline justify-between mb-2 px-1">
         <p className="text-xs font-bold text-slate-300">Table</p>
-        <p className="text-[10px] text-slate-500">Going into Matchday {matchdayNumber}</p>
+        <p className="text-[10px] text-slate-500">Going into {rules.roundName} {matchdayNumber}</p>
       </div>
 
       {locked ? (
@@ -231,19 +252,21 @@ function StandingsPanel({ table, history, matchdayNumber, locked, highlight }) {
       ) : (
         <>
           <div className="grid gap-x-2 px-1 pb-1 text-[10px] text-slate-600 font-semibold" style={cols}>
-            <span>#</span><span>Team</span><span className="text-right">GD</span><span className="text-right">Pts</span>
+            <span>#</span><span>Team</span>
+            {rules.showPlayed && <span className="text-right">P</span>}
+            <span className="text-right">GD</span><span className="text-right">Pts</span>
             {historyCells && (
               <span className={historyCells}>
-                {history.map((_, i) => (
-                  <span key={i} className="w-[1.125rem] text-center" title={`Position after Matchday ${i + 1}`}>{i + 1}</span>
+                {history.map(({ number }) => (
+                  <span key={number} className="w-[1.125rem] text-center" title={`Position after ${rules.roundName} ${number}`}>{number}</span>
                 ))}
               </span>
             )}
           </div>
           <div className="flex flex-col">
             {rows.map((row, i) => {
-              const zone = zoneFor(row.rank)
-              const newZone = i > 0 && zoneFor(rows[i - 1].rank) !== zone
+              const zone = zoneFor(row.rank, rules)
+              const newZone = i > 0 && zoneFor(rows[i - 1].rank, rules) !== zone
               const gd = row.gf - row.ga
               const dim = highlight && !highlight.has(row.team.id)
               return (
@@ -251,29 +274,30 @@ function StandingsPanel({ table, history, matchdayNumber, locked, highlight }) {
                   key={row.team.id}
                   className={`relative grid gap-x-2 items-center px-1 py-0.5 text-xs tabular-nums transition-opacity ${newZone ? 'border-t border-white/10 mt-1 pt-1.5' : ''} ${dim ? 'opacity-30' : ''}`}
                   style={cols}
-                  title={ZONES[zone].label}
+                  title={rules.zones[zone].label}
                 >
                   <span className="flex items-center gap-1.5">
-                    <span className={`w-1 h-4 rounded-full ${ZONES[zone].bar}`} />
+                    <span className={`w-1 h-4 rounded-full ${rules.zones[zone].bar}`} />
                     <span className="text-slate-400">{row.rank}</span>
                   </span>
                   <span className="flex items-center gap-1.5 min-w-0">
                     {row.team.logo && <img src={row.team.logo} alt="" width={16} height={16} className="w-4 h-4 object-contain shrink-0" />}
                     <span className="truncate text-slate-200">{row.team.shortName}</span>
                   </span>
+                  {rules.showPlayed && <span className="text-right text-slate-500">{row.played}</span>}
                   <span className="text-right text-slate-500">{gd > 0 ? `+${gd}` : gd}</span>
                   <span className="text-right font-bold text-slate-100">{row.points}</span>
                   {historyCells && (
                     <span className={historyCells}>
-                      {history.map((after, md) => {
+                      {history.map(({ number, after, before }) => {
                         const rank = after.get(row.team.id)?.rank
-                        const prev = md > 0 ? history[md - 1].get(row.team.id)?.rank : null
+                        const prev = before?.get(row.team.id)?.rank
                         const move = prev == null ? '' : prev > rank ? ` (▲${prev - rank})` : prev < rank ? ` (▼${rank - prev})` : ' (no change)'
                         return (
                           <span
-                            key={md}
-                            className={`w-[1.125rem] h-4 flex items-center justify-center rounded border text-[10px] font-bold ${ZONES[zoneFor(rank)].className}`}
-                            title={`After Matchday ${md + 1}: #${rank}${move}`}
+                            key={number}
+                            className={`w-[1.125rem] h-4 flex items-center justify-center rounded border text-[10px] font-bold ${rules.zones[zoneFor(rank, rules)].className}`}
+                            title={`After ${rules.roundName} ${number}: #${rank}${move}`}
                           >
                             {rank}
                           </span>
@@ -297,6 +321,7 @@ function StandingsPanel({ table, history, matchdayNumber, locked, highlight }) {
 const buttonStyle = { background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.08)' }
 
 function ProgressBar({ matchday, watchedThrough, onMark, onUnmark }) {
+  const { rules } = useContext(CompetitionContext)
   if (matchday.number <= watchedThrough) {
     return (
       <div className="flex items-center justify-center gap-3 mb-4 text-xs">
@@ -323,25 +348,26 @@ function ProgressBar({ matchday, watchedThrough, onMark, onUnmark }) {
           className="px-4 py-2 rounded-xl text-sm font-semibold text-slate-100 hover:bg-white/10 transition-colors"
           style={buttonStyle}
         >
-          I've watched Matchday {matchday.number} ✓
+          I've watched {rules.roundName} {matchday.number} ✓
         </button>
       ) : (
-        <p className="text-xs text-slate-500">Matchday {matchday.number} is still being played</p>
+        <p className="text-xs text-slate-500">{rules.roundName} {matchday.number} is still being played</p>
       )}
     </div>
   )
 }
 
 function SpoilerGuard({ yourMatchday, onGoBack, onReveal }) {
+  const { rules } = useContext(CompetitionContext)
   return (
     <div className="rounded-xl p-4 mb-4 text-center" style={buttonStyle}>
-      <p className="text-sm font-semibold text-slate-200">🔒 Finish Matchday {yourMatchday} first</p>
+      <p className="text-sm font-semibold text-slate-200">🔒 Finish {rules.roundName} {yourMatchday} first</p>
       <p className="text-xs text-slate-500 mt-1">
-        Ranks, form and tags here would give away Matchday {yourMatchday} results, so they're hidden.
+        Ranks, form and tags here would give away {rules.roundName} {yourMatchday} results, so they're hidden.
       </p>
       <div className="flex justify-center gap-2 mt-3">
         <button onClick={onGoBack} className="px-3 py-1.5 rounded-lg text-xs font-semibold text-slate-100 hover:bg-white/10" style={buttonStyle}>
-          Go to Matchday {yourMatchday}
+          Go to {rules.roundName} {yourMatchday}
         </button>
         <button onClick={onReveal} className="px-3 py-1.5 rounded-lg text-xs text-slate-500 hover:text-slate-300">
           Reveal anyway
@@ -358,7 +384,7 @@ function SpoilerGuard({ yourMatchday, onGoBack, onReveal }) {
 const tickedGames = new Set()
 
 function MatchdayPreview({ competition, watchedThrough, setWatchedThrough }) {
-  const [fixtures, setFixtures] = useState(null)
+  const [matchdays, setMatchdays] = useState(null)
   const [error, setError]       = useState(null)
   const [index, setIndex]       = useState(null)
   const [tagFilter, setTagFilter] = useState(null)
@@ -374,23 +400,25 @@ function MatchdayPreview({ competition, watchedThrough, setWatchedThrough }) {
 
   useEffect(() => {
     let cancelled = false
-    fetchLeaguePhaseFixtures(competition.slug)
-      .then(f => { if (!cancelled) setFixtures(f) })
+    loadMatchdays(competition)
+      .then(m => { if (!cancelled) setMatchdays(m) })
       .catch(err => { if (!cancelled) setError(err.message) })
     return () => { cancelled = true }
-  }, [competition.slug])
+  }, [competition])
 
-  const matchdays = useMemo(() => (fixtures ? groupMatchdays(fixtures) : []), [fixtures])
-  const selected  = index ?? openingMatchdayIndex(matchdays, watchedThrough)
-  const matchday  = matchdays[selected]
+  const rules     = competition.rules
+  const context   = useMemo(() => ({ rules, tags: matchupTags(rules) }), [rules])
+  const rounds    = useMemo(() => matchdays ?? [], [matchdays])
+  const selected  = index ?? openingMatchdayIndex(rounds, watchedThrough)
+  const matchday  = rounds[selected]
 
   // Anything past the user's next unwatched matchday would leak its results
   // through the table, so it renders with no table at all until revealed.
   const yourMatchday = watchedThrough + 1
   const locked    = !!matchday && matchday.number > yourMatchday && !revealed.has(matchday.number)
   const table     = useMemo(
-    () => (matchday && !locked ? buildTable(matchdays, matchday.number) : new Map()),
-    [matchdays, matchday, locked]
+    () => (matchday && !locked ? buildTable(rounds, matchday.number, rules) : new Map()),
+    [rounds, matchday, locked, rules]
   )
 
   // Ranked order needs a real table: a locked matchday would leak the hidden
@@ -408,7 +436,7 @@ function MatchdayPreview({ competition, watchedThrough, setWatchedThrough }) {
     const fixtures = [...(matchday?.fixtures ?? [])]
     if (rankOrder) fixtures.sort((a, b) => bestRank(a) - bestRank(b))
     for (const f of fixtures) {
-      const tag = matchupTag(table.get(f.home.id), table.get(f.away.id))
+      const tag = matchupTag(table.get(f.home.id), table.get(f.away.id), rules)
       if (tag) counts[tag] = (counts[tag] ?? 0) + 1
       if (tagFilter && tag !== tagFilter) continue
       if (hideWatched && !matchdayWatched && ticked.has(f.id)) continue
@@ -419,13 +447,18 @@ function MatchdayPreview({ competition, watchedThrough, setWatchedThrough }) {
       byDay.get(key).push(f)
     }
     return { byDay, counts }
-  }, [matchday, table, tagFilter, rankOrder, hideWatched, matchdayWatched, ticked])
+  }, [matchday, table, tagFilter, rankOrder, hideWatched, matchdayWatched, ticked, rules])
 
-  // Tables after Matchday 1 … the one before the matchday on screen.
+  // Tables after each of the last HISTORY_LIMIT rounds before the one on
+  // screen, each paired with the table before it for the move in the tooltip.
   const history = useMemo(() => {
     if (!matchday || locked) return []
-    return Array.from({ length: matchday.number - 1 }, (_, i) => buildTable(matchdays, i + 2))
-  }, [matchdays, matchday, locked])
+    const past = rounds.filter(md => md.number < matchday.number).slice(-HISTORY_LIMIT - 1)
+    const tables = past.map(md => ({ number: md.number, after: buildTable(rounds, md.number + 1, rules) }))
+    return tables
+      .map((t, i) => ({ ...t, before: tables[i - 1]?.after ?? null }))
+      .slice(-HISTORY_LIMIT)
+  }, [rounds, matchday, locked, rules])
 
   const highlight = useMemo(() => {
     if (!tagFilter) return null
@@ -435,132 +468,137 @@ function MatchdayPreview({ competition, watchedThrough, setWatchedThrough }) {
   if (error) {
     return <div className="rounded-xl bg-red-900/20 border border-red-800 p-4 text-red-400 text-sm">Failed to load: {error}</div>
   }
-  if (!fixtures) return <LoadingSpinner message={`Loading ${competition.name} fixtures...`} />
+  if (!matchdays) return <LoadingSpinner message={`Loading ${competition.name} fixtures...`} />
   if (!matchday) {
-    return <EmptyState emoji="🏆" title="No league-phase fixtures yet" message="The draw hasn't been published for this season." />
+    return <EmptyState emoji="🏆" title="No fixtures yet" message="This season's fixtures haven't been published." />
   }
 
   const goTo = i => { setIndex(i); setTagFilter(null); setHideWatched(false) }
+  const goToNumber = n => goTo(Math.max(0, rounds.findIndex(md => md.number === n)))
   const tickedHere = matchdayWatched ? 0 : matchday.fixtures.filter(f => ticked.has(f.id)).length
   const nobodyPlayed = !locked && [...table.values()].every(r => r.played === 0)
-  const playing = matchdays[currentMatchdayIndex(matchdays)]
+  const playing = rounds[currentMatchdayIndex(rounds)]
   const behindBy = playing.number - yourMatchday
 
   const mark = async () => {
     await setWatchedThrough(matchday.number)
-    if (selected < matchdays.length - 1) goTo(selected + 1)
+    if (selected < rounds.length - 1) goTo(selected + 1)
   }
 
+  const tableWidth = 17 + (rules.showPlayed ? PLAYED_COL_REM : 0) + (history.length ? 0.75 + history.length * HISTORY_CELL_REM : 0)
+
   return (
-    <div
-      className="xl:grid xl:grid-cols-[minmax(0,1fr)_var(--table-width)] xl:gap-6 xl:items-start"
-      style={{ '--table-width': `${17 + (history.length ? 0.75 + history.length * HISTORY_CELL_REM : 0)}rem` }}
-    >
-      <div>
-        <div className="flex items-center justify-between gap-3 mb-4">
-          <button
-            onClick={() => goTo(selected - 1)}
-            disabled={selected === 0}
-            className="w-9 h-9 rounded-xl text-slate-400 hover:text-slate-100 disabled:opacity-30 disabled:hover:text-slate-400"
-            style={{ background: 'rgba(255,255,255,0.05)' }}
-            aria-label="Previous matchday"
-          >
-            ‹
-          </button>
-          <div className="text-center">
-            <p className="text-base font-bold text-slate-100">
-              Matchday {matchday.number}
-              <span className="text-slate-600 font-medium"> of {matchdays.length}</span>
-            </p>
-            <p className="text-xs text-slate-500">{formatRange(matchday.start, matchday.end)}</p>
-            {behindBy > 0 && (
-              <p className="text-[11px] text-amber-400/80 mt-0.5">
-                You're on Matchday {yourMatchday} · {behindBy} behind
+    <CompetitionContext.Provider value={context}>
+      <div
+        className="xl:grid xl:grid-cols-[minmax(0,1fr)_var(--table-width)] xl:gap-6 xl:items-start"
+        style={{ '--table-width': `${tableWidth}rem` }}
+      >
+        <div>
+          <div className="flex items-center justify-between gap-3 mb-4">
+            <button
+              onClick={() => goTo(selected - 1)}
+              disabled={selected === 0}
+              className="w-9 h-9 rounded-xl text-slate-400 hover:text-slate-100 disabled:opacity-30 disabled:hover:text-slate-400"
+              style={{ background: 'rgba(255,255,255,0.05)' }}
+              aria-label={`Previous ${rules.roundName.toLowerCase()}`}
+            >
+              ‹
+            </button>
+            <div className="text-center">
+              <p className="text-base font-bold text-slate-100">
+                {rules.roundName} {matchday.number}
+                <span className="text-slate-600 font-medium"> of {rounds.length}</span>
               </p>
-            )}
+              <p className="text-xs text-slate-500">{formatRange(matchday.start, matchday.end)}</p>
+              {behindBy > 0 && (
+                <p className="text-[11px] text-amber-400/80 mt-0.5">
+                  You're on {rules.roundName} {yourMatchday} · {behindBy} behind
+                </p>
+              )}
+            </div>
+            <button
+              onClick={() => goTo(selected + 1)}
+              disabled={selected === matchdays.length - 1}
+              className="w-9 h-9 rounded-xl text-slate-400 hover:text-slate-100 disabled:opacity-30 disabled:hover:text-slate-400"
+              style={{ background: 'rgba(255,255,255,0.05)' }}
+              aria-label={`Next ${rules.roundName.toLowerCase()}`}
+            >
+              ›
+            </button>
           </div>
-          <button
-            onClick={() => goTo(selected + 1)}
-            disabled={selected === matchdays.length - 1}
-            className="w-9 h-9 rounded-xl text-slate-400 hover:text-slate-100 disabled:opacity-30 disabled:hover:text-slate-400"
-            style={{ background: 'rgba(255,255,255,0.05)' }}
-            aria-label="Next matchday"
-          >
-            ›
-          </button>
-        </div>
 
-        <ProgressBar
-          matchday={matchday}
-          watchedThrough={watchedThrough}
-          onMark={mark}
-          onUnmark={() => setWatchedThrough(matchday.number - 1)}
-        />
-
-        {locked && (
-          <SpoilerGuard
-            yourMatchday={yourMatchday}
-            onGoBack={() => goTo(yourMatchday - 1)}
-            onReveal={() => setRevealed(r => new Set(r).add(matchday.number))}
+          <ProgressBar
+            matchday={matchday}
+            watchedThrough={watchedThrough}
+            onMark={mark}
+            onUnmark={() => setWatchedThrough(matchday.number - 1)}
           />
-        )}
 
-        {nobodyPlayed && (
-          <p className="text-xs text-slate-500 text-center mb-4">Opening matchday: ranks and form appear once the first games are played.</p>
-        )}
-        {(!locked && !nobodyPlayed) || tickedHere > 0 ? (
-          <div className="flex flex-wrap items-center gap-1.5 mb-4">
-            {!locked && !nobodyPlayed && <TagFilter counts={counts} active={tagFilter} onChange={setTagFilter} />}
-            {tickedHere > 0 && (
-              <button
-                onClick={() => setHideWatched(v => !v)}
-                aria-pressed={hideWatched}
-                className={`ml-auto inline-flex items-center gap-1 px-2.5 py-1 rounded-full border text-xs font-semibold transition-colors ${hideWatched ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40' : 'text-slate-400 border-white/10 hover:text-slate-200'}`}
-              >
-                {hideWatched ? 'Show' : 'Hide'} watched<span className="opacity-70 tabular-nums">{tickedHere}</span>
-              </button>
-            )}
+          {locked && (
+            <SpoilerGuard
+              yourMatchday={yourMatchday}
+              onGoBack={() => goToNumber(yourMatchday)}
+              onReveal={() => setRevealed(r => new Set(r).add(matchday.number))}
+            />
+          )}
+
+          {nobodyPlayed && (
+            <p className="text-xs text-slate-500 text-center mb-4">Opening {rules.roundName.toLowerCase()}: ranks and form appear once the first games are played.</p>
+          )}
+          {(!locked && !nobodyPlayed) || tickedHere > 0 ? (
+            <div className="flex flex-wrap items-center gap-1.5 mb-4">
+              {!locked && !nobodyPlayed && <TagFilter counts={counts} active={tagFilter} onChange={setTagFilter} />}
+              {tickedHere > 0 && (
+                <button
+                  onClick={() => setHideWatched(v => !v)}
+                  aria-pressed={hideWatched}
+                  className={`ml-auto inline-flex items-center gap-1 px-2.5 py-1 rounded-full border text-xs font-semibold transition-colors ${hideWatched ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40' : 'text-slate-400 border-white/10 hover:text-slate-200'}`}
+                >
+                  {hideWatched ? 'Show' : 'Hide'} watched<span className="opacity-70 tabular-nums">{tickedHere}</span>
+                </button>
+              )}
+            </div>
+          ) : null}
+
+          {hideWatched && byDay.size === 0 && (
+            <p className="text-sm text-slate-500 text-center py-8">
+              {tagFilter ? 'Every game with this tag is watched.' : `Every game is watched. Mark the ${rules.roundName.toLowerCase()} above to move on.`}
+            </p>
+          )}
+
+          <div className="flex flex-col gap-5">
+            {[...byDay.entries()].map(([day, list]) => (
+              <section key={day}>
+                <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2">
+                  {rankOrder ? 'Best-ranked team first' : day}
+                </p>
+                <div className="flex flex-col gap-2">
+                  {list.map(f => {
+                    const canTick = !matchdayWatched && f.status === 'final'
+                    return (
+                      <FixtureRow
+                        key={f.id}
+                        fixture={f}
+                        table={table}
+                        showDay={rankOrder}
+                        seen={f.status === 'final' && (matchdayWatched || ticked.has(f.id))}
+                        ticked={canTick && ticked.has(f.id)}
+                        onToggle={canTick ? () => toggleTicked(f.id) : undefined}
+                      />
+                    )
+                  })}
+                </div>
+              </section>
+            ))}
           </div>
-        ) : null}
 
-        {hideWatched && byDay.size === 0 && (
-          <p className="text-sm text-slate-500 text-center py-8">
-            {tagFilter ? 'Every game with this tag is watched.' : 'Every game is watched. Mark the matchday above to move on.'}
-          </p>
-        )}
-
-        <div className="flex flex-col gap-5">
-          {[...byDay.entries()].map(([day, list]) => (
-            <section key={day}>
-              <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2">
-                {rankOrder ? 'Best-ranked team first' : day}
-              </p>
-              <div className="flex flex-col gap-2">
-                {list.map(f => {
-                  const canTick = !matchdayWatched && f.status === 'final'
-                  return (
-                    <FixtureRow
-                      key={f.id}
-                      fixture={f}
-                      table={table}
-                      showDay={rankOrder}
-                      seen={f.status === 'final' && (matchdayWatched || ticked.has(f.id))}
-                      ticked={canTick && ticked.has(f.id)}
-                      onToggle={canTick ? () => toggleTicked(f.id) : undefined}
-                    />
-                  )
-                })}
-              </div>
-            </section>
-          ))}
         </div>
 
+        <div className="mt-6 xl:mt-0 xl:sticky xl:top-4 xl:max-h-[calc(100vh-2rem)] xl:overflow-y-auto rounded-xl">
+          <StandingsPanel table={table} history={history} matchdayNumber={matchday.number} locked={locked} highlight={highlight} />
+        </div>
       </div>
-
-      <div className="mt-6 xl:mt-0 xl:sticky xl:top-4 xl:max-h-[calc(100vh-2rem)] xl:overflow-y-auto rounded-xl">
-        <StandingsPanel table={table} history={history} matchdayNumber={matchday.number} locked={locked} highlight={highlight} />
-      </div>
-    </div>
+    </CompetitionContext.Provider>
   )
 }
 
@@ -577,23 +615,26 @@ export default function EuropeView() {
     <div className="p-4 md:p-6 max-w-6xl">
       <div className="mb-6">
         <h2 className="text-2xl font-bold text-slate-100 leading-tight">Europe</h2>
-        <p className="text-sm text-slate-500 mt-0.5">Matchday preview · who's playing whom, and where they stand</p>
+        <p className="text-sm text-slate-500 mt-0.5">Round-by-round preview · who's playing whom, and where they stand</p>
       </div>
 
       <div className="flex mb-6 rounded-2xl p-1 overflow-x-auto gap-0.5 scrollbar-hide" style={{ background: 'rgba(255,255,255,0.05)', backdropFilter: 'blur(16px)', WebkitBackdropFilter: 'blur(16px)', border: '1px solid rgba(255,255,255,0.08)' }}>
         {EUROPE_COMPETITIONS.map(c => (
           <button key={c.id} onClick={() => setCompetitionId(c.id)}
-            className={`relative flex-1 px-4 py-2 rounded-xl text-sm font-medium transition-all whitespace-nowrap ${competitionId === c.id ? 'text-slate-100' : 'text-slate-500 hover:text-slate-300'}`}
+            className={`relative flex-1 px-2 sm:px-4 py-2 rounded-xl text-sm font-medium transition-all whitespace-nowrap ${competitionId === c.id ? 'text-slate-100' : 'text-slate-500 hover:text-slate-300'}`}
             style={competitionId === c.id ? { background: 'rgba(255,255,255,0.1)', boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.12)' } : {}}>
             <span className="inline-flex items-center justify-center gap-2">
               <span className="hidden sm:inline">{c.name}</span>
               <span className="sm:hidden">{c.short}</span>
-              <SeasonBattery
-                watched={byCompetition[c.id]?.watched ?? 0}
-                total={byCompetition[c.id]?.total ?? 0}
-                accentColor={c.accentColor}
-                title={byCompetition[c.id] ? `${byCompetition[c.id].watched} of ${byCompetition[c.id].total} ${c.name} league-phase games watched` : undefined}
-              />
+              {/* Four tabs don't fit a phone with batteries; the sidebar has them */}
+              <span className="hidden sm:inline-flex">
+                <SeasonBattery
+                  watched={byCompetition[c.id]?.watched ?? 0}
+                  total={byCompetition[c.id]?.total ?? 0}
+                  accentColor={c.accentColor}
+                  title={byCompetition[c.id] ? `${byCompetition[c.id].watched} of ${byCompetition[c.id].total} ${c.name} games this season watched` : undefined}
+                />
+              </span>
             </span>
             {competitionId === c.id && <span className="absolute bottom-1.5 left-1/2 -translate-x-1/2 w-6 h-0.5 rounded-full" style={{ background: c.accentColor }} />}
           </button>

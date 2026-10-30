@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, lazy, Suspense } from 'react'
 import { WatchedProvider } from './contexts/WatchedContext'
 import Sidebar from './components/Sidebar'
 import MobileNav from './components/MobileNav'
@@ -14,7 +14,11 @@ import EPLView from './views/EPLView'
 import EuropeView from './views/EuropeView'
 import DeadlinesView from './views/DeadlinesView'
 import StatsView from './views/StatsView'
+import LoadingSpinner from './components/LoadingSpinner'
 import { isFirebaseConfigured } from './firebase'
+
+// Loaded on first visit: its season of player data stays out of the main bundle.
+const EliteserienFantasyView = lazy(() => import('./views/EliteserienFantasyView'))
 
 function FirebaseBanner() {
   const [dismissed, setDismissed] = useState(false)
@@ -47,6 +51,7 @@ const VIEWS = {
   epl: EPLView,
   europe: EuropeView,
   deadlines: DeadlinesView,
+  eliteserien: EliteserienFantasyView,
   stats: StatsView,
 }
 
@@ -63,7 +68,9 @@ export default function App() {
           <div className="flex-1 flex flex-col overflow-hidden">
             <FirebaseBanner />
             <main className="flex-1 overflow-y-auto pb-16 md:pb-0">
-              <ActiveView />
+              <Suspense fallback={<LoadingSpinner message="Loading…" />}>
+                <ActiveView />
+              </Suspense>
             </main>
           </div>
 

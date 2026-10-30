@@ -3,7 +3,8 @@ import { EUROPE_COMPETITIONS, loadMatchdays, getSeason } from '../api/europe'
 import { watchCoverage } from '../utils/leaguePhase'
 
 // Season coverage for each competition in the Europe tab, plus all of them
-// combined for the sidebar battery. `watchedThrough` comes from
+// combined for the sidebar battery. Spoiler-free competitions aren't watched,
+// so they have no coverage. `watchedThrough` comes from
 // useMatchdayProgress. Fixtures share the session cache the Europe tab uses,
 // so this costs no extra requests once either has loaded.
 export function useEuropeCoverage(watchedThrough) {
@@ -11,7 +12,7 @@ export function useEuropeCoverage(watchedThrough) {
 
   useEffect(() => {
     let cancelled = false
-    for (const c of EUROPE_COMPETITIONS) {
+    for (const c of EUROPE_COMPETITIONS.filter(c => !c.spoilerFree)) {
       loadMatchdays(c)
         .then(matchdays => {
           if (!cancelled) setMatchdaysById(m => ({ ...m, [c.id]: matchdays }))

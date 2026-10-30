@@ -6,6 +6,8 @@ import { loadAllLeagueGames } from '../api/seasonSchedules'
 import { EUROPE_COMPETITIONS } from '../api/europe'
 import { useMatchdayProgress } from '../hooks/useMatchdayProgress'
 import { useEuropeCoverage } from '../hooks/useEuropeCoverage'
+import { FANTASY_LEAGUE_MAP } from '../constants/fantasyLeagues'
+import FantasyLeagueIcon from './FantasyLeagueIcon'
 
 function LeagueIcon({ league }) {
   const [err, setErr] = useState(false)
@@ -222,6 +224,20 @@ export default function Sidebar({ activeLeague, onLeagueChange }) {
           </div>
           <span className={`text-sm font-semibold ${activeLeague === 'deadlines' ? 'text-slate-100' : 'text-slate-300'}`}>
             Deadlines
+          </span>
+        </button>
+        <button
+          onClick={() => onLeagueChange('eliteserien')}
+          className={[
+            'flex items-center gap-3 w-full px-3 py-2.5 rounded-xl text-left transition-all duration-150',
+            activeLeague === 'eliteserien'
+              ? 'bg-slate-800/80 text-slate-100'
+              : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/40',
+          ].join(' ')}
+        >
+          <FantasyLeagueIcon league={FANTASY_LEAGUE_MAP.eliteserien} size={32} />
+          <span className={`text-sm font-semibold ${activeLeague === 'eliteserien' ? 'text-slate-100' : 'text-slate-300'}`}>
+            Eliteserien
           </span>
         </button>
       </div>

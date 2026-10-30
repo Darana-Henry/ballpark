@@ -4,15 +4,15 @@
 // grouping by date misplaces postponed and rescheduled matches; FPL moves
 // those into the gameweek they're actually played in.
 //
-// The two sources use different team ids and names ("Man Utd" vs "Manchester
-// United"), so teams are matched by their kickoff times instead: across a
-// season each team's set of kickoffs is unique to it.
+// The two sources use different team ids and names, so teams are paired by
+// kickoff times (scripts/lib/matchTeamsByKickoff.mjs).
 //
 // Usage: node scripts/fetch-pl-gameweeks.mjs
 // On failure the existing JSON is left untouched and the script exits 0, so
 // an FPL or ESPN outage never blocks a deploy.
 import { writeFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
+import { matchTeamsByKickoff } from './lib/matchTeamsByKickoff.mjs'
 
 const OUT = fileURLToPath(new URL('../src/data/plGameweeks.json', import.meta.url))
 const HEADERS = { 'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) Chrome/126 Safari/537.36' }
@@ -49,42 +49,6 @@ async function fetchEspnFixtures() {
     .filter(f => f.home && f.away)
 }
 
-function kickoffsByTeam(fixtures) {
-  const byTeam = new Map()
-  for (const f of fixtures) {
-    if (!f.kickoff) continue
-    for (const team of [f.home, f.away]) {
-      if (!byTeam.has(team)) byTeam.set(team, new Set())
-      byTeam.get(team).add(f.kickoff)
-    }
-  }
-  return byTeam
-}
-
-// Pairs each FPL team with the ESPN team sharing the most kickoff times,
-// strongest overlaps first so a clear match is never stolen by a weak one.
-function matchTeams(fplFixtures, espnFixtures) {
-  const fpl = kickoffsByTeam(fplFixtures)
-  const espn = kickoffsByTeam(espnFixtures)
-  const pairs = []
-  for (const [fplTeam, a] of fpl) {
-    for (const [espnTeam, b] of espn) {
-      let shared = 0
-      for (const k of a) if (b.has(k)) shared++
-      if (shared) pairs.push({ fplTeam, espnTeam, shared })
-    }
-  }
-  pairs.sort((x, y) => y.shared - x.shared)
-  const map = new Map()
-  const taken = new Set()
-  for (const { fplTeam, espnTeam } of pairs) {
-    if (map.has(fplTeam) || taken.has(espnTeam)) continue
-    map.set(fplTeam, espnTeam)
-    taken.add(espnTeam)
-  }
-  return map
-}
-
 try {
   const [fplFixtures, espnFixtures] = await Promise.all([
     getJson('https://fantasy.premierleague.com/api/fixtures/').then(fixtures => fixtures.map(f => ({
@@ -96,7 +60,7 @@ try {
     fetchEspnFixtures(),
   ])
 
-  const teams = matchTeams(fplFixtures, espnFixtures)
+  const teams = matchTeamsByKickoff(fplFixtures, espnFixtures)
   if (teams.size !== 20) throw new Error(`matched ${teams.size} of 20 teams`)
 
   // Each home/away pairing happens once a season, so it identifies a match

@@ -1,19 +1,23 @@
 import { fetchScoreboardMonths } from './espnDates'
-import { UEFA_LEAGUE_PHASE, PREMIER_LEAGUE, groupMatchdays, groupByRound } from '../utils/leaguePhase'
+import { UEFA_LEAGUE_PHASE, PREMIER_LEAGUE, ELITESERIEN, groupMatchdays, groupByRound } from '../utils/leaguePhase'
 import plGameweeks from '../data/plGameweeks.json'
+import eliteserienRounds from '../data/eliteserienRounds.json'
 
 // The UEL and UECL play a whole matchday on one evening, so kickoff order
 // says little; their fixtures are listed best-ranked team first instead, as
 // are the Premier League's, which spread over Friday to Monday. The UCL is
 // spread over two or three days and keeps kickoff order.
 //
-// `months` is the sweep window as [first, last] month offsets from July of
-// the season's first year.
+// Domestic leagues carry `roundOf`, their ESPN match id → official fantasy
+// round map. Eliteserien runs March–December inside one calendar year
+// (`calendarYear`), and is `spoilerFree`: it's followed for fantasy rather
+// than watched, so the table and scores are never hidden.
 export const EUROPE_COMPETITIONS = [
   { id: 'ucl',  slug: 'uefa.champions',   name: 'Champions League',  short: 'UCL',  accentColor: '#6366f1', sortByRank: false, rules: UEFA_LEAGUE_PHASE, leaguePhase: true },
   { id: 'uel',  slug: 'uefa.europa',      name: 'Europa League',     short: 'UEL',  accentColor: '#f97316', sortByRank: true,  rules: UEFA_LEAGUE_PHASE, leaguePhase: true },
   { id: 'uecl', slug: 'uefa.europa.conf', name: 'Conference League', short: 'UECL', accentColor: '#22c55e', sortByRank: true,  rules: UEFA_LEAGUE_PHASE, leaguePhase: true },
-  { id: 'pl',   slug: 'eng.1',            name: 'Premier League',    short: 'PL',   accentColor: '#a855f7', sortByRank: true,  rules: PREMIER_LEAGUE,    leaguePhase: false },
+  { id: 'pl',   slug: 'eng.1',            name: 'Premier League',    short: 'PL',   accentColor: '#a855f7', sortByRank: true,  rules: PREMIER_LEAGUE,    leaguePhase: false, roundOf: plGameweeks.gameweeks },
+  { id: 'eli',  slug: 'nor.1',            name: 'Eliteserien',       short: 'ELI',  accentColor: '#ef4444', sortByRank: true,  rules: ELITESERIEN,       leaguePhase: false, roundOf: eliteserienRounds.rounds, calendarYear: true, spoilerFree: true },
 ]
 
 // European seasons start in July (qualifiers); season 2026 = 2026-27.
@@ -52,14 +56,14 @@ function normalizeFixture(event) {
   }
 }
 
-// Premier League matches carry their official FPL gameweek, mapped at deploy
-// time by scripts/fetch-pl-gameweeks.mjs. A match with no gameweek is a
-// postponement awaiting a new date and is left out until it gets one. If the
-// map has nothing for this season (say, before the first deploy of a new
-// one), rounds fall back to date grouping.
-function premierLeagueMatchdays(fixtures) {
+// Domestic league matches carry their official fantasy round, mapped at
+// deploy time (scripts/fetch-pl-gameweeks.mjs, scripts/fetch-eliteserien-players.mjs).
+// A match with no round is a postponement awaiting a new date and is left
+// out until it gets one. If the map has nothing for this season (say, before
+// the first deploy of a new one), rounds fall back to date grouping.
+function leagueMatchdays(fixtures, roundOf) {
   const withRound = fixtures
-    .map(f => ({ ...f, round: plGameweeks.gameweeks[f.id] }))
+    .map(f => ({ ...f, round: roundOf[f.id] }))
     .filter(f => f.round != null)
   return withRound.length ? groupByRound(withRound) : groupMatchdays(fixtures)
 }
@@ -68,18 +72,21 @@ const cache = new Map()
 
 // One competition's season as rounds: the league phase for the UEFA
 // competitions (September–January; the sweep starts in August to be safe),
-// gameweeks for the Premier League (August–May).
+// gameweeks for the Premier League (August–May) and Eliteserien (March–December).
 export function loadMatchdays(competition) {
   if (!cache.has(competition.id)) {
     const season = getSeason()
-    const [from, to] = competition.leaguePhase ? [`${season}0801`, `${season + 1}0131`] : [`${season}0801`, `${season + 1}0531`]
+    const year = new Date().getFullYear()
+    const [from, to] = competition.calendarYear ? [`${year}0301`, `${year}1231`]
+      : competition.leaguePhase ? [`${season}0801`, `${season + 1}0131`]
+      : [`${season}0801`, `${season + 1}0531`]
     const promise = fetchScoreboardMonths(`soccer/${competition.slug}`, from, to)
       .then(events => {
         const fixtures = events
           .filter(e => !competition.leaguePhase || e.season?.slug === 'league-phase')
           .map(normalizeFixture)
           .filter(Boolean)
-        return competition.leaguePhase ? groupMatchdays(fixtures) : premierLeagueMatchdays(fixtures)
+        return competition.leaguePhase ? groupMatchdays(fixtures) : leagueMatchdays(fixtures, competition.roundOf)
       })
     // Don't pin a failed sweep for the rest of the session.
     promise.catch(() => cache.delete(competition.id))

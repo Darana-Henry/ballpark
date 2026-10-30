@@ -1,12 +1,12 @@
-// League table and fixture difficulty for the Eliteserien fantasy tab, from
-// the fantasy game's own fixture list in src/data/eliteserienPlayers.json.
+// League table and fixture difficulty for the fantasy tabs, from the fantasy
+// game's own fixture list in src/data/<league>Players.json.
 //
 // The game publishes no difficulty ratings, so a fixture is rated by the
 // opponent's points per game: half over the season, half at the venue they
 // play this one at (a team's home and away form can differ a lot), banded on
 // fixed cut-offs so a rating means the same thing all season.
 
-import { buildTable, ELITESERIEN } from './leaguePhase'
+import { buildTable, NORDIC_LEAGUE } from './leaguePhase'
 
 // Rounds in buildTable's matchday shape. Fixtures awaiting a new date have no
 // round and are left out.
@@ -31,7 +31,7 @@ function matchdays(fixtures, teamsById) {
 // team id → row with rank, points, played, gf, ga and form.
 export function leagueTable(fixtures, teams, throughRound = Infinity) {
   const teamsById = Object.fromEntries(teams.map(t => [t.id, { id: t.id, name: t.name, shortName: t.short }]))
-  return buildTable(matchdays(fixtures, teamsById), throughRound + 1, ELITESERIEN)
+  return buildTable(matchdays(fixtures, teamsById), throughRound + 1, NORDIC_LEAGUE)
 }
 
 // The first round with a match still to play: the one fixtures look ahead from.

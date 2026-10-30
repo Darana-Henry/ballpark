@@ -1,7 +1,8 @@
 import { fetchScoreboardMonths } from './espnDates'
-import { UEFA_LEAGUE_PHASE, PREMIER_LEAGUE, ELITESERIEN, groupMatchdays, groupByRound } from '../utils/leaguePhase'
+import { UEFA_LEAGUE_PHASE, PREMIER_LEAGUE, NORDIC_LEAGUE, groupMatchdays, groupByRound } from '../utils/leaguePhase'
 import plGameweeks from '../data/plGameweeks.json'
 import eliteserienRounds from '../data/eliteserienRounds.json'
+import allsvenskanRounds from '../data/allsvenskanRounds.json'
 
 // The UEL and UECL play a whole matchday on one evening, so kickoff order
 // says little; their fixtures are listed best-ranked team first instead, as
@@ -9,15 +10,16 @@ import eliteserienRounds from '../data/eliteserienRounds.json'
 // spread over two or three days and keeps kickoff order.
 //
 // Domestic leagues carry `roundOf`, their ESPN match id → official fantasy
-// round map. Eliteserien runs March–December inside one calendar year
-// (`calendarYear`), and is `spoilerFree`: it's followed for fantasy rather
-// than watched, so the table and scores are never hidden.
+// round map. Eliteserien and Allsvenskan run March–December inside one
+// calendar year (`calendarYear`), and are `spoilerFree`: they're followed for
+// fantasy rather than watched, so the table and scores are never hidden.
 export const EUROPE_COMPETITIONS = [
   { id: 'ucl',  slug: 'uefa.champions',   name: 'Champions League',  short: 'UCL',  accentColor: '#6366f1', sortByRank: false, rules: UEFA_LEAGUE_PHASE, leaguePhase: true },
   { id: 'uel',  slug: 'uefa.europa',      name: 'Europa League',     short: 'UEL',  accentColor: '#f97316', sortByRank: true,  rules: UEFA_LEAGUE_PHASE, leaguePhase: true },
   { id: 'uecl', slug: 'uefa.europa.conf', name: 'Conference League', short: 'UECL', accentColor: '#22c55e', sortByRank: true,  rules: UEFA_LEAGUE_PHASE, leaguePhase: true },
   { id: 'pl',   slug: 'eng.1',            name: 'Premier League',    short: 'PL',   accentColor: '#a855f7', sortByRank: true,  rules: PREMIER_LEAGUE,    leaguePhase: false, roundOf: plGameweeks.gameweeks },
-  { id: 'eli',  slug: 'nor.1',            name: 'Eliteserien',       short: 'ELI',  accentColor: '#ef4444', sortByRank: true,  rules: ELITESERIEN,       leaguePhase: false, roundOf: eliteserienRounds.rounds, calendarYear: true, spoilerFree: true },
+  { id: 'eli',  slug: 'nor.1',            name: 'Eliteserien',       short: 'ELI',  accentColor: '#ef4444', sortByRank: true,  rules: NORDIC_LEAGUE,     leaguePhase: false, roundOf: eliteserienRounds.rounds, calendarYear: true, spoilerFree: true },
+  { id: 'all',  slug: 'swe.1',            name: 'Allsvenskan',       short: 'ALL',  accentColor: '#facc15', sortByRank: true,  rules: NORDIC_LEAGUE,     leaguePhase: false, roundOf: allsvenskanRounds.rounds, calendarYear: true, spoilerFree: true },
 ]
 
 // European seasons start in July (qualifiers); season 2026 = 2026-27.
@@ -57,7 +59,7 @@ function normalizeFixture(event) {
 }
 
 // Domestic league matches carry their official fantasy round, mapped at
-// deploy time (scripts/fetch-pl-gameweeks.mjs, scripts/fetch-eliteserien-players.mjs).
+// deploy time (scripts/fetch-pl-gameweeks.mjs, scripts/fetch-fantasy-players.mjs).
 // A match with no round is a postponement awaiting a new date and is left
 // out until it gets one. If the map has nothing for this season (say, before
 // the first deploy of a new one), rounds fall back to date grouping.
@@ -72,7 +74,8 @@ const cache = new Map()
 
 // One competition's season as rounds: the league phase for the UEFA
 // competitions (September–January; the sweep starts in August to be safe),
-// gameweeks for the Premier League (August–May) and Eliteserien (March–December).
+// gameweeks for the Premier League (August–May), Eliteserien and Allsvenskan
+// (March–December).
 export function loadMatchdays(competition) {
   if (!cache.has(competition.id)) {
     const season = getSeason()

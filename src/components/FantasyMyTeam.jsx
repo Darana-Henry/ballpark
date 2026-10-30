@@ -1,13 +1,16 @@
 import { useMemo } from 'react'
-import data from '../data/eliteserienPlayers.json'
+import { useFantasyData, perLeague } from '../contexts/fantasyData'
 import { withForm, availability } from '../utils/fantasyPlayers'
 import { upcomingFixtures, DIFFICULTY } from '../utils/fantasyFixtures'
 import { projectPoints, pickLineup } from '../utils/fantasyLineup'
 
-const TEAMS = Object.fromEntries(data.teams.map(t => [t.id, t]))
-const PICKS = data.mySquad?.picks ?? []
-// Suggestions are for the round after the squad's: the next deadline.
-const ROUND = (data.mySquad?.round ?? 0) + 1
+const derive = perLeague(data => ({
+  TEAMS: Object.fromEntries(data.teams.map(t => [t.id, t])),
+  PICKS: data.mySquad?.picks ?? [],
+  // Suggestions are for the round after the squad's: the next deadline.
+  ROUND: (data.mySquad?.round ?? 0) + 1,
+  LAST: Math.max(...data.fixtures.map(f => f.round ?? 0)),
+}))
 const ROWS = [1, 2, 3, 4]
 
 const STATUS_SHIRT = {
@@ -26,6 +29,7 @@ function Shirt({ color }) {
 }
 
 function PlayerCard({ player, captain, vice, change }) {
+  const { TEAMS } = derive(useFantasyData().data)
   const { projection, games } = player
   const shirt = STATUS_SHIRT[player.availability] ?? '#6366f1'
   const fixture = games.length
@@ -81,9 +85,12 @@ function Pitch({ children }) {
   )
 }
 
-export default function EliteserienMyTeam() {
+export default function FantasyMyTeam() {
+  const { data } = useFantasyData()
+  const { PICKS, ROUND } = derive(data)
   const plan = useMemo(() => {
-    if (!PICKS.length || ROUND > 30) return null
+    const { PICKS, ROUND, LAST } = derive(data)
+    if (!PICKS.length || ROUND > LAST) return null
     const { byTeam } = upcomingFixtures(data.fixtures, data.teams, ROUND, 1)
     const squad = PICKS.flatMap(pick => {
       const p = data.players.find(x => x.id === pick.id)
@@ -93,7 +100,7 @@ export default function EliteserienMyTeam() {
       return [{ ...player, games, projection: projectPoints(player, games) }]
     })
     return { squad, ...pickLineup(squad) }
-  }, [])
+  }, [data])
 
   if (!plan) {
     return <p className="text-sm text-slate-500 text-center py-10">{PICKS.length ? 'The season is over.' : 'Your squad couldn\'t be fetched yet.'}</p>

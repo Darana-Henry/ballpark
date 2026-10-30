@@ -12,7 +12,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  # write: the Eliteserien season history is committed back (last step)
+  # write: the fantasy season histories are committed back (last step)
   contents: write
   pages: write
   id-token: write
@@ -54,11 +54,14 @@ jobs:
       - name: Fetch Premier League gameweeks
         run: npm run pl:gameweeks
 
-      # Never fails the build: if the fantasy site can't be reached, the
-      # committed src/data/eliteserienPlayers.json is used. Every player's
-      # points and minutes per finished round, for the Eliteserien tab.
+      # Never fail the build: if a fantasy site can't be reached, the
+      # committed src/data/<league>Players.json is used. Every player's
+      # points and minutes per finished round, for the league's fantasy tab.
       - name: Fetch Eliteserien fantasy players
         run: npm run eliteserien:players
+
+      - name: Fetch Allsvenskan fantasy players
+        run: npm run allsvenskan:players
 
       - name: Build
         env:
@@ -80,18 +83,18 @@ jobs:
       - uses: actions/deploy-pages@v4
         id: deploy
 
-      # The game drops a season's round-by-round history once team ids are
-      # reused for the next one, so the archive the Eliteserien fetch updates
-      # (src/data/eliteserienHistory.json) is committed back to main whenever
-      # it changes: about once a round. Pushes made with the workflow's token
+      # The games drop a season's round-by-round history once team ids are
+      # reused for the next one, so the archives the fantasy fetches update
+      # (src/data/<league>History.json) are committed back to main whenever
+      # they change: about once a round. Pushes made with the workflow's token
       # don't trigger another run. A failed push (say, a race with a manual
       # push) leaves the site deployed and is retried by the next run.
-      - name: Save Eliteserien season history
+      - name: Save fantasy season history
         if: github.ref == 'refs/heads/main'
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add src/data/eliteserienHistory.json
+          git add src/data/eliteserienHistory.json src/data/allsvenskanHistory.json
           if git diff --cached --quiet; then echo "history unchanged"; exit 0; fi
-          git commit -m "chore(data): update Eliteserien season history"
+          git commit -m "chore(data): update fantasy season history"
           git push || echo "::warning::history push failed; the next run will retry"

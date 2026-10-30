@@ -15,7 +15,8 @@
     "stats:cricket": "node scripts/fetch-cricket-stats.mjs",
     "fantasy:deadlines": "node scripts/fetch-fantasy-deadlines.mjs",
     "pl:gameweeks": "node scripts/fetch-pl-gameweeks.mjs",
-    "eliteserien:players": "node scripts/fetch-eliteserien-players.mjs"
+    "eliteserien:players": "node scripts/fetch-fantasy-players.mjs eliteserien",
+    "allsvenskan:players": "node scripts/fetch-fantasy-players.mjs allsvenskan"
   },
   "dependencies": {
     "firebase": "^12.13.0",

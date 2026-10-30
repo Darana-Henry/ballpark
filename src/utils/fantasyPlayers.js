@@ -1,5 +1,5 @@
 // Per-player form numbers for fantasy player tables, from the per-round
-// points and minutes in src/data/eliteserienPlayers.json.
+// points and minutes in src/data/<league>Players.json.
 
 export const POSITIONS = { 1: 'GK', 2: 'DEF', 3: 'MID', 4: 'FWD' }
 

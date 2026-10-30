@@ -1,16 +1,17 @@
 import { useState, useRef, useEffect } from 'react'
-import history from '../data/eliteserienHistory.json'
+import { useFantasyData, perLeague } from '../contexts/fantasyData'
 
 // The user's seasons side by side: this one against the last one with
 // round-by-round data, and every season's final rank and points. The archive
-// is src/data/eliteserienHistory.json (see the fetch script).
+// is src/data/<league>History.json (see the fetch script).
 
-const SEASONS = history.seasons
-const ROUND_SEASONS = Object.keys(history.rounds).sort()
-const CURRENT = ROUND_SEASONS.at(-1)
-const PREVIOUS = ROUND_SEASONS.at(-2)
-// Validated categorical slots 1 and 2 for the dark surface.
-const COLORS = { [CURRENT]: '#3987e5', [PREVIOUS]: '#d95926' }
+const derive = perLeague(history => {
+  const ROUND_SEASONS = Object.keys(history.rounds).sort()
+  const CURRENT = ROUND_SEASONS.at(-1)
+  const PREVIOUS = ROUND_SEASONS.at(-2)
+  // Validated categorical slots 1 and 2 for the dark surface.
+  return { SEASONS: history.seasons, ROUND_SEASONS, CURRENT, PREVIOUS, COLORS: { [CURRENT]: '#3987e5', [PREVIOUS]: '#d95926' } }
+})
 const panelStyle = { background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.07)' }
 const num = n => n.toLocaleString('en-US')
 
@@ -131,7 +132,9 @@ const rankTicks = (values) => {
   return [1, 2, 5, 10, 20, 50, 100, 200, 500, 1000, 2000, 5000, 10000, 20000, 50000].filter(v => v >= lo * 0.8 && v <= hi * 1.25)
 }
 
-export default function EliteserienPerformance() {
+export default function FantasyPerformance() {
+  const { history } = useFantasyData()
+  const { SEASONS, ROUND_SEASONS, CURRENT, PREVIOUS, COLORS } = derive(history)
   if (!CURRENT) return <p className="text-sm text-slate-500 text-center py-10">No season history yet.</p>
 
   const now = history.rounds[CURRENT]
@@ -228,7 +231,9 @@ export default function EliteserienPerformance() {
       </section>
 
       <p className="text-[11px] text-slate-600 mt-3 leading-relaxed">
-        Past seasons' totals and final ranks come from the game. {PREVIOUS}'s rounds 1–{last.at(-1)?.round} are from your sheet; from {CURRENT} on, every finished round is archived automatically and kept when your team id changes next season.
+        Past seasons' totals and final ranks come from the game. Round by round: {ROUND_SEASONS.join(', ')}
+        {!PREVIOUS && ' (earlier seasons\' rounds weren\'t saved, so the round-by-round comparison starts next season)'}.
+        Every finished round is archived automatically and kept when your team id changes next season.
       </p>
     </div>
   )

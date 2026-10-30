@@ -98,27 +98,32 @@ export function planTransfers({ squad, pool, bank, projected, horizon, teamLimit
   return { moves, singles, gain: score - start }
 }
 
-// Chip names in the game's feed → what the game calls them.
-export const CHIP_NAMES = {
-  wildcard: 'Wildcard',
-  frush: 'Attack Attack',
-  pdbus: 'Park the Bus',
-  rich: 'Rich Uncle',
-  '2capt': 'Two Captains',
-  freehit: 'Free Hit',
+// Chips in the game's feeds → what the games call them and, as fan guides
+// describe them, what they do (the feeds don't say). `uteam` is
+// Allsvenskan's; its name and effect aren't confirmed anywhere, but the game
+// marks it a transfer chip from round 2, like Eliteserien's rich uncle.
+export const CHIPS = {
+  wildcard: { label: 'Wildcard' },
+  frush: { label: 'Attack Attack', effect: 'doubles your forwards' },
+  pdbus: { label: 'Park the Bus', effect: 'doubles your defenders' },
+  '2capt': { label: 'Two Captains', effect: 'doubles a second player' },
+  rich: { label: 'Rich Uncle', effect: 'is a one-round squad on an unlimited budget' },
+  uteam: { label: 'Unlimited Team', effect: 'is (unconfirmed) a one-round squad on an unlimited budget' },
+  freehit: { label: 'Free Hit', effect: 'is a one-round squad' },
 }
 
-// What each team chip adds in one round for the squad as it stands, in
-// projected points. Attack Attack doubles the forwards, Park the Bus the
-// defenders, Two Captains a second captain; Rich Uncle is a one-round squad
-// on an unlimited budget, measured against the current XI.
-export function chipValueInRound(name, squad, projected, i, pool, teamLimit) {
+// What a chip adds in one round for the squad as it stands, in projected
+// points. Attack Attack doubles the forwards, Park the Bus the defenders, Two
+// Captains a second captain; a one-round transfer chip (rich uncle, uteam) is
+// a squad on an unlimited budget, measured against the current XI. `def` is
+// one of the league's `rules.chips`.
+export function chipValueInRound(def, squad, projected, i, pool, teamLimit) {
   const { starters } = lineupIn(squad, projected, i)
   const points = p => p.projection.points
-  if (name === 'frush') return sum(starters.filter(p => p.position === 4).map(points))
-  if (name === 'pdbus') return sum(starters.filter(p => p.position === 2).map(points))
-  if (name === '2capt') return starters[1] ? points(starters[1]) : 0
-  if (name === 'rich' || name === 'freehit') {
+  if (def.name === 'frush') return sum(starters.filter(p => p.position === 4).map(points))
+  if (def.name === 'pdbus') return sum(starters.filter(p => p.position === 2).map(points))
+  if (def.name === '2capt') return starters[1] ? points(starters[1]) : 0
+  if (def.type === 'transfer' && def.name !== 'wildcard') {
     const current = sum(starters.map(points)) + (starters[0] ? points(starters[0]) : 0)
     return dreamScore(pool, projected, i, teamLimit) - current
   }

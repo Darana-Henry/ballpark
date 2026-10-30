@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react'
-import data from '../data/eliteserienPlayers.json'
+import { useFantasyData, perLeague } from '../contexts/fantasyData'
 import { POSITIONS, availability } from '../utils/fantasyPlayers'
 import { leagueTable } from '../utils/fantasyFixtures'
 import Chip from './FilterChip'
@@ -10,11 +10,17 @@ import Chip from './FilterChip'
 // order. Below, the sheet's "Mean Ratio": the average best player per
 // position across the clubs. Best players above that average show in green.
 
-const LAST_ROUND = data.rounds.at(-1) ?? 0
-const TABLE = leagueTable(data.fixtures, data.teams, LAST_ROUND)
-const TEAMS = [...data.teams].sort((a, b) => (TABLE.get(a.id)?.rank ?? 99) - (TABLE.get(b.id)?.rank ?? 99))
-const MY_PICKS = new Set((data.mySquad?.picks ?? []).map(p => p.id))
-const PLAYERS = data.players.map(p => ({ ...p, availability: availability(p) }))
+const derive = perLeague(data => {
+  const LAST_ROUND = data.rounds.at(-1) ?? 0
+  const TABLE = leagueTable(data.fixtures, data.teams, LAST_ROUND)
+  return {
+    LAST_ROUND,
+    TABLE,
+    TEAMS: [...data.teams].sort((a, b) => (TABLE.get(a.id)?.rank ?? 99) - (TABLE.get(b.id)?.rank ?? 99)),
+    MY_PICKS: new Set((data.mySquad?.picks ?? []).map(p => p.id)),
+    PLAYERS: data.players.map(p => ({ ...p, availability: availability(p) })),
+  }
+})
 
 const WINDOWS = {
   season: { label: 'Season', rounds: Infinity },
@@ -27,6 +33,7 @@ const sumLast = (values, n) => values.slice(-Math.min(n, values.length)).reduce(
 const STATUS_DOT = { doubtful: 'bg-amber-400', injured: 'bg-red-500', suspended: 'bg-red-500', unavailable: 'bg-slate-500' }
 
 function PlayerLine({ entry, second, aboveAverage }) {
+  const { MY_PICKS } = derive(useFantasyData().data)
   if (!entry) return <p className={`text-xs text-slate-600 ${second ? 'pl-2' : ''}`}>–</p>
   const { player, points } = entry
   const mine = MY_PICKS.has(player.id)
@@ -47,10 +54,13 @@ function PlayerLine({ entry, second, aboveAverage }) {
   )
 }
 
-export default function EliteserienBestLads() {
+export default function FantasyBestLads() {
+  const { data } = useFantasyData()
+  const { LAST_ROUND, TABLE, TEAMS } = derive(data)
   const [windowKey, setWindowKey] = useState('season')
 
   const { byTeam, benchmark } = useMemo(() => {
+    const { TEAMS, PLAYERS } = derive(data)
     const n = WINDOWS[windowKey].rounds
     // Ties go to more minutes in the window, then the cheaper player.
     const scored = PLAYERS.map(p => ({ player: p, points: sumLast(p.points, n), minutes: sumLast(p.minutes, n) }))
@@ -67,7 +77,7 @@ export default function EliteserienBestLads() {
       return { pos, points: best.reduce((sum, b) => sum + b.points, 0) / best.length, price, top }
     })
     return { byTeam, benchmark }
-  }, [windowKey])
+  }, [data, windowKey])
   const average = Object.fromEntries(benchmark.map(b => [b.pos, b.points]))
 
   return (

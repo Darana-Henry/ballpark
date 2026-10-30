@@ -1,25 +1,30 @@
-import { useState, useMemo } from 'react'
-import data from '../data/eliteserienPlayers.json'
+import { useState } from 'react'
+import { useFantasyData, perLeague } from '../contexts/fantasyData'
 import { POSITIONS, withForm, availability } from '../utils/fantasyPlayers'
 import { DIFFICULTY } from '../utils/fantasyFixtures'
-import { projectRounds, planTransfers, chipValueInRound, sellPrice, CHIP_NAMES } from '../utils/fantasyPlanner'
+import { projectRounds, planTransfers, chipValueInRound, sellPrice, CHIPS } from '../utils/fantasyPlanner'
 import Chip from './FilterChip'
 
-const SQUAD_INFO = data.mySquad
-const RULES = data.rules
-const TEAMS = Object.fromEntries(data.teams.map(t => [t.id, t]))
-// Plans start at the next deadline: the round after the squad's.
-const ROUND = (SQUAD_INFO?.round ?? 0) + 1
-const LAST = Math.max(...data.fixtures.map(f => f.round ?? 0))
-// Transfers are judged over the next 3 rounds (fewer near the end of the season).
-const HORIZON = Math.max(0, Math.min(3, LAST - ROUND + 1))
 const MAX_MOVES = 5
 const OUT = new Set(['injured', 'suspended', 'unavailable'])
 
 const panelStyle = { background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.07)' }
 const fmt = n => (n >= 0 ? '+' : '−') + Math.abs(n).toFixed(1)
 
-function build() {
+// The whole plan, once per league: transfers, wildcard rebuild and per-round
+// projections for every player.
+const derive = perLeague(data => {
+  const SQUAD_INFO = data.mySquad
+  // Plans start at the next deadline: the round after the squad's.
+  const ROUND = (SQUAD_INFO?.round ?? 0) + 1
+  const LAST = Math.max(...data.fixtures.map(f => f.round ?? 0))
+  // Transfers are judged over the next 3 rounds (fewer near the end of the season).
+  const HORIZON = Math.max(0, Math.min(3, LAST - ROUND + 1))
+  const consts = { SQUAD_INFO, RULES: data.rules, TEAMS: Object.fromEntries(data.teams.map(t => [t.id, t])), ROUND, LAST, HORIZON }
+  return { ...consts, plan: SQUAD_INFO && HORIZON > 0 ? build(data, consts) : null }
+})
+
+function build(data, { SQUAD_INFO, RULES, ROUND, LAST, HORIZON }) {
   const players = data.players.map(p => ({ ...withForm(p), availability: availability(p) }))
   const { rounds, byPlayer } = projectRounds(players, data.fixtures, data.teams, ROUND, LAST - ROUND + 1)
   const picks = new Map(SQUAD_INFO.picks.map(p => [p.id, p]))
@@ -38,6 +43,7 @@ function build() {
 }
 
 function Fixtures({ games }) {
+  const { TEAMS } = derive(useFantasyData().data)
   return (
     <span className="flex gap-0.5">
       {games.map((round, i) => (
@@ -54,6 +60,7 @@ function Fixtures({ games }) {
 }
 
 function PlayerSide({ player, price, total, games, muted }) {
+  const { TEAMS } = derive(useFantasyData().data)
   return (
     <div className="min-w-0 flex-1">
       <p className={`text-sm font-semibold truncate ${muted ? 'text-slate-400' : 'text-slate-100'}`} title={player.fullName}>{player.name}</p>
@@ -66,6 +73,7 @@ function PlayerSide({ player, price, total, games, muted }) {
 }
 
 function Move({ move, plan, index }) {
+  const { TEAMS, RULES, HORIZON } = derive(useFantasyData().data)
   const [open, setOpen] = useState(false)
   const { byPlayer, horizonTotal } = plan
   const games = p => byPlayer.get(p.id).games.slice(0, HORIZON)
@@ -102,7 +110,8 @@ function Move({ move, plan, index }) {
 }
 
 function ChipCard({ def, plan }) {
-  const label = CHIP_NAMES[def.name] ?? def.name
+  const { SQUAD_INFO, RULES, ROUND, LAST, HORIZON } = derive(useFantasyData().data)
+  const label = CHIPS[def.name]?.label ?? def.name
   const used = SQUAD_INFO.chipsUsed.find(u => u.name === def.name && u.round >= def.start && u.round <= def.stop)
   const window = def.start === 1 && def.stop >= LAST ? 'any round' : `GW${def.start}–${def.stop}`
   if (used) {
@@ -135,9 +144,15 @@ function ChipCard({ def, plan }) {
       ? `Play it for GW${ROUND}: a rebuild of ${plan.wildcard.moves.length} transfers adds ${extra.toFixed(1)} pts over the next ${HORIZON} rounds beyond your best normal transfers.`
       : `Hold for now: a rebuild adds only ${extra.toFixed(1)} pts over the next ${HORIZON} rounds beyond your best normal transfers. It must be played by GW${def.stop}, so keep it for an injury crisis or a round with doubles.`
   } else {
-    values = rounds.map(r => ({ ...r, value: chipValueInRound(def.name, plan.squad, plan.byPlayer, r.i, plan.pool, RULES.squadTeamLimit) }))
+    values = rounds.map(r => ({ ...r, value: chipValueInRound(def, plan.squad, plan.byPlayer, r.i, plan.pool, RULES.squadTeamLimit) }))
     const best = values.reduce((a, b) => (b.value > a.value ? b : a), values[0])
-    advice = best ? `Best in GW${best.round} with your current squad: about ${best.value.toFixed(1)} extra pts.` : 'No rounds left to play it.'
+    if (values.some(v => v.value == null)) {
+      // A chip the planner doesn't know how to score.
+      values = null
+      advice = 'No projection for this chip yet.'
+    } else {
+      advice = best ? `Best in GW${best.round} with your current squad: about ${best.value.toFixed(1)} extra pts.` : 'No rounds left to play it.'
+    }
   }
   const max = values ? Math.max(1, ...values.map(v => v.value)) : 1
 
@@ -159,9 +174,9 @@ function ChipCard({ def, plan }) {
   )
 }
 
-export default function EliteserienPlanner() {
+export default function FantasyPlanner() {
+  const { SQUAD_INFO, RULES, TEAMS, ROUND, HORIZON, plan } = derive(useFantasyData().data)
   const [count, setCount] = useState(1)
-  const plan = useMemo(() => (SQUAD_INFO && HORIZON > 0 ? build() : null), [])
 
   if (!plan) {
     return <p className="text-sm text-slate-500 text-center py-10">{SQUAD_INFO ? 'The season is over.' : 'Your squad couldn\'t be fetched yet.'}</p>
@@ -260,7 +275,8 @@ export default function EliteserienPlanner() {
       <p className="text-[11px] text-slate-600 mt-4 leading-relaxed">
         Projections are the My team ones (form × fixture × chance of playing), scored as your best XI plus captain each round, so bench upgrades count for little.
         Sell prices include the {RULES.sellOnFee * 100}% sell-on fee. Free transfers are replayed from your history and checked against the hits you paid.
-        Chip effects as fan guides describe them (the game's feed doesn't say): Attack Attack doubles forwards, Park the Bus doubles defenders, Two Captains doubles a second player, Rich Uncle is a one-round unlimited budget.
+        Chip effects as fan guides describe them (the game's feed doesn't say):{' '}
+        {[...new Set(RULES.chips.map(c => c.name))].filter(name => CHIPS[name]?.effect).map(name => `${CHIPS[name].label} ${CHIPS[name].effect}`).join(', ')}.
         Transfers you've already made for GW{ROUND} don't show until its deadline.
       </p>
     </div>

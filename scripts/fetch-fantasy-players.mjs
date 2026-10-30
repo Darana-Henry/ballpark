@@ -1,16 +1,19 @@
-// Fetches every Eliteserien Fantasy player's points and minutes for each
-// finished round and writes them to src/data/eliteserienPlayers.json, which
-// the Eliteserien tab imports. Also adds who has taken penalties this season
-// (from ESPN match events), injuries, suspensions and yellow-card risk (from
+// Fetches every player's points and minutes for each finished round of a
+// fantasy game on the Premier League's platform (Eliteserien, Allsvenskan)
+// and writes them to src/data/<league>Players.json, which that league's
+// fantasy tab imports. Also adds who has taken penalties this season (from
+// ESPN match events), injuries, suspensions and yellow-card risk (from
 // Transfermarkt), every fixture, the user's own squad and the overall top
-// 50's squads. A second, small file, src/data/eliteserienRounds.json, maps
-// ESPN match ids to fantasy rounds for the Europe tab's Eliteserien view. None of these sources allow
-// cross-origin reads, so this runs at deploy time instead of in the browser.
+// 50's squads. A second, small file, src/data/<league>Rounds.json, maps ESPN
+// match ids to fantasy rounds for the Europe tab, and the user's season
+// archive is kept in src/data/<league>History.json. None of these sources
+// allow cross-origin reads, so this runs at deploy time instead of in the
+// browser.
 //
 // Rounds are fantasy events (1–30), which is how the game numbers them even
 // when a league round is postponed and played out of order.
 //
-// Usage: node scripts/fetch-eliteserien-players.mjs
+// Usage: node scripts/fetch-fantasy-players.mjs <eliteserien|allsvenskan>
 // On failure the existing JSON is left untouched and the script exits 0, so
 // an outage never blocks a deploy. If only ESPN, Transfermarkt or a squad
 // fetch fails, that part is carried over from the existing JSON.
@@ -18,20 +21,36 @@ import { readFileSync, writeFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { matchTeamsByKickoff } from './lib/matchTeamsByKickoff.mjs'
 
-const OUT = fileURLToPath(new URL('../src/data/eliteserienPlayers.json', import.meta.url))
-const ROUNDS_OUT = fileURLToPath(new URL('../src/data/eliteserienRounds.json', import.meta.url))
-const HISTORY_OUT = fileURLToPath(new URL('../src/data/eliteserienHistory.json', import.meta.url))
+// Per league: the game's API, ESPN's league slug, Transfermarkt's league
+// path and code, the user's team and the game's overall league (one standings
+// page of it is the top 50).
+//
+// `entryId` is the number in the user's team URL,
+// <game site>/entry/<id>/history. A new season gives a new id, so update it
+// here (or set <LEAGUE>_ENTRY_ID, e.g. ALLSVENSKAN_ENTRY_ID) when the next
+// season starts.
+const LEAGUES = {
+  eliteserien: { api: 'https://fantasy.eliteserien.no/api', espn: 'nor.1', transfermarkt: 'eliteserien/{page}/wettbewerb/NO1', entryId: 10837, overallLeague: 329 },
+  allsvenskan: { api: 'https://fantasy.allsvenskan.se/api', espn: 'swe.1', transfermarkt: 'allsvenskan/{page}/wettbewerb/SE1', entryId: 13063, overallLeague: 315 },
+}
+const LEAGUE = process.argv[2]
+if (!LEAGUES[LEAGUE]) {
+  console.log(`usage: node scripts/fetch-fantasy-players.mjs <${Object.keys(LEAGUES).join('|')}>`)
+  process.exit(0)
+}
+const CONFIG = LEAGUES[LEAGUE]
+const data = file => fileURLToPath(new URL(`../src/data/${LEAGUE}${file}.json`, import.meta.url))
+const OUT = data('Players')
+const ROUNDS_OUT = data('Rounds')
+const HISTORY_OUT = data('History')
 const HEADERS = { 'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) Chrome/126 Safari/537.36' }
-const API = 'https://fantasy.eliteserien.no/api'
-const ESPN = 'https://site.api.espn.com/apis/site/v2/sports/soccer/nor.1'
+const API = CONFIG.api
+const ESPN = `https://site.api.espn.com/apis/site/v2/sports/soccer/${CONFIG.espn}`
 // transfermarkt.com doesn't answer scripted requests; the .co.in mirror does.
-const TRANSFERMARKT = 'https://www.transfermarkt.co.in/eliteserien'
-// The user's fantasy team: the number in their team's URL,
-// fantasy.eliteserien.no/entry/<id>/history. A new season gives a new id, so
-// update it here (or set ELITESERIEN_ENTRY_ID) when the next season starts.
-const MY_ENTRY_ID = Number(process.env.ELITESERIEN_ENTRY_ID) || 10837
-// The game's overall league ("Totalt"); one standings page is the top 50.
-const OVERALL_LEAGUE_ID = 329
+const TRANSFERMARKT = 'https://www.transfermarkt.co.in'
+const MY_ENTRY_ID = Number(process.env[`${LEAGUE.toUpperCase()}_ENTRY_ID`]) || CONFIG.entryId
+const OVERALL_LEAGUE_ID = CONFIG.overallLeague
+const LOG = `${LEAGUE} players:`
 
 async function get(url, headers = HEADERS) {
   const res = await fetch(url, { headers, signal: AbortSignal.timeout(30_000) })
@@ -45,7 +64,7 @@ function readExisting() {
   try { return JSON.parse(readFileSync(OUT, 'utf8')) } catch { return null }
 }
 
-// "Bodø/Glimt" and "Bodo/Glimt", "Sørensen" and "Sorensen" compare equal.
+// "Bodø/Glimt" and "Bodo/Glimt", "Sørensen" and "Sorensen", "Malmö" and "Malmo" compare equal.
 function norm(s) {
   return s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase()
     .replace(/ø/g, 'o').replace(/æ/g, 'ae').replace(/ł/g, 'l').replace(/đ/g, 'd')
@@ -58,7 +77,7 @@ async function mapLimit(items, limit, fn) {
   return out
 }
 
-// This season's league matches. The season runs March–December inside one
+// This season's league matches. Both leagues run March–December inside one
 // calendar year; ESPN ignores date ranges, so one scoreboard request per
 // month (see src/api/espnDates.js).
 async function fetchEspnEvents() {
@@ -141,13 +160,27 @@ function matchPlayer(name, elements, teamNames, clubName) {
 // Transfermarkt list pages: one <table class="items"> per list, one row per
 // player. Cells (unfiltered) are [_, name, position, _, _, value, value…];
 // the second title attribute after the player's is his club.
-function transfermarktTables(html) {
+//
+// Tables are found by the heading before them, not their order: a list with
+// nothing in it ("No information available") has no table at all, which
+// shifts every table after it.
+function transfermarktTables(html, headings) {
   const text = s => s.replace(/<[^>]+>/g, ' ').replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').replace(/\s+/g, ' ').trim()
-  return html.split('class="items"').slice(1).map(table =>
-    table.split(/<tr class="(?:odd|even)">/).slice(1).map(row => ({
+  const parts = html.split('class="items"')
+  const found = {}
+  parts.slice(1).forEach((table, i) => {
+    const before = text(parts[i].slice(-3000))
+    const heading = headings
+      .map(h => ({ h, at: before.lastIndexOf(h) }))
+      .filter(x => x.at !== -1)
+      .sort((a, b) => b.at - a.at)[0]?.h
+    if (!heading || found[heading]) return
+    found[heading] = table.split(/<tr class="(?:odd|even)">/).slice(1).map(row => ({
       cells: row.split('</td>').map(text),
       club: [...row.matchAll(/title="([^"]+)"/g)].map(m => m[1])[2] ?? null,
-    })))
+    }))
+  })
+  return found
 }
 
 // "01/03/2027" (day first) → "2027-03-01"; blank when the return is unknown.
@@ -158,12 +191,13 @@ function tmDate(s) {
 
 async function fetchTransfermarkt() {
   const headers = { ...HEADERS, 'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126 Safari/537.36', 'Accept-Language': 'en-GB,en;q=0.9' }
-  const page = path => get(`${TRANSFERMARKT}/${path}/wettbewerb/NO1`, headers).then(res => res.text())
+  const page = path => get(`${TRANSFERMARKT}/${CONFIG.transfermarkt.replace('{page}', path)}`, headers).then(res => res.text())
   const [injuredHtml, suspendedHtml] = await Promise.all([page('verletztespieler'), page('sperrenausfaelle')])
-  const [injured = []] = transfermarktTables(injuredHtml)
-  // Suspensions and other absences, then players one booking from a ban.
-  const [suspended = [], yellows = []] = transfermarktTables(suspendedHtml)
-  if (!injured.length && !suspended.length) throw new Error('no rows; the page layout may have changed')
+  const { 'injured players': injured = [] } = transfermarktTables(injuredHtml, ['injured players'])
+  // Suspensions and other absences, and players one booking from a ban.
+  const { Suspensions: suspended = [], 'Risk of suspension': yellows = [] } =
+    transfermarktTables(suspendedHtml, ['Suspensions', 'Risk of suspension'])
+  if (!injured.length && !suspended.length && !yellows.length) throw new Error('no rows; the page layout may have changed')
   return {
     absences: [
       ...injured.map(({ cells, club }) => ({ name: cells[1], club, type: 'injury', reason: cells[5], until: tmDate(cells[6]) })),
@@ -173,10 +207,13 @@ async function fetchTransfermarkt() {
   }
 }
 
-// Chips whose squad reverts after one round; their transfers are still listed.
-const REVERTING_CHIPS = new Set(['rich', 'freehit'])
-// Chips that make a round's transfers free.
-const TRANSFER_CHIPS = new Set(['wildcard', 'rich', 'freehit'])
+// The game marks chips that make a round's transfers free as `transfer`.
+// Every one but the wildcard is a one-round squad that reverts (rich uncle,
+// Allsvenskan's uteam); their transfers are still listed.
+function chipKinds(chips) {
+  const transfer = new Set(chips.filter(c => c.chip_type === 'transfer').map(c => c.name))
+  return { transfer, reverting: new Set([...transfer].filter(name => name !== 'wildcard')) }
+}
 
 // Free transfers for the round after `history`'s last, replayed from round 2
 // (round 1's squad is picked, not transferred): one more each round, up to
@@ -196,7 +233,7 @@ function freeTransfers(history, chipRounds, max) {
   return { free, mismatches }
 }
 
-async function fetchMySquad(events, elements, maxExtraFree) {
+async function fetchMySquad(events, elements, maxExtraFree, kinds) {
   const round = events.filter(e => new Date(e.deadline_time) <= new Date()).at(-1)?.id
   if (!round) return null
   const [entry, { picks }, transfers, { chips, current }] = await Promise.all([
@@ -205,14 +242,14 @@ async function fetchMySquad(events, elements, maxExtraFree) {
     getJson(`${API}/entry/${MY_ENTRY_ID}/transfers/`),
     getJson(`${API}/entry/${MY_ENTRY_ID}/history/`),
   ])
-  const reverted = new Set(chips.filter(c => REVERTING_CHIPS.has(c.name)).map(c => c.event))
+  const reverted = new Set(chips.filter(c => kinds.reverting.has(c.name)).map(c => c.event))
   // Newest first, so the first transfer in is the one that's still owned.
   const boughtFor = new Map()
   for (const t of transfers) {
     if (t.event <= round && !reverted.has(t.event) && !boughtFor.has(t.element_in)) boughtFor.set(t.element_in, t.element_in_cost / 10)
   }
-  const { free, mismatches } = freeTransfers(current.filter(c => c.event <= round), new Set(chips.filter(c => TRANSFER_CHIPS.has(c.name)).map(c => c.event)), 1 + maxExtraFree)
-  if (mismatches.length) console.log(`eliteserien players: free-transfer estimate disagrees with the hits paid in rounds ${mismatches.join(', ')}`)
+  const { free, mismatches } = freeTransfers(current.filter(c => c.event <= round), new Set(chips.filter(c => kinds.transfer.has(c.name)).map(c => c.event)), 1 + maxExtraFree)
+  if (mismatches.length) console.log(`${LOG} free-transfer estimate disagrees with the hits paid in rounds ${mismatches.join(', ')}`)
   const byId = new Map(elements.map(e => [e.id, e]))
   // Never transferred in means picked before round 1 (the entry started in round 1), at the start price.
   const startPrice = id => (byId.get(id).now_cost - byId.get(id).cost_change_start) / 10
@@ -241,7 +278,7 @@ async function fetchMySquad(events, elements, maxExtraFree) {
 
 // The user's seasons, kept across team ids: every past season's total and
 // final rank from the game, and this season's rounds added to the archive in
-// src/data/eliteserienHistory.json, which never drops a season it holds.
+// src/data/<league>History.json, which never drops a season it holds.
 //
 // Entry ids are reused, so an id left over from last season belongs to a
 // stranger. The game lists the entry's past seasons; if those don't match the
@@ -250,7 +287,12 @@ async function fetchMySquad(events, elements, maxExtraFree) {
 // Only finished rounds are kept, and the file is only rewritten when they
 // change: the deploy workflow commits it back to main, about once a round.
 async function archiveHistory(season, finished) {
-  const archive = JSON.parse(readFileSync(HISTORY_OUT, 'utf8'))
+  let archive
+  try {
+    archive = JSON.parse(readFileSync(HISTORY_OUT, 'utf8'))
+  } catch {
+    archive = { note: 'Past seasons from the game\'s history (totals and final ranks); each season\'s finished rounds are archived by scripts/fetch-fantasy-players.mjs as they\'re played.', seasons: [], rounds: {} }
+  }
   const history = await getJson(`${API}/entry/${MY_ENTRY_ID}/history/`)
   const { past } = history
   const current = history.current.filter(c => finished.has(c.event))
@@ -393,15 +435,15 @@ try {
 
   let mySquad
   try {
-    mySquad = await fetchMySquad(events, elements, settings.max_extra_free_transfers)
+    mySquad = await fetchMySquad(events, elements, settings.max_extra_free_transfers, chipKinds(chips))
   } catch (err) {
     mySquad = existing?.mySquad ?? null
-    console.log(`eliteserien players: squad fetch failed (${err.message}), kept the existing one`)
+    console.log(`${LOG} squad fetch failed (${err.message}), kept the existing one`)
   }
 
   let historyNote
   try {
-    // Eliteserien seasons fall inside one calendar year.
+    // Seasons fall inside one calendar year.
     historyNote = await archiveHistory(String(new Date(events[0].deadline_time).getUTCFullYear()), new Set(rounds))
   } catch (err) {
     historyNote = `history failed (${err.message}), kept the existing archive`
@@ -412,7 +454,7 @@ try {
     topManagers = mySquad ? await fetchTopManagers(mySquad.round) : null
   } catch (err) {
     topManagers = existing?.topManagers ?? null
-    console.log(`eliteserien players: top managers fetch failed (${err.message}), kept the existing ones`)
+    console.log(`${LOG} top managers fetch failed (${err.message}), kept the existing ones`)
   }
 
   let mismatched = 0
@@ -447,7 +489,7 @@ try {
     squadTeamLimit: settings.squad_team_limit,
     sellOnFee: settings.transfers_sell_on_fee,
     maxFreeTransfers: 1 + settings.max_extra_free_transfers,
-    chips: chips.map(c => ({ name: c.name, start: c.start_event, stop: c.stop_event })),
+    chips: chips.map(c => ({ name: c.name, start: c.start_event, stop: c.stop_event, type: c.chip_type })),
   }
   // The game also lists clubs outside the league; keep the ones with fixtures.
   const leagueTeams = new Set(fixtures.map(f => f.home))
@@ -468,7 +510,7 @@ try {
   "players": [\n${lines(players)}\n  ]
 }`
   writeFileSync(OUT, json + '\n')
-  console.log(`eliteserien players: ${players.length} players through round ${rounds.at(-1) ?? 0}; ${penaltyNote}; ${roundsNote ?? 'round mapping skipped'}; ${transfermarktNote}; squad ${mySquad ? `for round ${mySquad.round}` : 'unavailable'}; ${historyNote}${mismatched ? `; ${mismatched} with a season total that differs from their round sum (scoring corrections)` : ''}`)
+  console.log(`${LOG} ${players.length} players through round ${rounds.at(-1) ?? 0}; ${penaltyNote}; ${roundsNote ?? 'round mapping skipped'}; ${transfermarktNote}; squad ${mySquad ? `for round ${mySquad.round}` : 'unavailable'}; ${historyNote}${mismatched ? `; ${mismatched} with a season total that differs from their round sum (scoring corrections)` : ''}`)
 } catch (err) {
-  console.log(`eliteserien players: failed (${err.message}); keeping the existing ${OUT}`)
+  console.log(`${LOG} failed (${err.message}); keeping the existing ${OUT}`)
 }

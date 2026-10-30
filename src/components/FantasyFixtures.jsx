@@ -1,23 +1,30 @@
 import { useState, useMemo } from 'react'
-import data from '../data/eliteserienPlayers.json'
+import { useFantasyData, perLeague } from '../contexts/fantasyData'
 import { leagueTable, nextRound, upcomingFixtures, DIFFICULTY } from '../utils/fantasyFixtures'
 import Chip from './FilterChip'
 
-const TEAMS = Object.fromEntries(data.teams.map(t => [t.id, t]))
 const WINDOWS = [3, 5, 7]
-const LAST_ROUND = data.rounds.at(-1) ?? 0
-const TABLE = leagueTable(data.fixtures, data.teams, LAST_ROUND)
-const PREVIOUS = leagueTable(data.fixtures, data.teams, LAST_ROUND - 1)
-const FROM_ROUND = nextRound(data.fixtures)
 
-// How many of the user's squad play for each team.
-const MINE = new Map()
-for (const pick of data.mySquad?.picks ?? []) {
-  const team = data.players.find(p => p.id === pick.id)?.team
-  if (team) MINE.set(team, (MINE.get(team) ?? 0) + 1)
-}
+const derive = perLeague(data => {
+  const LAST_ROUND = data.rounds.at(-1) ?? 0
+  // How many of the user's squad play for each team.
+  const MINE = new Map()
+  for (const pick of data.mySquad?.picks ?? []) {
+    const team = data.players.find(p => p.id === pick.id)?.team
+    if (team) MINE.set(team, (MINE.get(team) ?? 0) + 1)
+  }
+  return {
+    TEAMS: Object.fromEntries(data.teams.map(t => [t.id, t])),
+    LAST_ROUND,
+    TABLE: leagueTable(data.fixtures, data.teams, LAST_ROUND),
+    PREVIOUS: leagueTable(data.fixtures, data.teams, LAST_ROUND - 1),
+    FROM_ROUND: nextRound(data.fixtures),
+    MINE,
+  }
+})
 
 function Movement({ team }) {
+  const { TABLE, PREVIOUS, LAST_ROUND } = derive(useFantasyData().data)
   const now = TABLE.get(team)?.rank
   const before = PREVIOUS.get(team)?.rank
   if (!now || !before || now === before) return <span className="w-6" />
@@ -32,6 +39,7 @@ function Movement({ team }) {
 // One round for one team: nothing (blank), one opponent, or two (double).
 // Also used for the players table's next-fixture columns.
 export function FixtureCell({ games }) {
+  const { TEAMS } = derive(useFantasyData().data)
   if (!games.length) return <td className="px-1 py-1.5"><div className="h-8 rounded-md bg-slate-900/60 text-slate-600 text-[11px] flex items-center justify-center">—</div></td>
   return (
     <td className="px-1 py-1.5">
@@ -50,11 +58,14 @@ export function FixtureCell({ games }) {
   )
 }
 
-export default function EliteserienFixtures() {
+export default function FantasyFixtures() {
+  const { data } = useFantasyData()
+  const { LAST_ROUND, FROM_ROUND, MINE } = derive(data)
   const [count, setCount] = useState(5)
   const [sort, setSort] = useState({ key: 'avg', desc: false })
 
   const { rounds, rows } = useMemo(() => {
+    const { TABLE, FROM_ROUND } = derive(data)
     const { rounds, byTeam } = upcomingFixtures(data.fixtures, data.teams, FROM_ROUND, count)
     const rows = data.teams.map(t => {
       const games = byTeam.get(t.id).flat()
@@ -70,7 +81,7 @@ export default function EliteserienFixtures() {
     // Easiest first; with equal ratings, more games is better.
     rows.sort((a, b) => dir * (a[sort.key] - b[sort.key]) || b.games - a.games || a.rank - b.rank)
     return { rounds, rows }
-  }, [count, sort])
+  }, [data, count, sort])
 
   if (!Number.isFinite(FROM_ROUND)) {
     return <p className="text-sm text-slate-500 text-center py-10">The season is over: no fixtures left to rate.</p>

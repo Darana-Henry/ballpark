@@ -1,15 +1,13 @@
 import { useState, useMemo } from 'react'
-import data from '../data/eliteserienPlayers.json'
+import { useFantasyData, perLeague } from '../contexts/fantasyData'
 import { POSITIONS } from '../utils/fantasyPlayers'
 import Chip from './FilterChip'
 
-const TEAMS = Object.fromEntries(data.teams.map(t => [t.id, t]))
-const PLAYERS = Object.fromEntries(data.players.map(p => [p.id, p]))
-const MY_PICKS = new Set((data.mySquad?.picks ?? []).map(p => p.id))
-const ENTRIES = data.topManagers?.entries ?? []
-
-// How many of the top managers own and captain each player.
-const ROWS = (() => {
+const derive = perLeague(data => {
+  const PLAYERS = Object.fromEntries(data.players.map(p => [p.id, p]))
+  const MY_PICKS = new Set((data.mySquad?.picks ?? []).map(p => p.id))
+  const ENTRIES = data.topManagers?.entries ?? []
+  // How many of the top managers own and captain each player.
   const owned = new Map()
   const captained = new Map()
   for (const e of ENTRIES) {
@@ -18,14 +16,15 @@ const ROWS = (() => {
   }
   // The user's players stay listed even when no top manager has them: those are the differentials.
   const ids = new Set([...owned.keys(), ...MY_PICKS])
-  return [...ids].filter(id => PLAYERS[id]).map(id => ({
+  const ROWS = [...ids].filter(id => PLAYERS[id]).map(id => ({
     player: PLAYERS[id],
     owners: owned.get(id) ?? 0,
     topShare: ENTRIES.length ? ((owned.get(id) ?? 0) / ENTRIES.length) * 100 : 0,
     captains: captained.get(id) ?? 0,
     mine: MY_PICKS.has(id),
   }))
-})()
+  return { TEAMS: Object.fromEntries(data.teams.map(t => [t.id, t])), ENTRIES, ROWS }
+})
 
 const SHOW = {
   all:     { label: 'All' },
@@ -35,16 +34,18 @@ const SHOW = {
 
 const pct = n => `${n.toFixed(n > 0 && n < 10 ? 1 : 0)}%`
 
-export default function EliteserienTopManagers() {
+export default function FantasyTopManagers() {
+  const { data } = useFantasyData()
+  const { TEAMS, ENTRIES } = derive(data)
   const [show, setShow] = useState('all')
   const [positions, setPositions] = useState(new Set())
 
   const rows = useMemo(() => {
     const test = SHOW[show].test ?? (() => true)
-    return ROWS
+    return derive(data).ROWS
       .filter(r => test(r) && (!positions.size || positions.has(r.player.position)))
       .sort((a, b) => b.owners - a.owners || b.captains - a.captains || b.player.ownership - a.player.ownership)
-  }, [show, positions])
+  }, [data, show, positions])
 
   if (!ENTRIES.length) {
     return <p className="text-sm text-slate-500 text-center py-10">Top managers' squads couldn't be fetched yet.</p>

@@ -72,10 +72,11 @@ export const PREMIER_LEAGUE = {
   showPlayed: true,
 }
 
-// Standard places only, as for the Premier League: the champions go to
-// Champions League qualifying, 2nd and 3rd to Conference League qualifying,
-// 14th to a relegation playoff against a 1. divisjon side.
-export const ELITESERIEN = {
+// Eliteserien and Allsvenskan, standard places only, as for the Premier
+// League: the champions go to Champions League qualifying, 2nd and 3rd to
+// Conference League qualifying, 14th to a relegation playoff against a
+// second-tier side (1. divisjon, Superettan).
+export const NORDIC_LEAGUE = {
   roundName: 'Gameweek',
   zones: {
     champ:   { label: 'Champions League qualifying',  maxRank: 1,        ...ZONE_STYLES.green },

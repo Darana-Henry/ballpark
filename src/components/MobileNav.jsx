@@ -6,6 +6,7 @@ const ALL_TABS = [
   { id: 'europe', name: 'Europe', emoji: '🏆' },
   { id: 'deadlines', name: 'Deadlines', emoji: '⏰' },
   { id: 'eliteserien', name: 'Elite', emoji: '🇳🇴' },
+  { id: 'allsvenskan', name: 'Allsv', emoji: '🇸🇪' },
   { id: 'stats', name: 'Stats', emoji: '📊' },
 ]
 

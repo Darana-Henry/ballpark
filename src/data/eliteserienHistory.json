@@ -1,6 +1,6 @@
 {
   "generatedAt": "2026-10-30T18:11:12.913Z",
-  "note": "Past seasons from the game's history (totals and final ranks). Round-by-round data for 2025 rounds 1-27 is copied from the user's Fantasy Eliteserien Stats sheet (09.Performance Graph); later seasons are archived by scripts/fetch-eliteserien-players.mjs as they're played.",
+  "note": "Past seasons from the game's history (totals and final ranks). Round-by-round data for 2025 rounds 1-27 is copied from the user's Fantasy Eliteserien Stats sheet (09.Performance Graph); later seasons are archived by scripts/fetch-fantasy-players.mjs as they're played.",
   "seasons": [
     {"season":"2019","points":1515,"rank":13003},
     {"season":"2020","points":1809,"rank":7261},

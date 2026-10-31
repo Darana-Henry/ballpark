@@ -20,6 +20,7 @@ import { isFirebaseConfigured } from './firebase'
 // Loaded on first visit: its season of player data stays out of the main bundle.
 const EliteserienFantasyView = lazy(() => import('./views/EliteserienFantasyView'))
 const AllsvenskanFantasyView = lazy(() => import('./views/AllsvenskanFantasyView'))
+const PremierLeagueFantasyView = lazy(() => import('./views/PremierLeagueFantasyView'))
 
 function FirebaseBanner() {
   const [dismissed, setDismissed] = useState(false)
@@ -54,6 +55,7 @@ const VIEWS = {
   deadlines: DeadlinesView,
   eliteserien: EliteserienFantasyView,
   allsvenskan: AllsvenskanFantasyView,
+  fpl: PremierLeagueFantasyView,
   stats: StatsView,
 }
 

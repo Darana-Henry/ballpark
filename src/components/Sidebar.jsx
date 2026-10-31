@@ -226,7 +226,8 @@ export default function Sidebar({ activeLeague, onLeagueChange }) {
             Deadlines
           </span>
         </button>
-        {[['eliteserien', 'Eliteserien'], ['allsvenskan', 'Allsvenskan']].map(([id, name]) => (
+        {/* [view id, fantasy league, label] */}
+        {[['fpl', 'premierLeague', 'Premier League'], ['eliteserien', 'eliteserien', 'Eliteserien'], ['allsvenskan', 'allsvenskan', 'Allsvenskan']].map(([id, leagueId, name]) => (
           <button
             key={id}
             onClick={() => onLeagueChange(id)}
@@ -237,7 +238,7 @@ export default function Sidebar({ activeLeague, onLeagueChange }) {
                 : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/40',
             ].join(' ')}
           >
-            <FantasyLeagueIcon league={FANTASY_LEAGUE_MAP[id]} size={32} />
+            <FantasyLeagueIcon league={FANTASY_LEAGUE_MAP[leagueId]} size={32} />
             <span className={`text-sm font-semibold ${activeLeague === id ? 'text-slate-100' : 'text-slate-300'}`}>
               {name}
             </span>

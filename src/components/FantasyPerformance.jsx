@@ -14,6 +14,10 @@ const derive = perLeague(history => {
 })
 const panelStyle = { background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.07)' }
 const num = n => n.toLocaleString('en-US')
+// Seasons are "2026" or, crossing New Year, "2026/27": plotted by start year,
+// labelled "26/27" to fit ten of them on a phone.
+const startYear = s => parseInt(s.season, 10)
+const shortSeason = s => (s?.season.includes('/') ? s.season.slice(2) : s?.season ?? '')
 
 function useWidth() {
   const ref = useRef(null)
@@ -35,7 +39,8 @@ function useWidth() {
 function LineChart({ series, xs, xLabel, format, log, invert, height = 220, ticks, everyX, markers }) {
   const [ref, width] = useWidth()
   const [hover, setHover] = useState(null)
-  const pad = { top: 12, right: 52, bottom: 24, left: 48 }
+  // Room for the widest y label ("#1,000,000" on FPL ranks).
+  const pad = { top: 12, right: 52, bottom: 24, left: Math.max(48, 12 + 6 * Math.max(...(ticks ?? [0]).map(v => format(v).length))) }
   const w = Math.max(200, width) - pad.left - pad.right
   const h = height - pad.top - pad.bottom
   const all = series.flatMap(s => s.points.map(p => p.y))
@@ -129,7 +134,9 @@ function Legend({ items }) {
 const rankTicks = (values) => {
   const lo = Math.min(...values)
   const hi = Math.max(...values)
-  return [1, 2, 5, 10, 20, 50, 100, 200, 500, 1000, 2000, 5000, 10000, 20000, 50000].filter(v => v >= lo * 0.8 && v <= hi * 1.25)
+  // 1-2-5 steps up to FPL's millions of managers
+  const steps = Array.from({ length: 8 }, (_, e) => [1, 2, 5].map(m => m * 10 ** e)).flat()
+  return steps.filter(v => v >= lo * 0.8 && v <= hi * 1.25)
 }
 
 export default function FantasyPerformance() {
@@ -191,11 +198,14 @@ export default function FantasyPerformance() {
           <span className="text-[11px] text-slate-500">Best: {bestSeason.season} (#{num(bestSeason.rank)}) · * so far</span>
         </div>
         <LineChart
-          series={[{ key: 'final', label: 'Final rank', color: COLORS[CURRENT], points: ranked.map(s => ({ x: Number(s.season), y: s.rank })) }]}
+          series={[{ key: 'final', label: 'Final rank', color: COLORS[CURRENT], points: ranked.map(s => ({ x: startYear(s), y: s.rank })) }]}
           everyX
           markers
-          xs={ranked.map(s => Number(s.season))}
-          xLabel={v => (SEASONS.find(s => Number(s.season) === v)?.live ? `${v}*` : String(v))}
+          xs={ranked.map(startYear)}
+          xLabel={v => {
+            const season = SEASONS.find(s => startYear(s) === v)
+            return `${shortSeason(season)}${season?.live ? '*' : ''}`
+          }}
           format={v => `#${num(Math.round(v))}`}
           log
           invert

@@ -134,7 +134,10 @@ function ChipCard({ def, plan }) {
   const rounds = plan.rounds.map((round, i) => ({ round, i })).filter(r => r.round >= def.start && r.round <= def.stop)
   let advice
   let values = null
-  if (def.name === 'wildcard') {
+  const opensLater = ROUND < def.start
+  if (def.name === 'wildcard' && opensLater) {
+    advice = `Opens in GW${def.start}: nothing to decide yet. Rebuild advice will show here from then.`
+  } else if (def.name === 'wildcard') {
     const free = Math.max(0, ...[1, 2, 3, 4, 5].map(n => {
       const moves = plan.transfers.moves.slice(0, n)
       return moves.reduce((s, m) => s + m.gain, 0) - Math.max(0, moves.length - SQUAD_INFO.freeTransfers) * SQUAD_INFO.transferCost
@@ -151,14 +154,16 @@ function ChipCard({ def, plan }) {
       values = null
       advice = 'No projection for this chip yet.'
     } else {
-      advice = best ? `Best in GW${best.round} with your current squad: about ${best.value.toFixed(1)} extra pts.` : 'No rounds left to play it.'
+      advice = best
+        ? `${opensLater ? `Opens in GW${def.start}. ` : ''}Best in GW${best.round} with your current squad: about ${best.value.toFixed(1)} extra pts.`
+        : 'No rounds left to play it.'
     }
   }
   const max = values ? Math.max(1, ...values.map(v => v.value)) : 1
 
   return (
     <div className="rounded-xl p-3 ring-1 ring-inset ring-indigo-500/30" style={panelStyle}>
-      <p className="text-sm font-semibold text-slate-100">{label} <span className="text-[11px] font-normal text-slate-500">· {window} · available</span></p>
+      <p className="text-sm font-semibold text-slate-100">{label} <span className="text-[11px] font-normal text-slate-500">· {window} · {opensLater ? `from GW${def.start}` : 'available'}</span></p>
       <p className="text-xs text-slate-300 mt-1">{advice}</p>
       {values && (
         <div className="flex items-end gap-1 mt-2 h-12">

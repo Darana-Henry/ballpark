@@ -110,11 +110,14 @@ export const CHIPS = {
   rich: { label: 'Rich Uncle', effect: 'is a one-round squad on an unlimited budget' },
   uteam: { label: 'Unlimited Team', effect: 'is (unconfirmed) a one-round squad on an unlimited budget' },
   freehit: { label: 'Free Hit', effect: 'is a one-round squad' },
+  bboost: { label: 'Bench Boost', effect: 'scores your bench too' },
+  '3xc': { label: 'Triple Captain', effect: 'triples your captain' },
 }
 
 // What a chip adds in one round for the squad as it stands, in projected
 // points. Attack Attack doubles the forwards, Park the Bus the defenders, Two
-// Captains a second captain; a one-round transfer chip (rich uncle, uteam) is
+// Captains a second captain, Triple Captain the captain once more, Bench
+// Boost the bench; a one-round transfer chip (rich uncle, uteam) is
 // a squad on an unlimited budget, measured against the current XI. `def` is
 // one of the league's `rules.chips`.
 export function chipValueInRound(def, squad, projected, i, pool, teamLimit) {
@@ -123,6 +126,11 @@ export function chipValueInRound(def, squad, projected, i, pool, teamLimit) {
   if (def.name === 'frush') return sum(starters.filter(p => p.position === 4).map(points))
   if (def.name === 'pdbus') return sum(starters.filter(p => p.position === 2).map(points))
   if (def.name === '2capt') return starters[1] ? points(starters[1]) : 0
+  if (def.name === '3xc') return starters[0] ? points(starters[0]) : 0
+  if (def.name === 'bboost') {
+    const ids = new Set(starters.map(p => p.id))
+    return sum(squad.filter(p => !ids.has(p.id)).map(p => projected.get(p.id).perRound[i]))
+  }
   if (def.type === 'transfer' && def.name !== 'wildcard') {
     const current = sum(starters.map(points)) + (starters[0] ? points(starters[0]) : 0)
     return dreamScore(pool, projected, i, teamLimit) - current

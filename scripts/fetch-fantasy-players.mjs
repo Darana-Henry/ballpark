@@ -1,11 +1,13 @@
 // Fetches every player's points and minutes for each finished round of a
-// fantasy game on the Premier League's platform (Eliteserien, Allsvenskan)
+// fantasy game on the Premier League's platform (Eliteserien, Allsvenskan,
+// the Premier League itself)
 // and writes them to src/data/<league>Players.json, which that league's
 // fantasy tab imports. Also adds who has taken penalties this season (from
 // ESPN match events), injuries, suspensions and yellow-card risk (from
 // Transfermarkt), every fixture, the user's own squad and the overall top
 // 50's squads. A second, small file, src/data/<league>Rounds.json, maps ESPN
-// match ids to fantasy rounds for the Europe tab, and the user's season
+// match ids to fantasy rounds for the Europe tab (the Premier League has its
+// own, scripts/fetch-pl-gameweeks.mjs), and the user's season
 // archive is kept in src/data/<league>History.json. None of these sources
 // allow cross-origin reads, so this runs at deploy time instead of in the
 // browser.
@@ -13,7 +15,7 @@
 // Rounds are fantasy events (1–30), which is how the game numbers them even
 // when a league round is postponed and played out of order.
 //
-// Usage: node scripts/fetch-fantasy-players.mjs <eliteserien|allsvenskan>
+// Usage: node scripts/fetch-fantasy-players.mjs <eliteserien|allsvenskan|premierLeague>
 // On failure the existing JSON is left untouched and the script exits 0, so
 // an outage never blocks a deploy. If only ESPN, Transfermarkt or a squad
 // fetch fails, that part is carried over from the existing JSON.
@@ -23,15 +25,19 @@ import { matchTeamsByKickoff } from './lib/matchTeamsByKickoff.mjs'
 
 // Per league: the game's API, ESPN's league slug, Transfermarkt's league
 // path and code, the user's team and the game's overall league (one standings
-// page of it is the top 50).
+// page of it is the top 50). `season` is the first month and length of a
+// season: the Nordic leagues play March–December, the Premier League
+// August–May, so its seasons are named like the game's own ("2026/27").
+// `europeRounds` writes the ESPN → round map for the Europe tab.
 //
 // `entryId` is the number in the user's team URL,
 // <game site>/entry/<id>/history. A new season gives a new id, so update it
 // here (or set <LEAGUE>_ENTRY_ID, e.g. ALLSVENSKAN_ENTRY_ID) when the next
 // season starts.
 const LEAGUES = {
-  eliteserien: { api: 'https://fantasy.eliteserien.no/api', espn: 'nor.1', transfermarkt: 'eliteserien/{page}/wettbewerb/NO1', entryId: 10837, overallLeague: 329 },
-  allsvenskan: { api: 'https://fantasy.allsvenskan.se/api', espn: 'swe.1', transfermarkt: 'allsvenskan/{page}/wettbewerb/SE1', entryId: 13063, overallLeague: 315 },
+  eliteserien:   { api: 'https://fantasy.eliteserien.no/api', espn: 'nor.1', transfermarkt: 'eliteserien/{page}/wettbewerb/NO1', entryId: 10837, overallLeague: 329, season: { start: 3, months: 10 }, europeRounds: true },
+  allsvenskan:   { api: 'https://fantasy.allsvenskan.se/api', espn: 'swe.1', transfermarkt: 'allsvenskan/{page}/wettbewerb/SE1', entryId: 13063, overallLeague: 315, season: { start: 3, months: 10 }, europeRounds: true },
+  premierLeague: { api: 'https://fantasy.premierleague.com/api', espn: 'eng.1', transfermarkt: 'premier-league/{page}/wettbewerb/GB1', entryId: 93210, overallLeague: 314, season: { start: 8, months: 10 }, europeRounds: false },
 }
 const LEAGUE = process.argv[2]
 if (!LEAGUES[LEAGUE]) {
@@ -64,10 +70,10 @@ function readExisting() {
   try { return JSON.parse(readFileSync(OUT, 'utf8')) } catch { return null }
 }
 
-// "Bodø/Glimt" and "Bodo/Glimt", "Sørensen" and "Sorensen", "Malmö" and "Malmo" compare equal.
+// "Bodø/Glimt" and "Bodo/Glimt", "Sørensen" and "Sorensen", "Malmö" and "Malmo", "Groß" and "Gross" compare equal.
 function norm(s) {
   return s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase()
-    .replace(/ø/g, 'o').replace(/æ/g, 'ae').replace(/ł/g, 'l').replace(/đ/g, 'd')
+    .replace(/ß/g, 'ss').replace(/ø/g, 'o').replace(/æ/g, 'ae').replace(/ł/g, 'l').replace(/đ/g, 'd')
     .replace(/[.,]/g, '').replace(/ (jr|sr)$/, '').replace(/\s+/g, ' ').trim()
 }
 
@@ -77,12 +83,20 @@ async function mapLimit(items, limit, fn) {
   return out
 }
 
-// This season's league matches. Both leagues run March–December inside one
-// calendar year; ESPN ignores date ranges, so one scoreboard request per
-// month (see src/api/espnDates.js).
-async function fetchEspnEvents() {
-  const year = new Date().getUTCFullYear()
-  const months = Array.from({ length: 10 }, (_, i) => `${year}${String(i + 3).padStart(2, '0')}`)
+// The season that starts in `year`, named as the game names past seasons:
+// "2026" for a calendar-year league, "2026/27" for one that crosses New Year.
+function seasonName(year) {
+  const crosses = CONFIG.season.start + CONFIG.season.months - 1 > 12
+  return crosses ? `${year}/${String((year + 1) % 100).padStart(2, '0')}` : String(year)
+}
+
+// This season's league matches. ESPN ignores date ranges, so one scoreboard
+// request per month of the season (see src/api/espnDates.js).
+async function fetchEspnEvents(year) {
+  const months = Array.from({ length: CONFIG.season.months }, (_, i) => {
+    const m = CONFIG.season.start - 1 + i
+    return `${year + Math.floor(m / 12)}${String((m % 12) + 1).padStart(2, '0')}`
+  })
   const pages = await Promise.all(months.map(m => getJson(`${ESPN}/scoreboard?dates=${m}&limit=300`).then(d => d.events ?? [])))
   const seen = new Set()
   return pages.flat().filter(e => e?.id && !seen.has(e.id) && seen.add(e.id))
@@ -148,7 +162,16 @@ function matchPlayer(name, elements, teamNames, clubName) {
     const sameClub = candidates.filter(e => club.includes(norm(teamNames[e.team])))
     return sameClub.length === 1 ? sameClub[0] : null
   }
-  const exact = elements.filter(e => [full(e), norm(`${firstWord(e.first_name)} ${e.second_name}`), norm(e.web_name)].includes(key))
+  // Also the given names alone when there are two ("Igor Thiago" for Igor
+  // Thiago Nascimento Rodrigues), and family name first reversed ("Mitoma Kaoru").
+  const forms = e => [
+    full(e),
+    norm(`${firstWord(e.first_name)} ${e.second_name}`),
+    norm(e.web_name),
+    norm(`${e.second_name} ${e.first_name}`),
+    ...(e.first_name.includes(' ') ? [norm(e.first_name)] : []),
+  ]
+  const exact = elements.filter(e => forms(e).includes(key))
   if (exact.length) return pick(exact)
   const named = elements.filter(e =>
     firstWord(norm(e.first_name)) === firstWord(key) && norm(e.second_name).split(/[ -]/).includes(lastWord(key)))
@@ -380,19 +403,23 @@ try {
     }
   })
 
+  // The year the season starts in: round 1's.
+  const seasonYear = new Date(events[0].deadline_time).getUTCFullYear()
   const active = elements.filter(e => !e.removed)
   const teamNames = Object.fromEntries(teams.map(t => [t.id, t.name]))
   let penaltiesById
   let penaltyNote
   let roundsNote
   try {
-    const espnEvents = await fetchEspnEvents()
-    try {
-      const espnRoundMap = espnRounds(espnEvents, fixtures)
-      writeFileSync(ROUNDS_OUT, JSON.stringify({ generatedAt: new Date().toISOString(), rounds: espnRoundMap }, null, 2) + '\n')
-      roundsNote = `${Object.keys(espnRoundMap).length} ESPN matches mapped to rounds`
-    } catch (err) {
-      roundsNote = `round mapping failed (${err.message}), kept the existing one`
+    const espnEvents = await fetchEspnEvents(seasonYear)
+    if (CONFIG.europeRounds) {
+      try {
+        const espnRoundMap = espnRounds(espnEvents, fixtures)
+        writeFileSync(ROUNDS_OUT, JSON.stringify({ generatedAt: new Date().toISOString(), rounds: espnRoundMap }, null, 2) + '\n')
+        roundsNote = `${Object.keys(espnRoundMap).length} ESPN matches mapped to rounds`
+      } catch (err) {
+        roundsNote = `round mapping failed (${err.message}), kept the existing one`
+      }
     }
     const { matches, penalties } = await fetchPenalties(espnEvents)
     penaltiesById = new Map()
@@ -443,8 +470,7 @@ try {
 
   let historyNote
   try {
-    // Seasons fall inside one calendar year.
-    historyNote = await archiveHistory(String(new Date(events[0].deadline_time).getUTCFullYear()), new Set(rounds))
+    historyNote = await archiveHistory(seasonName(seasonYear), new Set(rounds))
   } catch (err) {
     historyNote = `history failed (${err.message}), kept the existing archive`
   }
@@ -510,7 +536,7 @@ try {
   "players": [\n${lines(players)}\n  ]
 }`
   writeFileSync(OUT, json + '\n')
-  console.log(`${LOG} ${players.length} players through round ${rounds.at(-1) ?? 0}; ${penaltyNote}; ${roundsNote ?? 'round mapping skipped'}; ${transfermarktNote}; squad ${mySquad ? `for round ${mySquad.round}` : 'unavailable'}; ${historyNote}${mismatched ? `; ${mismatched} with a season total that differs from their round sum (scoring corrections)` : ''}`)
+  console.log(`${LOG} ${players.length} players through round ${rounds.at(-1) ?? 0}; ${penaltyNote}${roundsNote ? `; ${roundsNote}` : ''}; ${transfermarktNote}; squad ${mySquad ? `for round ${mySquad.round}` : 'unavailable'}; ${historyNote}${mismatched ? `; ${mismatched} with a season total that differs from their round sum (scoring corrections)` : ''}`)
 } catch (err) {
   console.log(`${LOG} failed (${err.message}); keeping the existing ${OUT}`)
 }

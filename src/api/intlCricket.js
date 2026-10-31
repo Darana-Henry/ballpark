@@ -26,9 +26,10 @@ const SOURCE = 'wikipedia'
 // Bumped when stored games change in a way the tabs rely on (2: seriesKind
 // and seriesTeams; 3: tournaments keep every game, not just tracked nations';
 // 4: whole series from last year and this year, grouped by start year;
-// 5: bilateral tours with one non-Test side, e.g. South Africa in Namibia),
+// 5: bilateral tours with one non-Test side, e.g. South Africa in Namibia;
+// 6: a finished Test's endDate is the real last day, from its scorecard),
 // so an older stored copy is refreshed instead of shown.
-const SCHEMA = 5
+const SCHEMA = 6
 
 // Series starting in this many previous years are kept alongside this
 // year's, so the Series tab can show last year and tours that cross New
@@ -292,7 +293,10 @@ async function runRefresh() {
   const previous = existing?.source === SOURCE ? existing.games : []
   const year = new Date().getFullYear()
 
-  const { games: allGames, articlesFetched, newResults } = await fetchWikiCricketGames({ year, fromYear: year - YEARS_BACK, previous })
+  // After a schema change every tour article is read again (stored scores
+  // would otherwise skip them), so fields new to the schema get filled in.
+  const sameSchema = (existing?.schema ?? SCHEMA) === SCHEMA
+  const { games: allGames, articlesFetched, newResults } = await fetchWikiCricketGames({ year, fromYear: year - YEARS_BACK, previous: sameSchema ? previous : [] })
   const liveMatches = await getLiveMatches(allGames)
   // A finish CricAPI reported earlier is kept until Wikipedia posts the result.
   const previousById = new Map(previous.map(g => [g.id, g]))

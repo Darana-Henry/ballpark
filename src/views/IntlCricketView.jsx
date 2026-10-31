@@ -2,8 +2,9 @@ import { useState, useEffect, useMemo } from 'react'
 import { fetchIntlCricketGames, refreshIntlCricketGames, NATIONS, NATION_ABBR } from '../api/intlCricket'
 import { withSeriesInfo, seriesYear, seriesActiveInYear, teamCode } from '../utils/cricketMatch'
 import leaders from '../data/cricketLeaders.json'
-import { expandTestDays, isMatchFullyWatched } from '../utils/cricketDayRows'
+import { expandTestDays, isMatchFullyWatched, isNotPlayed } from '../utils/cricketDayRows'
 import GameCard from '../components/GameCard'
+import SeasonStatsPanel from '../components/SeasonStatsPanel'
 import BoundaryTracker from '../components/BoundaryTracker'
 import LoadingSpinner from '../components/LoadingSpinner'
 import EmptyState from '../components/EmptyState'
@@ -200,6 +201,7 @@ function formatStartDate(d) {
 
 function blockState(m, cricketWatchedIds) {
   if (m.status !== 'final') return 'upcoming'
+  if (isNotPlayed(m)) return 'notplayed'
   return isMatchFullyWatched(m, cricketWatchedIds) ? 'watched' : 'played'
 }
 
@@ -210,7 +212,7 @@ function summarizeSeries(name, matches, cricketWatchedIds, kind) {
     (blocks[m.matchType] ||= []).push({ match: m, state: blockState(m, cricketWatchedIds) })
   }
   const states = sorted.map(m => blockState(m, cricketWatchedIds))
-  const fullyWatched = states.every(st => st === 'watched')
+  const fullyWatched = states.every(st => st === 'watched' || st === 'notplayed')
   // seriesTeams includes associates (e.g. host Namibia); older stored games
   // lack it, so fall back to the sides seen in the tracked matches.
   const teams = sorted[0].seriesTeams ?? [...new Set(sorted.flatMap(m => [m.homeTeam.name, m.awayTeam.name]))]
@@ -234,13 +236,14 @@ function summarizeSeries(name, matches, cricketWatchedIds, kind) {
 const BLOCK_CLASS = {
   watched:  'bg-emerald-500',
   played:   'bg-slate-500',
+  notplayed: 'bg-amber-500',
   upcoming: 'border border-slate-600',
 }
-const BLOCK_WORD = { watched: 'watched', played: 'played, not watched', upcoming: 'to come' }
-const BLOCK_TEXT = { watched: 'text-emerald-400', played: 'text-slate-400', upcoming: 'text-slate-600' }
+const BLOCK_WORD = { watched: 'watched', played: 'played, not watched', notplayed: 'not played (rain, abandoned)', upcoming: 'to come' }
+const BLOCK_TEXT = { watched: 'text-emerald-400', played: 'text-slate-400', notplayed: 'text-amber-400', upcoming: 'text-slate-600' }
 
 function countStates(states) {
-  const n = { watched: 0, played: 0, upcoming: 0 }
+  const n = { watched: 0, played: 0, notplayed: 0, upcoming: 0 }
   for (const st of states) n[st]++
   return n
 }
@@ -253,17 +256,18 @@ function Battery({ states, showCounts = false }) {
   const pct = k => `${(n[k] / states.length) * 100}%`
   return (
     <div className="flex items-center justify-center gap-2"
-      title={`${states.length} matches · ${n.watched} watched · ${n.played} played, not watched · ${n.upcoming} to come`}>
+      title={`${states.length} matches · ${n.watched} watched · ${n.played} played, not watched · ${n.notplayed} not played · ${n.upcoming} to come`}>
       <div className="flex items-center shrink-0">
         <div className="flex h-3.5 w-[66px] rounded-[4px] border border-slate-500 p-[2px]">
           <span className="h-full bg-emerald-500 rounded-l-[2px]" style={{ width: pct('watched') }} />
+          <span className="h-full bg-amber-500" style={{ width: pct('notplayed') }} />
           <span className="h-full bg-slate-500" style={{ width: pct('played') }} />
         </div>
         <span className="w-[3px] h-1.5 rounded-r-sm bg-slate-500" />
       </div>
       {showCounts && (
         <span className="text-[11px] tabular-nums whitespace-nowrap">
-          {['watched', 'played', 'upcoming'].map((k, i) => (
+          {['watched', 'played', 'notplayed', 'upcoming'].map((k, i) => (
             <span key={k}>
               {i > 0 && <span className="text-slate-700"> · </span>}
               <span className={BLOCK_TEXT[k]}>{n[k]}</span>
@@ -299,7 +303,7 @@ function BlockLegend() {
       {Object.entries(BLOCK_WORD).map(([state, word]) => (
         <span key={state} className="flex items-center gap-1.5">
           <span className={`w-2.5 h-2.5 rounded-[3px] ${BLOCK_CLASS[state]}`} />
-          {word.replace(', not watched', '')}
+          {word.replace(', not watched', '').replace(' (rain, abandoned)', '')}
         </span>
       ))}
     </div>
@@ -506,15 +510,18 @@ function TournamentsTab({ games }) {
 function MatchesTab({ games, onTrack }) {
   const [kind, setKind] = useState('bilateral')
   const kindGames = useMemo(() => seriesActiveInYear(games).filter(g => seriesKindOf(g) === kind), [games, kind])
+  // The season record covers the whole year's cricket, every series type, with
+  // Tests as their day-rows since that's what gets ticked off.
+  const seasonGames = useMemo(() => expandTestDays(seriesActiveInYear(games)), [games])
   return (
     <div className="flex flex-col gap-4">
       <SubTabs tabs={SERIES_KINDS} active={kind} onChange={setKind} />
-      <MatchQueue key={kind} games={kindGames} onTrack={onTrack} />
+      <MatchQueue key={kind} games={kindGames} seasonGames={seasonGames} onTrack={onTrack} />
     </div>
   )
 }
 
-function MatchQueue({ games, onTrack }) {
+function MatchQueue({ games, seasonGames, onTrack }) {
   const { isWatched, isDismissed } = useWatched()
   const [format, setFormat] = useState('all')
   const [country, setCountry] = useState('')
@@ -528,7 +535,7 @@ function MatchQueue({ games, onTrack }) {
   const { upNext, unwatched } = useMemo(() => {
     const live = filtered.filter(g => g.status === 'live' && !isDismissed(g.id, LEAGUE))
     const finalUnwatched = filtered
-      .filter(g => g.status === 'final' && !isWatched(g.id, LEAGUE) && !isDismissed(g.id, LEAGUE))
+      .filter(g => g.status === 'final' && !(isWatched(g.id, LEAGUE) || isNotPlayed(g)) && !isDismissed(g.id, LEAGUE))
       .sort((a, b) => a.gameDate - b.gameDate)
     const scheduled = filtered
       .filter(g => g.status === 'scheduled' && !isDismissed(g.id, LEAGUE))
@@ -560,21 +567,16 @@ function MatchQueue({ games, onTrack }) {
           <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Up Next For You</p>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <TrackableGameCard game={upNext} isUpNext showDismissAction onTrack={onTrack} />
-            <div className="rounded-2xl p-5 flex flex-col gap-2"
-              style={{ background: 'rgba(6,182,212,0.05)', border: '1px solid rgba(6,182,212,0.15)' }}>
-              <p className="text-cyan-400 font-semibold text-sm">Cricket</p>
-              <p className="text-slate-500 text-xs leading-relaxed">
-                All formats — Tests, ODIs, and T20Is — between the 12 Full Member nations.
-                Tests are split into one row per day, so you can watch and check them off without spoilers.
-              </p>
-              <div className="flex flex-wrap gap-1.5 mt-1">
-                {NATIONS.map(n => (
-                  <span key={n} className="text-[10px] font-bold px-1.5 py-0.5 rounded text-slate-600 bg-slate-800/60">{NATION_ABBR[n]}</span>
-                ))}
-              </div>
-            </div>
+            <SeasonStatsPanel league="cricket" games={seasonGames} />
           </div>
         </>
+      )}
+
+      {/* All caught up: the season record still shows. */}
+      {!upNext && (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <SeasonStatsPanel league="cricket" games={seasonGames} />
+        </div>
       )}
 
       {unwatched.length > 0 && upNext && (
@@ -607,7 +609,7 @@ function WatchedTab({ games }) {
     [expanded, format, country]
   )
   const watchedFlat = useMemo(
-    () => filtered.filter(g => isWatched(g.id, LEAGUE)),
+    () => filtered.filter(g => isWatched(g.id, LEAGUE) || isNotPlayed(g)),
     [filtered, isWatched]
   )
 
@@ -722,7 +724,7 @@ function formatRange(start, end) {
 }
 
 function SeriesRow({ series, active, onClick }) {
-  const watched = series.states.filter(st => st === 'watched').length
+  const watched = series.states.filter(st => st === 'watched' || st === 'notplayed').length
   const played = series.states.filter(st => st !== 'upcoming').length
   return (
     <button
@@ -1115,9 +1117,9 @@ function LeadersTab() {
 // ─── Main ──────────────────────────────────────────────────────────────────────
 
 const TABS = [
+  { id: 'matches',   label: 'Matches'     },
   { id: 'series',    label: 'Series'      },
   { id: 'tournaments', label: 'Tournaments' },
-  { id: 'matches',   label: 'Matches'     },
   { id: 'watched',   label: 'Watched'     },
   { id: 'results',   label: 'Results Log' },
   { id: 'standings', label: 'Standings'   },
@@ -1142,7 +1144,7 @@ export default function IntlCricketView() {
   const [staleNotice, setStaleNotice] = useState(null)
   const [loading, setLoading]       = useState(true)
   const [error, setError]           = useState(null)
-  const [tab, setTab]               = useState('series')
+  const [tab, setTab]               = useState('matches')
   const [updatedAt, setUpdatedAt]   = useState(null)
   const [refreshing, setRefreshing] = useState(false)
   const [refreshSummary, setRefreshSummary] = useState(null)

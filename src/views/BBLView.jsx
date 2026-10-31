@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo } from 'react'
 import { fetchBBLGames, refreshBBLGames } from '../api/bbl'
+import { isNotPlayed } from '../utils/cricketDayRows'
 import GameCard from '../components/GameCard'
 import BoundaryTracker from '../components/BoundaryTracker'
 import SeasonStatsPanel from '../components/SeasonStatsPanel'
@@ -78,12 +79,12 @@ function QueueTab({ games, onTrack }) {
   const { upNext, nextScheduled, unwatched, watched } = useMemo(() => {
     const live = games.filter(g => g.status === 'live' && !isDismissed(g.id, 'bbl'))
     const finalUnwatched = games
-      .filter(g => g.status === 'final' && !isWatched(g.id, 'bbl') && !isDismissed(g.id, 'bbl'))
+      .filter(g => g.status === 'final' && !(isWatched(g.id, 'bbl') || isNotPlayed(g)) && !isDismissed(g.id, 'bbl'))
       .sort((a, b) => a.gameDate - b.gameDate)
     const scheduled = games
       .filter(g => g.status === 'scheduled' && !isDismissed(g.id, 'bbl'))
       .sort((a, b) => a.gameDate - b.gameDate)
-    const watchedList = games.filter(g => isWatched(g.id, 'bbl')).sort((a, b) => b.gameDate - a.gameDate)
+    const watchedList = games.filter(g => isWatched(g.id, 'bbl') || isNotPlayed(g)).sort((a, b) => b.gameDate - a.gameDate)
 
     const upNext = finalUnwatched[0] ?? live[0] ?? scheduled[0]
     const upNextId = upNext?.id
@@ -109,6 +110,13 @@ function QueueTab({ games, onTrack }) {
             <SeasonStatsPanel league="bbl" trackedTeamId={null} games={games} />
           </div>
         </>
+      )}
+
+      {/* Between seasons or all caught up: the season record still shows. */}
+      {!upNext && (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <SeasonStatsPanel league="bbl" trackedTeamId={null} games={games} />
+        </div>
       )}
       {unwatched.length > 0 && upNext && (
         <div className="flex items-center gap-3 my-2">
@@ -152,7 +160,7 @@ function WatchedTab({ games, onTrack }) {
   const { isWatched, isDismissed } = useWatched()
   const [showSkipped, setShowSkipped] = useState(false)
 
-  const watched = games.filter(g => isWatched(g.id, 'bbl')).sort((a, b) => b.gameDate - a.gameDate)
+  const watched = games.filter(g => isWatched(g.id, 'bbl') || isNotPlayed(g)).sort((a, b) => b.gameDate - a.gameDate)
   const skipped = games.filter(g => isDismissed(g.id, 'bbl')).sort((a, b) => b.gameDate - a.gameDate)
 
   if (watched.length === 0 && skipped.length === 0)

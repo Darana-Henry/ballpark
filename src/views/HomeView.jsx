@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo } from 'react'
 import { loadLeagueGames } from '../api/seasonSchedules'
 import { fetchBBLGames } from '../api/bbl'
 import { fetchIntlCricketGames } from '../api/intlCricket'
-import { expandTestDays } from '../utils/cricketDayRows'
+import { expandTestDays, isNotPlayed } from '../utils/cricketDayRows'
 import { seriesActiveInYear } from '../utils/cricketMatch'
 import GameCard from '../components/GameCard'
 import BoundaryTracker from '../components/BoundaryTracker'
@@ -70,7 +70,7 @@ const FETCH_ORDER  = ['mlb', 'nba', 'mls', 'nfl', 'epl']
 function getUpNext(games, league, isWatched, isDismissed) {
   const live = games.filter(g => g.status === 'live' && !isDismissed(g.id, league))
   const finalUnwatched = games
-    .filter(g => g.status === 'final' && !isWatched(g.id, league) && !isDismissed(g.id, league))
+    .filter(g => g.status === 'final' && !(isWatched(g.id, league) || isNotPlayed(g)) && !isDismissed(g.id, league))
     .sort((a, b) => a.gameDate - b.gameDate)
   const scheduled = games
     .filter(g => g.status === 'scheduled' && !isDismissed(g.id, league))

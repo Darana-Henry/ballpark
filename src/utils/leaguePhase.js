@@ -99,6 +99,41 @@ export const NORDIC_LEAGUE = {
   showPlayed: true,
 }
 
+// Serie A, standard places only, as for the Premier League: top 4 Champions
+// League, 5th Europa League, 6th Conference League, bottom 3 relegated. Serie
+// A breaks ties on head-to-head first, which isn't modelled; goal difference
+// stands in for it.
+export const SERIE_A = {
+  ...PREMIER_LEAGUE,
+  roundName: 'Matchday',
+}
+
+// The Bundesliga's 18 teams: as above, except 16th plays a relegation playoff
+// against the 2. Bundesliga's third-placed side and only 17th and 18th go down.
+export const BUNDESLIGA = {
+  roundName: 'Matchday',
+  zones: {
+    ucl:     { label: 'Champions League',   maxRank: 4,        ...ZONE_STYLES.green },
+    uel:     { label: 'Europa League',      maxRank: 5,        ...ZONE_STYLES.blue },
+    uecl:    { label: 'Conference League',  maxRank: 6,        ...ZONE_STYLES.amber },
+    mid:     { label: 'Mid-table',          maxRank: 15,       ...ZONE_STYLES.grey },
+    playoff: { label: 'Relegation playoff', maxRank: 16,       ...ZONE_STYLES.amber },
+    drop:    { label: 'Relegation',         maxRank: Infinity, ...ZONE_STYLES.red },
+  },
+  topMax: 6,
+  bottomFrom: 13,
+  cutLines: [4, 15],
+  mismatchGap: 11,
+  tagHints: {
+    top:      'Both sides in the top 6',
+    bottom:   'Both sides in the bottom 6',
+    bubble:   'Both sides within two places of the top-4 or relegation-playoff line',
+    mismatch: 'Eleven or more places apart',
+  },
+  awayGoalsTiebreak: false,
+  showPlayed: true,
+}
+
 export function zoneFor(rank, rules) {
   return Object.keys(rules.zones).find(id => rank <= rules.zones[id].maxRank)
 }
@@ -139,6 +174,28 @@ export function groupByRound(fixtures) {
   return [...byRound.entries()]
     .sort(([a], [b]) => a - b)
     .map(([round, group]) => finishMatchday(round, group))
+}
+
+// For leagues with no official round feed (Serie A, Bundesliga): every team
+// plays once per round, so each fixture, in kickoff order, goes in the
+// earliest round where neither side has a game yet. A postponed match played
+// weeks later still finds its original round empty for both teams and lands
+// there. Only a match brought forward ahead of its round can be misplaced,
+// which shifts that round's numbering, never the table itself.
+export function groupByTeamRounds(fixtures) {
+  const used = new Map()
+  const usedBy = id => {
+    if (!used.has(id)) used.set(id, new Set())
+    return used.get(id)
+  }
+  const withRound = [...fixtures].sort((a, b) => a.date - b.date).map(f => {
+    const home = usedBy(f.home.id), away = usedBy(f.away.id)
+    let round = 1
+    while (home.has(round) || away.has(round)) round++
+    home.add(round); away.add(round)
+    return { ...f, round }
+  })
+  return groupByRound(withRound)
 }
 
 // The matchday worth previewing: the first one still to be completed, or the

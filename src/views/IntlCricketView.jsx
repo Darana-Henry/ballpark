@@ -4,6 +4,7 @@ import { withSeriesInfo, seriesYear, seriesActiveInYear, teamCode } from '../uti
 import leaders from '../data/cricketLeaders.json'
 import { expandTestDays, isMatchFullyWatched, isNotPlayed } from '../utils/cricketDayRows'
 import GameCard from '../components/GameCard'
+import SeasonStatsPanel from '../components/SeasonStatsPanel'
 import BoundaryTracker from '../components/BoundaryTracker'
 import LoadingSpinner from '../components/LoadingSpinner'
 import EmptyState from '../components/EmptyState'
@@ -509,15 +510,18 @@ function TournamentsTab({ games }) {
 function MatchesTab({ games, onTrack }) {
   const [kind, setKind] = useState('bilateral')
   const kindGames = useMemo(() => seriesActiveInYear(games).filter(g => seriesKindOf(g) === kind), [games, kind])
+  // The season record covers the whole year's cricket, every series type, with
+  // Tests as their day-rows since that's what gets ticked off.
+  const seasonGames = useMemo(() => expandTestDays(seriesActiveInYear(games)), [games])
   return (
     <div className="flex flex-col gap-4">
       <SubTabs tabs={SERIES_KINDS} active={kind} onChange={setKind} />
-      <MatchQueue key={kind} games={kindGames} onTrack={onTrack} />
+      <MatchQueue key={kind} games={kindGames} seasonGames={seasonGames} onTrack={onTrack} />
     </div>
   )
 }
 
-function MatchQueue({ games, onTrack }) {
+function MatchQueue({ games, seasonGames, onTrack }) {
   const { isWatched, isDismissed } = useWatched()
   const [format, setFormat] = useState('all')
   const [country, setCountry] = useState('')
@@ -563,21 +567,16 @@ function MatchQueue({ games, onTrack }) {
           <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Up Next For You</p>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <TrackableGameCard game={upNext} isUpNext showDismissAction onTrack={onTrack} />
-            <div className="rounded-2xl p-5 flex flex-col gap-2"
-              style={{ background: 'rgba(6,182,212,0.05)', border: '1px solid rgba(6,182,212,0.15)' }}>
-              <p className="text-cyan-400 font-semibold text-sm">Cricket</p>
-              <p className="text-slate-500 text-xs leading-relaxed">
-                All formats — Tests, ODIs, and T20Is — between the 12 Full Member nations.
-                Tests are split into one row per day, so you can watch and check them off without spoilers.
-              </p>
-              <div className="flex flex-wrap gap-1.5 mt-1">
-                {NATIONS.map(n => (
-                  <span key={n} className="text-[10px] font-bold px-1.5 py-0.5 rounded text-slate-600 bg-slate-800/60">{NATION_ABBR[n]}</span>
-                ))}
-              </div>
-            </div>
+            <SeasonStatsPanel league="cricket" games={seasonGames} />
           </div>
         </>
+      )}
+
+      {/* All caught up: the season record still shows. */}
+      {!upNext && (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <SeasonStatsPanel league="cricket" games={seasonGames} />
+        </div>
       )}
 
       {unwatched.length > 0 && upNext && (
@@ -1118,9 +1117,9 @@ function LeadersTab() {
 // ─── Main ──────────────────────────────────────────────────────────────────────
 
 const TABS = [
+  { id: 'matches',   label: 'Matches'     },
   { id: 'series',    label: 'Series'      },
   { id: 'tournaments', label: 'Tournaments' },
-  { id: 'matches',   label: 'Matches'     },
   { id: 'watched',   label: 'Watched'     },
   { id: 'results',   label: 'Results Log' },
   { id: 'standings', label: 'Standings'   },
@@ -1145,7 +1144,7 @@ export default function IntlCricketView() {
   const [staleNotice, setStaleNotice] = useState(null)
   const [loading, setLoading]       = useState(true)
   const [error, setError]           = useState(null)
-  const [tab, setTab]               = useState('series')
+  const [tab, setTab]               = useState('matches')
   const [updatedAt, setUpdatedAt]   = useState(null)
   const [refreshing, setRefreshing] = useState(false)
   const [refreshSummary, setRefreshSummary] = useState(null)

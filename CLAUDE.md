@@ -115,7 +115,7 @@ Sources: Premier League, Eliteserien and Allsvenskan fantasy expose official dea
 
 ## Europe Tab: Premier League Gameweeks
 
-ESPN has no gameweek field, so `scripts/fetch-pl-gameweeks.mjs` (`npm run pl:gameweeks`, in the deploy workflow) maps every ESPN Premier League match id to its official FPL gameweek in `src/data/plGameweeks.json` (committed as the fallback). Teams are paired across the two sources by their sets of kickoff times, not by name. Per-competition differences (zones, tag thresholds, tiebreakers, round wording) live in rules objects in `src/utils/leaguePhase.js`.
+ESPN has no gameweek field, so `scripts/fetch-pl-gameweeks.mjs` (`npm run pl:gameweeks`, in the deploy workflow) maps every ESPN Premier League match id to its official FPL gameweek in `src/data/plGameweeks.json` (committed as the fallback). Teams are paired across the two sources by their sets of kickoff times, not by name. Serie A and the Bundesliga have no official round feed, so `groupByTeamRounds` in `src/utils/leaguePhase.js` puts each fixture in the earliest round neither team has played (a postponed match keeps its original round). Per-competition differences (zones, tag thresholds, tiebreakers, round wording) live in rules objects in `src/utils/leaguePhase.js`.
 
 ## Fantasy League Tabs (Premier League, Eliteserien, Allsvenskan)
 
@@ -135,7 +135,7 @@ The games publish no difficulty ratings, so `src/utils/fantasyFixtures.js` rates
 
 `src/data/<league>History.json` is the user's season archive and the only data that is **not** regenerated from scratch: past seasons' totals/final ranks come from the game's `history.past`, but round-by-round data only exists for the current entry id, so each season's finished rounds are appended under its year and never dropped (Eliteserien 2025 rounds 1–27 were imported from the user's sheet; Allsvenskan has rounds from 2026 on). The script refuses to write it when the entry's past seasons don't match the archive (an id left over from last season belongs to someone else), and only rewrites it when a round finishes. The deploy workflow's last step commits the archives back to `main` (hence `contents: write`).
 
-For the Nordic leagues the script also writes `src/data/<league>Rounds.json` (ESPN match id → fantasy round, teams paired by kickoff times via `scripts/lib/matchTeamsByKickoff.mjs`, shared with the PL script) for the Europe tab's Eliteserien and Allsvenskan views (the Premier League's comes from `scripts/fetch-pl-gameweeks.mjs`). Those competitions are `spoilerFree`: they're followed for fantasy, not watched, so their tables and scores are never locked and they have no season battery.
+For the Nordic leagues the script also writes `src/data/<league>Rounds.json` (ESPN match id → fantasy round, teams paired by kickoff times via `scripts/lib/matchTeamsByKickoff.mjs`, shared with the PL script) for the Europe tab's Eliteserien and Allsvenskan views (the Premier League's comes from `scripts/fetch-pl-gameweeks.mjs`). Like every Europe competition they're watched round by round: tables and scores lock until the previous round is marked watched, and they have a season battery (`spoilerFree: true` on a competition would turn that off).
 
 ## Key Commands
 

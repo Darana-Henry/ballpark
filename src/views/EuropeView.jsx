@@ -618,7 +618,7 @@ export default function EuropeView() {
         <p className="text-sm text-slate-500 mt-0.5">Round-by-round preview · who's playing whom, and where they stand</p>
       </div>
 
-      <div className="flex mb-6 rounded-2xl p-1 overflow-x-auto gap-0.5 scrollbar-hide" style={{ background: 'rgba(255,255,255,0.05)', backdropFilter: 'blur(16px)', WebkitBackdropFilter: 'blur(16px)', border: '1px solid rgba(255,255,255,0.08)' }}>
+      <div className="flex flex-wrap mb-6 rounded-2xl p-1 gap-0.5" style={{ background: 'rgba(255,255,255,0.05)', backdropFilter: 'blur(16px)', WebkitBackdropFilter: 'blur(16px)', border: '1px solid rgba(255,255,255,0.08)' }}>
         {EUROPE_COMPETITIONS.map(c => (
           <button key={c.id} onClick={() => setCompetitionId(c.id)}
             className={`relative flex-1 px-2 sm:px-4 py-2 rounded-xl text-sm font-medium transition-all whitespace-nowrap ${competitionId === c.id ? 'text-slate-100' : 'text-slate-500 hover:text-slate-300'}`}

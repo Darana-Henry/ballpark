@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo } from 'react'
 import { useWatched } from '../contexts/WatchedContext'
 import { LEAGUE_MAP } from '../constants/leagues'
+import { isNotPlayed } from '../utils/cricketDayRows'
 
 // ─── Glass style ──────────────────────────────────────────────────────────────
 
@@ -15,7 +16,7 @@ const GLASS = {
 // Soccer has draws; basketball/baseball/football do not
 const HAS_DRAW = { mls: true, epl: true, bbl: true }
 
-const LEAGUE_NAME = { mlb: 'MLB', nba: 'NBA', nfl: 'NFL', mls: 'MLS', epl: 'EPL', bbl: 'BBL' }
+const LEAGUE_NAME = { mlb: 'MLB', nba: 'NBA', nfl: 'NFL', mls: 'MLS', epl: 'EPL', bbl: 'BBL', cricket: 'Cricket' }
 
 // ─── Player leaders fetchers per league ───────────────────────────────────────
 
@@ -239,14 +240,17 @@ export default function SeasonStatsPanel({ league, trackedTeamId = null, games =
     const played = games.filter(g => g.status === 'final')
     const playedIds = new Set(played.map(g => String(g.id)))
 
-    const watchedRecords = Object.values(watchedGames).filter(
-      g => g.league === league && g.watched && seasonGameIds.has(String(g.gameId))
-    )
+    // Seen = ticked off, or a washed-out match / unplayed Test day, which
+    // counts as seen without a tick (see isNotPlayed).
+    const seen = new Set(Object.values(watchedGames)
+      .filter(g => g.league === league && g.watched && seasonGameIds.has(String(g.gameId)))
+      .map(g => String(g.gameId)))
+    for (const g of games) if (isNotPlayed(g)) seen.add(String(g.id))
     return {
       total: games.length,
       played: played.length,
-      watched: watchedRecords.length,
-      watchedPlayed: watchedRecords.filter(g => playedIds.has(String(g.gameId))).length,
+      watched: seen.size,
+      watchedPlayed: [...seen].filter(id => playedIds.has(id)).length,
     }
   }, [games, league, watchedGames, seasonGameIds])
 

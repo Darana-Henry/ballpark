@@ -69,6 +69,13 @@ function QueueTab({ games }) {
         </>
       )}
 
+      {/* Between seasons or all caught up: the season record still shows. */}
+      {!upNext && (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <SeasonStatsPanel league="epl" trackedTeamId={MAN_UNITED_ID} games={games} />
+        </div>
+      )}
+
       {unwatched.length > 0 && upNext && (
         <div className="flex items-center gap-3 my-2">
           <div className="flex-1 border-t border-white/[0.07]" />

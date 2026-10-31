@@ -1,5 +1,5 @@
 import { fetchScoreboardMonths } from './espnDates'
-import { UEFA_LEAGUE_PHASE, PREMIER_LEAGUE, NORDIC_LEAGUE, groupMatchdays, groupByRound } from '../utils/leaguePhase'
+import { UEFA_LEAGUE_PHASE, PREMIER_LEAGUE, NORDIC_LEAGUE, SERIE_A, BUNDESLIGA, groupMatchdays, groupByRound, groupByTeamRounds } from '../utils/leaguePhase'
 import plGameweeks from '../data/plGameweeks.json'
 import eliteserienRounds from '../data/eliteserienRounds.json'
 import allsvenskanRounds from '../data/allsvenskanRounds.json'
@@ -11,15 +11,20 @@ import allsvenskanRounds from '../data/allsvenskanRounds.json'
 //
 // Domestic leagues carry `roundOf`, their ESPN match id → official fantasy
 // round map. Eliteserien and Allsvenskan run March–December inside one
-// calendar year (`calendarYear`), and are `spoilerFree`: they're followed for
-// fantasy rather than watched, so the table and scores are never hidden.
+// calendar year (`calendarYear`). Serie A and the Bundesliga have no official
+// round feed, so `roundsFromTeams` derives their matchdays from the fixtures
+// (groupByTeamRounds). Every competition here is watched round by round: its
+// table and scores stay locked until the round before is marked watched.
+// (`spoilerFree: true` would show everything and drop the watch battery.)
 export const EUROPE_COMPETITIONS = [
   { id: 'ucl',  slug: 'uefa.champions',   name: 'Champions League',  short: 'UCL',  accentColor: '#6366f1', sortByRank: false, rules: UEFA_LEAGUE_PHASE, leaguePhase: true },
   { id: 'uel',  slug: 'uefa.europa',      name: 'Europa League',     short: 'UEL',  accentColor: '#f97316', sortByRank: true,  rules: UEFA_LEAGUE_PHASE, leaguePhase: true },
   { id: 'uecl', slug: 'uefa.europa.conf', name: 'Conference League', short: 'UECL', accentColor: '#22c55e', sortByRank: true,  rules: UEFA_LEAGUE_PHASE, leaguePhase: true },
   { id: 'pl',   slug: 'eng.1',            name: 'Premier League',    short: 'PL',   accentColor: '#a855f7', sortByRank: true,  rules: PREMIER_LEAGUE,    leaguePhase: false, roundOf: plGameweeks.gameweeks },
-  { id: 'eli',  slug: 'nor.1',            name: 'Eliteserien',       short: 'ELI',  accentColor: '#ef4444', sortByRank: true,  rules: NORDIC_LEAGUE,     leaguePhase: false, roundOf: eliteserienRounds.rounds, calendarYear: true, spoilerFree: true },
-  { id: 'all',  slug: 'swe.1',            name: 'Allsvenskan',       short: 'ALL',  accentColor: '#facc15', sortByRank: true,  rules: NORDIC_LEAGUE,     leaguePhase: false, roundOf: allsvenskanRounds.rounds, calendarYear: true, spoilerFree: true },
+  { id: 'sa',   slug: 'ita.1',            name: 'Serie A',           short: 'SA',   accentColor: '#38bdf8', sortByRank: true,  rules: SERIE_A,           leaguePhase: false, roundsFromTeams: true },
+  { id: 'bl',   slug: 'ger.1',            name: 'Bundesliga',        short: 'BL',   accentColor: '#fb7185', sortByRank: true,  rules: BUNDESLIGA,        leaguePhase: false, roundsFromTeams: true },
+  { id: 'eli',  slug: 'nor.1',            name: 'Eliteserien',       short: 'ELI',  accentColor: '#ef4444', sortByRank: true,  rules: NORDIC_LEAGUE,     leaguePhase: false, roundOf: eliteserienRounds.rounds, calendarYear: true },
+  { id: 'all',  slug: 'swe.1',            name: 'Allsvenskan',       short: 'ALL',  accentColor: '#facc15', sortByRank: true,  rules: NORDIC_LEAGUE,     leaguePhase: false, roundOf: allsvenskanRounds.rounds, calendarYear: true },
 ]
 
 // European seasons start in July (qualifiers); season 2026 = 2026-27.
@@ -74,8 +79,8 @@ const cache = new Map()
 
 // One competition's season as rounds: the league phase for the UEFA
 // competitions (September–January; the sweep starts in August to be safe),
-// gameweeks for the Premier League (August–May), Eliteserien and Allsvenskan
-// (March–December).
+// gameweeks for the Premier League (August–May), matchdays for Serie A and the
+// Bundesliga (August–May), Eliteserien and Allsvenskan (March–December).
 export function loadMatchdays(competition) {
   if (!cache.has(competition.id)) {
     const season = getSeason()
@@ -89,7 +94,9 @@ export function loadMatchdays(competition) {
           .filter(e => !competition.leaguePhase || e.season?.slug === 'league-phase')
           .map(normalizeFixture)
           .filter(Boolean)
-        return competition.leaguePhase ? groupMatchdays(fixtures) : leagueMatchdays(fixtures, competition.roundOf)
+        if (competition.leaguePhase) return groupMatchdays(fixtures)
+        if (competition.roundsFromTeams) return groupByTeamRounds(fixtures)
+        return leagueMatchdays(fixtures, competition.roundOf)
       })
     // Don't pin a failed sweep for the rest of the session.
     promise.catch(() => cache.delete(competition.id))

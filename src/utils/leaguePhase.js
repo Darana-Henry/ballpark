@@ -72,6 +72,33 @@ export const PREMIER_LEAGUE = {
   showPlayed: true,
 }
 
+// Eliteserien and Allsvenskan, standard places only, as for the Premier
+// League: the champions go to Champions League qualifying, 2nd and 3rd to
+// Conference League qualifying, 14th to a relegation playoff against a
+// second-tier side (1. divisjon, Superettan).
+export const NORDIC_LEAGUE = {
+  roundName: 'Gameweek',
+  zones: {
+    champ:   { label: 'Champions League qualifying',  maxRank: 1,        ...ZONE_STYLES.green },
+    uecl:    { label: 'Conference League qualifying', maxRank: 3,        ...ZONE_STYLES.blue },
+    mid:     { label: 'Mid-table',                    maxRank: 13,       ...ZONE_STYLES.grey },
+    playoff: { label: 'Relegation playoff',           maxRank: 14,       ...ZONE_STYLES.amber },
+    drop:    { label: 'Relegation',                   maxRank: Infinity, ...ZONE_STYLES.red },
+  },
+  topMax: 4,
+  bottomFrom: 13,
+  cutLines: [3, 13],
+  mismatchGap: 9,
+  tagHints: {
+    top:      'Both sides in the top 4',
+    bottom:   'Both sides in the bottom 4',
+    bubble:   'Both sides within two places of the European or relegation-playoff line',
+    mismatch: 'Nine or more places apart',
+  },
+  awayGoalsTiebreak: false,
+  showPlayed: true,
+}
+
 export function zoneFor(rank, rules) {
   return Object.keys(rules.zones).find(id => rank <= rules.zones[id].maxRank)
 }

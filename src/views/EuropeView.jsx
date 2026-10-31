@@ -527,12 +527,12 @@ function MatchdayPreview({ competition, watchedThrough, setWatchedThrough }) {
             </button>
           </div>
 
-          <ProgressBar
+          {!competition.spoilerFree && <ProgressBar
             matchday={matchday}
             watchedThrough={watchedThrough}
             onMark={mark}
             onUnmark={() => setWatchedThrough(matchday.number - 1)}
-          />
+          />}
 
           {locked && (
             <SpoilerGuard
@@ -626,15 +626,15 @@ export default function EuropeView() {
             <span className="inline-flex items-center justify-center gap-2">
               <span className="hidden sm:inline">{c.name}</span>
               <span className="sm:hidden">{c.short}</span>
-              {/* Four tabs don't fit a phone with batteries; the sidebar has them */}
-              <span className="hidden sm:inline-flex">
+              {/* The tabs don't fit a phone with batteries; the sidebar has them */}
+              {!c.spoilerFree && <span className="hidden sm:inline-flex">
                 <SeasonBattery
                   watched={byCompetition[c.id]?.watched ?? 0}
                   total={byCompetition[c.id]?.total ?? 0}
                   accentColor={c.accentColor}
                   title={byCompetition[c.id] ? `${byCompetition[c.id].watched} of ${byCompetition[c.id].total} ${c.name} games this season watched` : undefined}
                 />
-              </span>
+              </span>}
             </span>
             {competitionId === c.id && <span className="absolute bottom-1.5 left-1/2 -translate-x-1/2 w-6 h-0.5 rounded-full" style={{ background: c.accentColor }} />}
           </button>
@@ -644,7 +644,8 @@ export default function EuropeView() {
       <MatchdayPreview
         key={competition.id}
         competition={competition}
-        watchedThrough={watchedThrough(competition.id, season)}
+        // Everything counts as watched, so nothing locks and every score shows.
+        watchedThrough={competition.spoilerFree ? Infinity : watchedThrough(competition.id, season)}
         setWatchedThrough={matchday => setWatchedThrough(competition.id, season, matchday)}
       />
     </div>

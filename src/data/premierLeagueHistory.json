@@ -1,0 +1,29 @@
+{
+  "generatedAt": "2026-10-30T18:39:43.805Z",
+  "note": "Past seasons from the game's history (totals and final ranks); each season's finished rounds are archived by scripts/fetch-fantasy-players.mjs as they're played.",
+  "seasons": [
+    {"season":"2016/17","points":2239,"rank":36208},
+    {"season":"2017/18","points":2184,"rank":161614},
+    {"season":"2018/19","points":2314,"rank":45387},
+    {"season":"2019/20","points":2290,"rank":60849},
+    {"season":"2020/21","points":2276,"rank":467530},
+    {"season":"2021/22","points":2476,"rank":143380},
+    {"season":"2022/23","points":2521,"rank":114360},
+    {"season":"2023/24","points":2427,"rank":254991},
+    {"season":"2024/25","points":2472,"rank":206219},
+    {"season":"2025/26","points":2263,"rank":366367},
+    {"season":"2026/27","points":533,"rank":781280,"live":true}
+  ],
+  "rounds": {
+    "2026/27": [
+      {"round":1,"points":57,"total":57,"rank":2434400,"overallRank":2434397,"hits":0,"bench":6},
+      {"round":2,"points":125,"total":182,"rank":76874,"overallRank":166222,"hits":0,"bench":0},
+      {"round":3,"points":56,"total":238,"rank":3401121,"overallRank":116139,"hits":0,"bench":17},
+      {"round":4,"points":65,"total":303,"rank":6564268,"overallRank":609552,"hits":0,"bench":2},
+      {"round":5,"points":34,"total":337,"rank":9641594,"overallRank":1396886,"hits":0,"bench":4},
+      {"round":6,"points":57,"total":394,"rank":5756448,"overallRank":1924130,"hits":0,"bench":6},
+      {"round":7,"points":76,"total":470,"rank":1109863,"overallRank":1418332,"hits":0,"bench":4},
+      {"round":8,"points":63,"total":533,"rank":826307,"overallRank":781280,"hits":0,"bench":5}
+    ]
+  }
+}

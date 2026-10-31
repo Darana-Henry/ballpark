@@ -225,6 +225,27 @@ export async function fetchNBAStandings() {
   return { divisions, eastSeeds: computeSeeds('East'), westSeeds: computeSeeds('West') }
 }
 
+// Every NBA Cup game in a season, league-wide: group play from late October
+// through November, then the December knockouts. ESPN marks them only by the
+// game note ("NBA Cup - Group Play", "NBA Cup - Quarterfinals", "NBA Cup
+// Championship") and never names the group, so groups are worked out from who
+// plays whom (see src/utils/nbaCup.js). Scheduled games are kept too: the
+// groups are known as soon as the schedule is.
+export async function fetchNBACupGames(season = getNBASeason()) {
+  const year = season - 1
+  const events = await fetchScoreboardMonths('basketball/nba', `${year}1001`, `${year}1231`)
+  const isCup = e => (e.competitions?.[0]?.notes ?? []).some(n => /^NBA Cup/i.test(n.headline ?? ''))
+  return events
+    .filter(isCup)
+    .map(e => normalizeEvent(e, 'nba'))
+    .filter(Boolean)
+    .map(g => ({
+      ...g,
+      homeTeam: { ...g.homeTeam, conference: NBA_DIV_CONF[NBA_DIV_MAP[g.homeTeam.abbreviation]] ?? null },
+      awayTeam: { ...g.awayTeam, conference: NBA_DIV_CONF[NBA_DIV_MAP[g.awayTeam.abbreviation]] ?? null },
+    }))
+}
+
 const NBA_CACHE_KEY = 'ballpark_nba_boxscores_v1'
 const readNBACache = () => { try { return JSON.parse(localStorage.getItem(NBA_CACHE_KEY) || '{}') } catch { return {} } }
 const writeNBACache = c => { try { localStorage.setItem(NBA_CACHE_KEY, JSON.stringify(c)) } catch {} }

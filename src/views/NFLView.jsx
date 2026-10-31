@@ -1,12 +1,15 @@
 import { useState, useEffect, useMemo, useCallback } from 'react'
 import { fetchNFLGames, fetchNFLStatsFromWatchedGames } from '../api/espn'
 import GameCard from '../components/GameCard'
+import CompetitionFilter from '../components/CompetitionFilter'
+import { competitionOf, filterByCompetition } from '../utils/competitions'
 import SeasonStatsPanel from '../components/SeasonStatsPanel'
 import SeasonFilter from '../components/SeasonFilter'
 import LoadingSpinner from '../components/LoadingSpinner'
 import EmptyState from '../components/EmptyState'
 import { useWatched } from '../contexts/WatchedContext'
-import { getSeasonYear, getAvailableSeasons } from '../utils/season'
+import { getSeasonYear } from '../utils/season'
+import { useSeasonFilter } from '../hooks/useSeasonFilter'
 import { NFL_TEAMS, NFL_DIVISION_ORDER, nflLogo } from '../constants/nflTeams'
 import { getNFLPlayoffRound, buildWeekOptions, defaultWeekId, matchesWeek } from '../utils/nflWeeks'
 import { fetchNFLTeamRanks } from '../api/nfl'
@@ -16,6 +19,7 @@ import NFLWeekFilter from '../components/NFLWeekFilter'
 import NFLPerformanceHistory from '../components/NFLPerformanceHistory'
 import { buildFormByTeam } from '../utils/teamForm'
 import { getNFLSeason, fetchNFLLeagueLeaders, playersToWatch } from '../api/nfl'
+import SeasonCountdown from '../components/SeasonCountdown'
 
 
 
@@ -157,11 +161,6 @@ function NFLPlayoffBracket({ games, isProcessed }) {
 
 // No single followed NFL team, so the win/loss color is anchored to the
 // home team of each individual matchup instead of a tracked franchise.
-function getResult(game) {
-  if (game.homeScore === null || game.awayScore === null) return null
-  return game.homeScore > game.awayScore ? 'win' : game.homeScore < game.awayScore ? 'loss' : null
-}
-
 // ─── My Queue ─────────────────────────────────────────────────────────────────
 
 function QueueTab({ games, ranks, form, watchList }) {
@@ -253,7 +252,7 @@ function QueueTab({ games, ranks, form, watchList }) {
           </button>
           {showWatched && (
             <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-3 mt-2">
-              {watched.map(g => <GameCard ranks={ranks} form={form} playersToWatch={watchList} key={g.id} game={g} resultColor={getResult(g)} />)}
+              {watched.map(g => <GameCard ranks={ranks} form={form} playersToWatch={watchList} key={g.id} game={g} />)}
             </div>
           )}
         </div>
@@ -264,31 +263,17 @@ function QueueTab({ games, ranks, form, watchList }) {
 
 // ─── All Games ────────────────────────────────────────────────────────────────
 
-const GAME_FILTERS = [
-  { id: 'all',      label: 'All'            },
-  { id: 'playoffs', label: 'Playoffs'       },
-  { id: 'regular',  label: 'Regular Season' },
-]
 
 function AllGamesTab({ games, ranks, form, watchList }) {
-  const [filter, setFilter] = useState('all')
-  const filtered = useMemo(() => {
-    const sorted = [...games].sort((a, b) => b.gameDate - a.gameDate)
-    if (filter === 'playoffs') return sorted.filter(g => g.gameType !== 'Regular Season')
-    if (filter === 'regular')  return sorted.filter(g => g.gameType === 'Regular Season')
-    return sorted
-  }, [games, filter])
+  const [competition, setCompetition] = useState('all')
+  const filtered = useMemo(
+    () => filterByCompetition([...games].sort((a, b) => b.gameDate - a.gameDate), competition),
+    [games, competition]
+  )
 
   return (
     <>
-      <div className="flex gap-1 mb-4 bg-slate-900 rounded-xl p-1 w-fit">
-        {GAME_FILTERS.map(f => (
-          <button key={f.id} onClick={() => setFilter(f.id)}
-            className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${filter === f.id ? 'bg-slate-700 text-slate-100' : 'text-slate-500 hover:text-slate-300'}`}>
-            {f.label}
-          </button>
-        ))}
-      </div>
+      <CompetitionFilter games={games} league="nfl" value={competition} onChange={setCompetition} />
       <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-3">
         {filtered.map(g => <GameCard ranks={ranks} form={form} playersToWatch={watchList} key={g.id} game={g} />)}
       </div>
@@ -301,16 +286,18 @@ function AllGamesTab({ games, ranks, form, watchList }) {
 function WatchedTab({ games, ranks, form, watchList }) {
   const { isWatched, isDismissed } = useWatched()
   const [showSkipped, setShowSkipped] = useState(false)
+  const [competition, setCompetition] = useState('all')
+  const inCompetition = filterByCompetition(games, competition)
 
-  const watched = games
+  const watched = inCompetition
     .filter(g => isWatched(g.id, 'nfl'))
     .sort((a, b) => b.gameDate - a.gameDate)
 
-  const skipped = games
+  const skipped = inCompetition
     .filter(g => isDismissed(g.id, 'nfl'))
     .sort((a, b) => b.gameDate - a.gameDate)
 
-  if (watched.length === 0 && skipped.length === 0) {
+  if (competition === 'all' && watched.length === 0 && skipped.length === 0) {
     return (
       <EmptyState emoji="🏈" title="No watched games yet"
         message="Mark games as watched from My Queue — they'll appear here so you can review or unwatch them." />
@@ -319,6 +306,7 @@ function WatchedTab({ games, ranks, form, watchList }) {
 
   return (
     <div className="flex flex-col gap-3">
+      <CompetitionFilter games={games.filter(g => isWatched(g.id, 'nfl'))} league="nfl" value={competition} onChange={setCompetition} className="mb-1" />
       {watched.length > 0 && (
         <>
           <div className="flex items-center gap-3 mb-1">
@@ -329,7 +317,7 @@ function WatchedTab({ games, ranks, form, watchList }) {
             <p className="text-xs text-slate-600">scores visible · toggle to unwatch</p>
           </div>
           <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-3">
-            {watched.map(g => <GameCard ranks={ranks} form={form} playersToWatch={watchList} key={g.id} game={g} resultColor={getResult(g)} />)}
+            {watched.map(g => <GameCard ranks={ranks} form={form} playersToWatch={watchList} key={g.id} game={g} />)}
           </div>
         </>
       )}
@@ -427,12 +415,12 @@ function DivisionTable({ divName, teams, records }) {
   )
 }
 
-function StandingsTab() {
+function StandingsTab({ games }) {
   const { watchedGames } = useWatched()
-  const [seasonFilter, setSeasonFilter] = useState('all')
-
-  const availableSeasons = useMemo(
-    () => getAvailableSeasons(watchedGames, 'nfl'),
+  const { seasonFilter, setSeasonFilter, availableSeasons } = useSeasonFilter('nfl', games)
+  const [competition, setCompetition] = useState('all')
+  const watchedRecords = useMemo(
+    () => Object.values(watchedGames).filter(g => g.league === 'nfl' && g.watched),
     [watchedGames]
   )
 
@@ -442,6 +430,7 @@ function StandingsTab() {
       if (g.league !== 'nfl' || !g.watched) return
       if (g.homeScore === null || g.awayScore === null) return
       if (seasonFilter !== 'all' && getSeasonYear('nfl', g.gameDate) !== seasonFilter) return
+      if (competition !== 'all' && competitionOf(g) !== competition) return
       const home = g.homeTeam
       const away = g.awayTeam
       if (!map[home]) map[home] = { w: 0, l: 0, t: 0 }
@@ -451,7 +440,7 @@ function StandingsTab() {
       else                                { map[home].t++; map[away].t++ }
     })
     return map
-  }, [watchedGames, seasonFilter])
+  }, [watchedGames, seasonFilter, competition])
 
   const totalWatched = Object.values(watchedGames).filter(g => g.league === 'nfl' && g.watched).length
 
@@ -471,6 +460,7 @@ function StandingsTab() {
     <div className="flex flex-col gap-8">
       <div className="flex flex-col gap-3">
         <SeasonFilter league="nfl" seasons={availableSeasons} selected={seasonFilter} onChange={setSeasonFilter} />
+        <CompetitionFilter games={watchedRecords} league="nfl" value={competition} onChange={setCompetition} className="" />
         <p className="text-xs text-slate-500">
           Computed from <span className="text-slate-300 font-medium">{totalWatched}</span> watched game{totalWatched !== 1 ? 's' : ''} · updates as you mark games
         </p>
@@ -529,22 +519,18 @@ function NFLLeaderboard({ title, players, valueKey, unit = '' }) {
   )
 }
 
-function StatsTab() {
+function StatsTab({ games }) {
   const { watchedGames } = useWatched()
   const [stats, setStats]     = useState(null)
   const [loading, setLoading] = useState(false)
   const [error, setError]     = useState(null)
-  const [seasonFilter, setSeasonFilter] = useState('all')
+  const { seasonFilter, setSeasonFilter, availableSeasons } = useSeasonFilter('nfl', games)
 
   const nflWatched = useMemo(
     () => Object.values(watchedGames).filter(g => g.league === 'nfl' && g.watched),
     [watchedGames]
   )
 
-  const availableSeasons = useMemo(
-    () => getAvailableSeasons(watchedGames, 'nfl'),
-    [watchedGames]
-  )
 
   const filteredWatched = useMemo(
     () => seasonFilter === 'all'
@@ -693,6 +679,8 @@ export default function NFLView() {
           <p className="text-sm text-slate-500 mt-0.5">All teams · regular season + all playoffs</p>
         </div>
       </div>
+
+      <SeasonCountdown league="nfl" games={games} loading={loading} />
 
       <div className="flex mb-6 rounded-2xl p-1 overflow-x-auto gap-0.5" style={{ background: 'rgba(255,255,255,0.05)', backdropFilter: 'blur(16px)', WebkitBackdropFilter: 'blur(16px)', border: '1px solid rgba(255,255,255,0.08)' }}>
         {TABS.map(t => (

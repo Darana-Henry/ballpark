@@ -1,10 +1,13 @@
 import { useState, useEffect, useMemo } from 'react'
 import { fetchEPLGames, fetchEPLStandings, fetchEPLStats, MAN_UNITED_ID } from '../api/epl'
 import GameCard from '../components/GameCard'
+import CompetitionFilter from '../components/CompetitionFilter'
+import { filterByCompetition } from '../utils/competitions'
 import SeasonStatsPanel from '../components/SeasonStatsPanel'
 import LoadingSpinner from '../components/LoadingSpinner'
 import EmptyState from '../components/EmptyState'
 import { useWatched } from '../contexts/WatchedContext'
+import SeasonCountdown from '../components/SeasonCountdown'
 
 // isWatched guarded internally — never derive a result for a game the user
 // hasn't watched, even if a future caller forgets to pre-filter.
@@ -104,33 +107,15 @@ function QueueTab({ games }) {
 // ─── All Games ────────────────────────────────────────────────────────────────
 
 function AllGamesTab({ games }) {
-  const [filter, setFilter] = useState('all')
-
-  const competitionFilters = useMemo(() => {
-    const seen  = new Set()
-    const types = games
-      .map(g => g.gameType)
-      .filter(t => t && !seen.has(t) && seen.add(t))
-    return [{ id: 'all', label: 'All' }, ...types.map(t => ({ id: t, label: t }))]
-  }, [games])
-
-  const filtered = useMemo(() => {
-    const sorted = [...games].sort((a, b) => b.gameDate - a.gameDate)
-    if (filter !== 'all') return sorted.filter(g => g.gameType === filter)
-    return sorted
-  }, [games, filter])
+  const [competition, setCompetition] = useState('all')
+  const filtered = useMemo(
+    () => filterByCompetition([...games].sort((a, b) => b.gameDate - a.gameDate), competition),
+    [games, competition]
+  )
 
   return (
     <>
-      <div className="flex gap-1 mb-4 rounded-xl p-1 flex-wrap" style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.08)' }}>
-        {competitionFilters.map(f => (
-          <button key={f.id} onClick={() => setFilter(f.id)}
-            className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${filter === f.id ? 'text-slate-100' : 'text-slate-500 hover:text-slate-300'}`}
-            style={filter === f.id ? { background: 'rgba(255,255,255,0.1)' } : {}}>
-            {f.label}
-          </button>
-        ))}
-      </div>
+      <CompetitionFilter games={games} league="epl" value={competition} onChange={setCompetition} />
       <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-3">
         {filtered.map(g => <GameCard key={g.id} game={g} trackedTeamId={MAN_UNITED_ID} />)}
       </div>
@@ -143,11 +128,13 @@ function AllGamesTab({ games }) {
 function WatchedTab({ games }) {
   const { isWatched, isDismissed } = useWatched()
   const [showSkipped, setShowSkipped] = useState(false)
+  const [competition, setCompetition] = useState('all')
+  const inCompetition = filterByCompetition(games, competition)
 
-  const watched = games.filter(g => isWatched(g.id, 'epl')).sort((a, b) => b.gameDate - a.gameDate)
-  const skipped = games.filter(g => isDismissed(g.id, 'epl')).sort((a, b) => b.gameDate - a.gameDate)
+  const watched = inCompetition.filter(g => isWatched(g.id, 'epl')).sort((a, b) => b.gameDate - a.gameDate)
+  const skipped = inCompetition.filter(g => isDismissed(g.id, 'epl')).sort((a, b) => b.gameDate - a.gameDate)
 
-  if (watched.length === 0 && skipped.length === 0) {
+  if (competition === 'all' && watched.length === 0 && skipped.length === 0) {
     return <EmptyState emoji="🔴" title="No watched matches yet" message="Mark matches as watched from My Queue." />
   }
 
@@ -157,6 +144,7 @@ function WatchedTab({ games }) {
 
   return (
     <div className="flex flex-col gap-3">
+      <CompetitionFilter games={games.filter(g => isWatched(g.id, 'epl'))} league="epl" value={competition} onChange={setCompetition} className="mb-1" />
       {watched.length > 0 && (
         <>
           <div className="flex items-center gap-3 mb-1">
@@ -173,7 +161,7 @@ function WatchedTab({ games }) {
             <p className="text-xs text-slate-600">{watched.length} match{watched.length !== 1 ? 'es' : ''} watched</p>
           </div>
           <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-3">
-            {watched.map(g => <GameCard key={g.id} game={g} resultColor={getResult(g, isWatched) === 'draw' ? null : getResult(g, isWatched)} trackedTeamId={MAN_UNITED_ID} />)}
+            {watched.map(g => <GameCard key={g.id} game={g} trackedTeamId={MAN_UNITED_ID} />)}
           </div>
         </>
       )}
@@ -476,6 +464,8 @@ export default function EPLView() {
           <p className="text-sm text-slate-500 mt-0.5">Manchester United · All Competitions</p>
         </div>
       </div>
+
+      <SeasonCountdown league="epl" games={games} loading={loading} />
 
       <div className="flex mb-6 rounded-2xl p-1 overflow-x-auto gap-0.5 scrollbar-hide" style={{ background: 'rgba(255,255,255,0.05)', backdropFilter: 'blur(16px)', WebkitBackdropFilter: 'blur(16px)', border: '1px solid rgba(255,255,255,0.08)' }}>
         {TABS.map(t => (

@@ -6,6 +6,7 @@ import SeasonStatsPanel from '../components/SeasonStatsPanel'
 import LoadingSpinner from '../components/LoadingSpinner'
 import EmptyState from '../components/EmptyState'
 import { useWatched } from '../contexts/WatchedContext'
+import SeasonCountdown from '../components/SeasonCountdown'
 
 // ─── API Key Gate ─────────────────────────────────────────────────────────────
 
@@ -497,6 +498,8 @@ export default function BBLView() {
           )}
         </div>
       </div>
+
+      <SeasonCountdown league="bbl" games={games} loading={loading} />
 
       {games.length > 0 && <div className="flex mb-6 rounded-2xl p-1 overflow-x-auto gap-0.5"
         style={{ background: 'rgba(255,255,255,0.05)', backdropFilter: 'blur(16px)', WebkitBackdropFilter: 'blur(16px)', border: '1px solid rgba(255,255,255,0.08)' }}>

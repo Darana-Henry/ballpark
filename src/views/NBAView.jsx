@@ -1,13 +1,18 @@
 import { useState, useEffect, useMemo, useCallback } from 'react'
 import { fetchNBAGames, fetchNBAStandings, fetchNBAStatsFromWatchedGames } from '../api/espn'
 import GameCard from '../components/GameCard'
+import CompetitionFilter from '../components/CompetitionFilter'
+import NBACupStandings from '../components/NBACupStandings'
+import { competitionOf, filterByCompetition } from '../utils/competitions'
 import SeasonStatsPanel from '../components/SeasonStatsPanel'
 import { NBAScorerCard, NBARebounderCard, NBAAssistCard } from '../components/PlayerStatCard'
 import SeasonFilter from '../components/SeasonFilter'
 import LoadingSpinner from '../components/LoadingSpinner'
 import EmptyState from '../components/EmptyState'
 import { useWatched } from '../contexts/WatchedContext'
-import { getSeasonYear, getAvailableSeasons } from '../utils/season'
+import { getSeasonYear } from '../utils/season'
+import { useSeasonFilter } from '../hooks/useSeasonFilter'
+import SeasonCountdown from '../components/SeasonCountdown'
 
 const LAKERS_ID = '13'
 
@@ -184,31 +189,17 @@ function QueueTab({ games }) {
 
 // ─── All Games ────────────────────────────────────────────────────────────────
 
-const GAME_FILTERS = [
-  { id: 'all',      label: 'All'            },
-  { id: 'playoffs', label: 'Playoffs'       },
-  { id: 'regular',  label: 'Regular Season' },
-]
 
 function AllGamesTab({ games }) {
-  const [filter, setFilter] = useState('all')
-  const filtered = useMemo(() => {
-    const sorted = [...games].sort((a, b) => b.gameDate - a.gameDate)
-    if (filter === 'playoffs') return sorted.filter(g => g.gameType === 'Playoffs' || g.gameType === 'Play-In' || g.gameType?.toLowerCase().includes('playoff'))
-    if (filter === 'regular')  return sorted.filter(g => g.gameType === 'Regular Season')
-    return sorted
-  }, [games, filter])
+  const [competition, setCompetition] = useState('all')
+  const filtered = useMemo(
+    () => filterByCompetition([...games].sort((a, b) => b.gameDate - a.gameDate), competition),
+    [games, competition]
+  )
 
   return (
     <>
-      <div className="flex gap-1 mb-4 bg-slate-900 rounded-xl p-1 w-fit">
-        {GAME_FILTERS.map(f => (
-          <button key={f.id} onClick={() => setFilter(f.id)}
-            className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${filter === f.id ? 'bg-slate-700 text-slate-100' : 'text-slate-500 hover:text-slate-300'}`}>
-            {f.label}
-          </button>
-        ))}
-      </div>
+      <CompetitionFilter games={games} league="nba" value={competition} onChange={setCompetition} />
       <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-3">
         {filtered.map(g => <GameCard key={g.id} game={g} trackedTeamId={LAKERS_ID} />)}
       </div>
@@ -232,16 +223,18 @@ function getResult(game, isWatched) {
 function WatchedTab({ games }) {
   const { isWatched, isDismissed } = useWatched()
   const [showSkipped, setShowSkipped] = useState(false)
+  const [competition, setCompetition] = useState('all')
+  const inCompetition = filterByCompetition(games, competition)
 
-  const watched = games
+  const watched = inCompetition
     .filter(g => isWatched(g.id, 'nba'))
     .sort((a, b) => b.gameDate - a.gameDate)
 
-  const skipped = games
+  const skipped = inCompetition
     .filter(g => isDismissed(g.id, 'nba'))
     .sort((a, b) => b.gameDate - a.gameDate)
 
-  if (watched.length === 0 && skipped.length === 0) {
+  if (competition === 'all' && watched.length === 0 && skipped.length === 0) {
     return (
       <EmptyState emoji="🏀" title="No watched games yet"
         message="Mark games as watched from My Queue — they'll appear here so you can review or unwatch them." />
@@ -253,6 +246,7 @@ function WatchedTab({ games }) {
 
   return (
     <div className="flex flex-col gap-3">
+      <CompetitionFilter games={games.filter(g => isWatched(g.id, 'nba'))} league="nba" value={competition} onChange={setCompetition} className="mb-1" />
       {watched.length > 0 && (
         <>
           <div className="flex items-center gap-3 mb-1">
@@ -266,7 +260,7 @@ function WatchedTab({ games }) {
             <p className="text-xs text-slate-600">{watched.length} game{watched.length !== 1 ? 's' : ''} watched · green = win, red = loss</p>
           </div>
           <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-3">
-            {watched.map(g => <GameCard key={g.id} game={g} resultColor={getResult(g, isWatched)} trackedTeamId={LAKERS_ID} />)}
+            {watched.map(g => <GameCard key={g.id} game={g} trackedTeamId={LAKERS_ID} />)}
           </div>
         </>
       )}
@@ -450,16 +444,19 @@ function NBAPlayoffBracket({ title, bracket }) {
   )
 }
 
-function StandingsTab() {
+function StandingsTab({ games }) {
   const { watchedGames } = useWatched()
   const [standings, setStandings] = useState(null)
   const [standingsLoading, setStandingsLoading] = useState(true)
-  const [seasonFilter, setSeasonFilter] = useState('all')
-
-  const availableSeasons = useMemo(
-    () => getAvailableSeasons(watchedGames, 'nba'),
+  const { seasonFilter, setSeasonFilter, availableSeasons } = useSeasonFilter('nba', games)
+  const [competition, setCompetition] = useState('all')
+  const watchedRecords = useMemo(
+    () => Object.values(watchedGames).filter(g => g.league === 'nba' && g.watched),
     [watchedGames]
   )
+  // The Cup is always offered, even before any Cup game is watched: its group
+  // tables are worth seeing on their own.
+  const competitionOptions = useMemo(() => [...watchedRecords, { league: 'nba', gameType: 'NBA Cup' }], [watchedRecords])
 
   useEffect(() => {
     fetchNBAStandings()
@@ -474,6 +471,7 @@ function StandingsTab() {
       if (g.league !== 'nba' || !g.watched) return
       if (g.homeScore === null || g.awayScore === null) return
       if (seasonFilter !== 'all' && getSeasonYear('nba', g.gameDate) !== seasonFilter) return
+      if (competition !== 'all' && competitionOf(g) !== competition) return
       const isLakersHome = g.homeTeamId === LAKERS_ID
       const isLakersAway = g.awayTeamId === LAKERS_ID
       if (!isLakersHome && !isLakersAway) return
@@ -485,7 +483,7 @@ function StandingsTab() {
       else if (oppScore > lakersScore) map[oppId].l++
     })
     return map
-  }, [watchedGames, seasonFilter])
+  }, [watchedGames, seasonFilter, competition])
 
   if (standingsLoading) return <LoadingSpinner message="Loading standings..." />
   if (!standings) return <p className="text-sm text-slate-600">Standings unavailable.</p>
@@ -496,9 +494,16 @@ function StandingsTab() {
   return (
     <div className="flex flex-col gap-8">
 
-      <SeasonFilter league="nba" seasons={availableSeasons} selected={seasonFilter} onChange={setSeasonFilter} />
+      <div className="flex flex-col gap-3">
+        <SeasonFilter league="nba" seasons={availableSeasons} selected={seasonFilter} onChange={setSeasonFilter} />
+        <CompetitionFilter games={competitionOptions} league="nba" value={competition} onChange={setCompetition} className="" />
+      </div>
 
-      {[
+      {competition === 'NBA Cup' && (
+        <NBACupStandings season={seasonFilter === 'all' ? undefined : seasonFilter} trackedTeamId={LAKERS_ID} />
+      )}
+
+      {competition !== 'NBA Cup' && [
         { label: 'Eastern Conference', divisions: eastDivisions },
         { label: 'Western Conference', divisions: westDivisions },
       ].map(({ label, divisions }) => (
@@ -532,22 +537,18 @@ function StatSection({ title, sub, children }) {
   )
 }
 
-function StatsTab() {
+function StatsTab({ games }) {
   const { watchedGames } = useWatched()
   const [stats, setStats]     = useState(null)
   const [loading, setLoading] = useState(false)
   const [error, setError]     = useState(null)
-  const [seasonFilter, setSeasonFilter] = useState('all')
+  const { seasonFilter, setSeasonFilter, availableSeasons } = useSeasonFilter('nba', games)
 
   const nbaWatched = useMemo(
     () => Object.values(watchedGames).filter(g => g.league === 'nba' && g.watched),
     [watchedGames]
   )
 
-  const availableSeasons = useMemo(
-    () => getAvailableSeasons(watchedGames, 'nba'),
-    [watchedGames]
-  )
 
   const filteredWatched = useMemo(
     () => seasonFilter === 'all'
@@ -754,6 +755,8 @@ export default function NBAView() {
         </div>
       </div>
 
+      <SeasonCountdown league="nba" games={games} loading={loading} />
+
       <div className="flex mb-6 rounded-2xl p-1 overflow-x-auto gap-0.5" style={{ background: 'rgba(255,255,255,0.05)', backdropFilter: 'blur(16px)', WebkitBackdropFilter: 'blur(16px)', border: '1px solid rgba(255,255,255,0.08)' }}>
         {TABS.map(t => (
           <button key={t.id} onClick={() => setTab(t.id)}
@@ -777,7 +780,7 @@ export default function NBAView() {
       {!loading && !error && tab === 'watched'   && <WatchedTab games={games} />}
       {tab === 'standings' && <StandingsTab games={games} />}
       {tab === 'playoffs'  && <NBABracketTab games={games} />}
-      {tab === 'stats'     && <StatsTab />}
+      {tab === 'stats'     && <StatsTab games={games} />}
     </div>
   )
 }

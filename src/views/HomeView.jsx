@@ -7,6 +7,8 @@ import { seriesActiveInYear } from '../utils/cricketMatch'
 import GameCard from '../components/GameCard'
 import BoundaryTracker from '../components/BoundaryTracker'
 import FantasyDeadlineStrip from '../components/FantasyDeadlineStrip'
+import { SeasonCountdownChip } from '../components/SeasonCountdown'
+import { COUNTDOWN_LEAGUES } from '../api/nextSeason'
 import { useWatched } from '../contexts/WatchedContext'
 import { LEAGUE_MAP } from '../constants/leagues'
 import { fetchNFLTeamRanks, getNFLSeason } from '../api/nfl'
@@ -495,6 +497,15 @@ export default function HomeView() {
       </div>
 
       <FantasyDeadlineStrip />
+
+      {/* Leagues between seasons: days until each one's next opener. The row
+          only shows once at least one chip renders. */}
+      <div className="hidden has-[>div]:flex items-center gap-2 overflow-x-auto -mt-3 mb-6">
+        <span className="text-[10px] font-bold text-slate-600 uppercase tracking-widest shrink-0">Next season</span>
+        {COUNTDOWN_LEAGUES.map(id => (
+          <SeasonCountdownChip key={id} league={id} games={states[id]?.games} loading={states[id] ? states[id].loading : false} />
+        ))}
+      </div>
 
       {/* ── Split hero: left = next game, right = this week stats ─────────── */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">

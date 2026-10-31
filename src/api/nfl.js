@@ -1,4 +1,5 @@
 import { pooledMap } from '../utils/pool'
+import { canonicalNFLAbbr } from '../constants/nflTeams'
 
 const SITE = 'https://site.api.espn.com/apis'
 const CORE = 'https://sports.core.api.espn.com/v2/sports/football/leagues/nfl'
@@ -38,7 +39,7 @@ export async function fetchNFLTeamRanks() {
   const teams = (data.children ?? []).flatMap(conf =>
     (conf.standings?.entries ?? []).map(entry => ({
       teamId:       entry.team?.id,
-      abbreviation: entry.team?.abbreviation,
+      abbreviation: canonicalNFLAbbr(entry.team?.abbreviation),
       name:         entry.team?.displayName,
       wins:         Math.round(statValue(entry.stats, 'wins')),
       losses:       Math.round(statValue(entry.stats, 'losses')),

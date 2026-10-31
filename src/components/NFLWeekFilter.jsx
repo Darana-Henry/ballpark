@@ -28,7 +28,7 @@ export default function NFLWeekFilter({ options, value, onChange, count }) {
 
   return (
     <div className="flex items-center gap-2 flex-wrap">
-      <div className="flex items-center rounded-xl overflow-hidden" style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.08)' }}>
+      <div className="flex items-center rounded-xl" style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.08)' }}>
         <button
           onClick={() => step(-1)}
           disabled={index <= 0}

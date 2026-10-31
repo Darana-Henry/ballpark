@@ -4,6 +4,7 @@ import RecentForm from './RecentForm'
 import { useWatched } from '../contexts/WatchedContext'
 import { isFirebaseConfigured } from '../firebase'
 import { useCountdown } from '../hooks/useCountdown'
+import { isNotPlayed } from '../utils/cricketDayRows'
 
 function TeamLogo({ src, alt, size = 40 }) {
   const [err, setErr] = useState(false)
@@ -271,9 +272,12 @@ function PlayerToWatch({ game, players }) {
 //   Log is a history view, not a queue you manage from).
 export default function GameCard({ game, isUpNext = false, resultColor = null, showDismissAction = false, trackedTeamId = null, className = '', forceWatched = false, readOnly = false, ranks = null, form = null, playersToWatch = null }) {
   const { isWatched, toggleWatched, isDismissed, toggleDismissed, getHighlightLink, saveHighlightLink, removeHighlightLink } = useWatched()
-  const watched = forceWatched || isWatched(game.id, game.league)
+  // A washed-out cricket match (or a Test day after the match ended) counts as
+  // seen without being ticked, in the draw colour — see isNotPlayed.
+  const notPlayed = isNotPlayed(game)
+  const watched = forceWatched || notPlayed || isWatched(game.id, game.league)
   const dismissed = isDismissed(game.id, game.league)
-  const result = resultColor
+  const result = notPlayed ? 'draw' : resultColor
     ?? (watched && AUTO_RESULT_LEAGUES.has(game.league) ? autoResult(game, trackedTeamId) : null)
   const league = LEAGUE_MAP[game.league]
   const [toggling, setToggling] = useState(false)
@@ -283,7 +287,7 @@ export default function GameCard({ game, isUpNext = false, resultColor = null, s
   // Never reveal a score — live or final — until the user has marked the
   // game watched. They watch on delay and don't want anything spoiled.
   const showScore = !dismissed && watched
-  const canToggle = !readOnly && isFirebaseConfigured && game.status === 'final' && !dismissed
+  const canToggle = !readOnly && isFirebaseConfigured && game.status === 'final' && !dismissed && !notPlayed
   const canDismiss = !readOnly && showDismissAction && isFirebaseConfigured && game.status !== 'live' && !watched
   const showHighlight = !dismissed && game.status === 'final' && game.highlightUrl
   // The user's own pasted link (one per game, finished games only).
@@ -538,7 +542,7 @@ export default function GameCard({ game, isUpNext = false, resultColor = null, s
           <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-red-500/20 text-red-400 border border-red-500/30 shrink-0">L</span>
         )}
         {!dismissed && result === 'draw' && (
-          <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-400 border border-amber-500/30 shrink-0">D</span>
+          <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-400 border border-amber-500/30 shrink-0">{notPlayed ? 'Not played' : 'D'}</span>
         )}
 
         <div className="flex-1 flex items-center justify-end gap-2 min-w-0">

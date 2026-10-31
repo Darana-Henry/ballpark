@@ -555,7 +555,12 @@ export function parseScorecards(text) {
     const id = cricinfoIdFromUrl(p.report)
     const day = scorecardStartDay(p.date || '')
     const key = id || (day && teamsDayKey(team1, team2, day))
-    if (key) cards.set(key, { innings, result: cleanText(p.result || '') })
+    // The scorecard's own date range, which editors trim to the days actually
+    // played ("6–8 June 2026" for a three-day finish) while the season table
+    // often keeps the scheduled five.
+    const year = parseInt((cleanText(p.date || '').match(/\d{4}/) || [])[0])
+    const dates = year ? parseDateCell(p.date || '', [year, year]) : null
+    if (key) cards.set(key, { innings, result: cleanText(p.result || ''), end: dates?.end ?? null })
   }
   return cards
 }
@@ -614,7 +619,7 @@ function toGame(row, card) {
     gameDate:      row.start,
     // Last day of play: the scheduled end until a Test finishes, then the
     // actual one (Wikipedia records "22–23 August" for a two-day finish).
-    endDate:       row.end,
+    endDate:       isFinal && isTest && card?.end && card.end >= row.start && card.end <= row.end ? card.end : row.end,
     seriesStart:   row.seriesStart,
     dateRange:     isTest && !isFinal ? formatDateRange(row.start, row.end) : null,
     gameType:      row.gameType,
@@ -762,6 +767,7 @@ export async function fetchWikiCricketGames({ year = new Date().getFullYear(), f
           ...game,
           homeInnings: prev.homeInnings ?? [], awayInnings: prev.awayInnings ?? [],
           homeScoreStr: prev.homeScoreStr ?? null, awayScoreStr: prev.awayScoreStr ?? null,
+          endDate: prev.endDate ?? game.endDate,
         }
       }
       return game

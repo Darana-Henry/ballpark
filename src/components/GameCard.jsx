@@ -207,7 +207,28 @@ function LinkEditor({ initialUrl, onSave, onRemove, onCancel }) {
   )
 }
 
-// resultColor: 'win' | 'loss' | null — used in Watched tab
+// Leagues whose scores are plain numbers, so a result can be read off them.
+// Cricket works out its own result and passes it in.
+const AUTO_RESULT_LEAGUES = new Set(['mlb', 'nba', 'nfl', 'epl', 'mls'])
+
+// The result a watched card is coloured by: the tracked team's when it's
+// playing, otherwise the home team's (playoff and neutral games, where the
+// user watches everyone). Only ever called for watched games, so nothing is
+// spoiled.
+function autoResult(game, trackedTeamId) {
+  if (game.status !== 'final' || game.homeScore == null || game.awayScore == null) return null
+  const tracked = trackedTeamId == null ? null : String(trackedTeamId)
+  const trackedAway = tracked != null && String(game.awayTeam?.id) === tracked
+  const [mine, theirs] = trackedAway
+    ? [game.awayScore, game.homeScore]
+    : [game.homeScore, game.awayScore]
+  if (mine > theirs) return 'win'
+  if (mine < theirs) return 'loss'
+  return 'draw'
+}
+
+// resultColor: 'win' | 'loss' | 'draw' | null — when left null on a watched
+//   game, it's worked out by autoResult above
 // showDismissAction: show the dismiss/un-dismiss X button
 // League rank shown in brackets beside a team name, e.g. "Tampa Bay (3)".
 // Teams level on the ranking measure share a rank, so repeated numbers across
@@ -252,6 +273,8 @@ export default function GameCard({ game, isUpNext = false, resultColor = null, s
   const { isWatched, toggleWatched, isDismissed, toggleDismissed, getHighlightLink, saveHighlightLink, removeHighlightLink } = useWatched()
   const watched = forceWatched || isWatched(game.id, game.league)
   const dismissed = isDismissed(game.id, game.league)
+  const result = resultColor
+    ?? (watched && AUTO_RESULT_LEAGUES.has(game.league) ? autoResult(game, trackedTeamId) : null)
   const league = LEAGUE_MAP[game.league]
   const [toggling, setToggling] = useState(false)
   const [dismissing, setDismissing] = useState(false)
@@ -472,23 +495,26 @@ export default function GameCard({ game, isUpNext = false, resultColor = null, s
 
   // ── Standard card layout ───────────────────────────────────────────────────
   const accentBorder = dismissed        ? 'border-l-slate-700'
-                      : resultColor === 'win'  ? 'border-l-green-500'
-                      : resultColor === 'loss' ? 'border-l-red-500'
+                      : result === 'win'  ? 'border-l-green-500'
+                      : result === 'loss' ? 'border-l-red-500'
+                      : result === 'draw' ? 'border-l-amber-500'
                       : league.borderClass
 
   const glassStyle = dismissed
     ? { background: 'rgba(255,255,255,0.02)', opacity: 0.5, backdropFilter: 'blur(8px)', WebkitBackdropFilter: 'blur(8px)', border: '1px solid rgba(255,255,255,0.05)' }
-    : resultColor === 'win'
+    : result === 'win'
     ? { background: 'rgba(34,197,94,0.1)', backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)', border: '1px solid rgba(34,197,94,0.25)', boxShadow: '0 4px 24px rgba(34,197,94,0.08)' }
-    : resultColor === 'loss'
+    : result === 'loss'
     ? { background: 'rgba(239,68,68,0.08)', backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)', border: '1px solid rgba(239,68,68,0.2)' }
+    : result === 'draw'
+    ? { background: 'rgba(245,158,11,0.08)', backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)', border: '1px solid rgba(245,158,11,0.22)' }
     : watched
     ? undefined // .watched-card handles it
     : { background: 'rgba(255,255,255,0.04)', backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)', border: '1px solid rgba(255,255,255,0.08)', boxShadow: '0 4px 16px rgba(0,0,0,0.3)' }
 
   return (
     <div
-      className={`rounded-xl border-l-4 p-4 transition-all duration-200 hover:scale-[1.01] ${accentBorder} ${watched ? 'watched-card' : ''} ${className}`}
+      className={`rounded-xl border-l-4 p-4 transition-all duration-200 hover:scale-[1.01] ${accentBorder} ${watched && !result ? 'watched-card' : ''} ${className}`}
       style={glassStyle}
     >
 
@@ -505,11 +531,14 @@ export default function GameCard({ game, isUpNext = false, resultColor = null, s
           </span>
         )}
 
-        {!dismissed && resultColor === 'win' && (
+        {!dismissed && result === 'win' && (
           <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-green-500/20 text-green-400 border border-green-500/30 shrink-0">W</span>
         )}
-        {!dismissed && resultColor === 'loss' && (
+        {!dismissed && result === 'loss' && (
           <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-red-500/20 text-red-400 border border-red-500/30 shrink-0">L</span>
+        )}
+        {!dismissed && result === 'draw' && (
+          <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-400 border border-amber-500/30 shrink-0">D</span>
         )}
 
         <div className="flex-1 flex items-center justify-end gap-2 min-w-0">

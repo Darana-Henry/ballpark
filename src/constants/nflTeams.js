@@ -42,6 +42,15 @@ export const NFL_DIVISION_ORDER = [
   'NFC East', 'NFC North', 'NFC South', 'NFC West',
 ]
 
+// ESPN's standings and team feeds call Washington "WSH", while this app (and
+// the QB history file) keys teams by "WAS". Feeds are mapped onto ours on the
+// way in, or Washington matches nothing.
+const ESPN_ABBR_ALIASES = { WSH: 'WAS' }
+
+export function canonicalNFLAbbr(abbr) {
+  return ESPN_ABBR_ALIASES[abbr] ?? abbr
+}
+
 export function nflLogo(abbr) {
   return `https://a.espncdn.com/i/teamlogos/nfl/500/${abbr.toLowerCase()}.png`
 }

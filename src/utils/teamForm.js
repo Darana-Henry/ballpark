@@ -57,40 +57,51 @@ export function buildFormByTeam(watchedGames, league, season = null) {
 export const lastN = (form, n = 5) => (form ?? []).slice(-n)
 
 /**
- * Week-by-week grid for the NFL season, one row per team.
+ * Week-by-week grid for the NFL season, one row per team: weeks 1-18, then a
+ * column per playoff round once the schedule has one.
  *
- * A week with no fixture is a bye (`B`) — that comes from the schedule, not
- * from any result, so it's safe to show. A week with a fixture the user hasn't
- * marked watched stays `null` and renders as a placeholder: the row only fills
- * in as games are marked, which is the point.
+ * A regular-season week with no fixture is a bye (`B`) and a playoff round a
+ * team isn't in is `-`; both come from the schedule, not from any result, so
+ * they're safe to show. A fixture the user hasn't marked watched stays `null`
+ * and renders as a placeholder: the row only fills in as games are marked,
+ * which is the point.
  */
+const ROUND_LABELS = { 'Wild Card': 'WC', Divisional: 'DIV', Conference: 'CONF', 'Super Bowl': 'SB' }
+const ROUND_ORDER = Object.keys(ROUND_LABELS)
+
 export function buildSeasonGrid(games, watchedGames, teamIdByAbbr, season) {
   const watchedById = {}
   for (const record of Object.values(watchedGames)) {
     if (record.league === 'nfl' && record.watched) watchedById[record.gameId] = record
   }
 
-  const weeks = [...new Set(
-    games
-      .filter(g => g.seasonType === 2 && g.week != null)
-      .map(g => g.week)
+  const seasonGames = games.filter(g =>
+    weekId(g) && (season == null || getSeasonYear('nfl', g.gameDate) === season))
+
+  const regular = [...new Set(
+    seasonGames.filter(g => g.seasonType === 2 && g.week != null).map(g => g.week)
   )].sort((a, b) => a - b)
+  const rounds = ROUND_ORDER.filter(r => seasonGames.some(g => weekId(g) === `po:${r}`))
+
+  const columns = [
+    ...regular.map(w => ({ id: `rs:${w}`, label: String(w), playoff: false })),
+    ...rounds.map(r => ({ id: `po:${r}`, label: ROUND_LABELS[r], playoff: true })),
+  ]
 
   const rows = {}
   for (const [abbr, teamId] of Object.entries(teamIdByAbbr)) {
-    const byWeek = {}
-    for (const game of games) {
-      if (game.seasonType !== 2 || game.week == null) continue
-      if (season != null && getSeasonYear('nfl', game.gameDate) !== season) continue
+    const byColumn = {}
+    for (const game of seasonGames) {
       const isTeam = String(game.homeTeam.id) === String(teamId) || String(game.awayTeam.id) === String(teamId)
       if (!isTeam) continue
-
+      const col = weekId(game)
+      if (!col.startsWith('po:') && game.seasonType !== 2) continue
       const record = watchedById[game.id]
-      byWeek[game.week] = record ? resultForTeam(record, teamId) : null
+      byColumn[col] = record ? resultForTeam(record, teamId) : null
     }
-    rows[abbr] = weeks.map(week => (week in byWeek ? byWeek[week] : 'B'))
+    rows[abbr] = columns.map(c => (c.id in byColumn ? byColumn[c.id] : c.playoff ? '-' : 'B'))
   }
-  return { weeks, rows }
+  return { columns, rows }
 }
 
 // Re-exported so callers grouping a schedule by week don't need both modules.

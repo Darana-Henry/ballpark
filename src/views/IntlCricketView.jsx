@@ -667,15 +667,14 @@ function WatchedTab({ games }) {
 }
 
 // ─── Results Log tab ────────────────────────────────────────────────────────────
-// Every match a selected country has played — past and upcoming — laid out
-// as the same GameCard grid as the Watched tab. Unlike Watched, unwatched
-// and future games still show up here (as plain, uncolored cards), but only
-// ones you've actually watched get win/loss colored relative to the
-// selected country. A Test only counts as watched once every one of its 5
-// day-rows is checked off (isMatchFullyWatched) — same spoiler-safe rule
-// used elsewhere — since GameCard's own isWatched check is keyed to
-// day-row ids for Tests, not the whole match's id, forceWatched is what
-// actually reveals the score/win-loss styling once that gate passes.
+// Pick a country and its series are listed one compact row each, newest at
+// the top. Clicking a series opens its matches beside the list (above it on a
+// phone), in playing order, oldest first.
+//
+// Spoiler rules are the same as everywhere else: a match's score and result
+// only show once it's fully watched (a Test needs all five day-rows checked off,
+// via isMatchFullyWatched), and a series' result only once every match in it
+// is. Until then the row shows how much of it you've watched.
 
 function countryResultColor(game, country) {
   const countryWon = (game.homeTeam.name === country && game.homeWon) ||
@@ -699,19 +698,131 @@ function RecordBadge({ wins, losses }) {
   )
 }
 
+// How the selected country fared in a fully watched series: matches won
+// against matches lost, for the row's colour.
+function seriesOutcome(matches, country) {
+  let won = 0, lost = 0
+  for (const m of matches) {
+    const r = countryResultColor(m, country)
+    if (r === 'win') won++
+    else if (r === 'loss') lost++
+  }
+  return won > lost ? 'win' : lost > won ? 'loss' : 'draw'
+}
+
+const OUTCOME_TEXT = { win: 'text-emerald-400', loss: 'text-red-400', draw: 'text-amber-400' }
+const OUTCOME_BAR = { win: 'bg-emerald-500', loss: 'bg-red-500', draw: 'bg-amber-500' }
+
+function formatRange(start, end) {
+  const a = formatStartDate(start)
+  if (!end || end - start < 86400000) return a
+  const sameYear = start.getUTCFullYear() === end.getUTCFullYear()
+  const short = d => `${d.getUTCDate()} ${MONTH_ABBR[d.getUTCMonth()]}`
+  return sameYear ? `${short(start)} – ${formatStartDate(end)}` : `${a} – ${formatStartDate(end)}`
+}
+
+function SeriesRow({ series, active, onClick }) {
+  const watched = series.states.filter(st => st === 'watched').length
+  const played = series.states.filter(st => st !== 'upcoming').length
+  return (
+    <button
+      onClick={onClick}
+      aria-pressed={active}
+      className={`w-full h-16 flex items-center gap-3 pl-0 pr-3 text-left rounded-lg border transition-colors overflow-hidden ${
+        active ? 'border-indigo-500/50 bg-indigo-500/10' : 'border-slate-800 bg-[#161622] hover:border-slate-700'
+      }`}
+    >
+      <span className={`w-1 self-stretch shrink-0 ${series.outcome ? OUTCOME_BAR[series.outcome] : 'bg-slate-800'}`} />
+      <div className="flex flex-col min-w-0 flex-1">
+        <span className="text-sm text-slate-200 font-medium truncate">{series.label}</span>
+        <span className="text-[11px] text-slate-500 truncate">{formatRange(series.start, series.end)}</span>
+      </div>
+      <div className="flex flex-col items-end shrink-0 max-w-[45%]">
+        {series.result ? (
+          <span className={`text-xs font-semibold truncate max-w-full ${OUTCOME_TEXT[series.outcome]}`} title={series.result.full}>
+            {series.result.short}
+          </span>
+        ) : (
+          <span className="text-[11px] text-slate-500 tabular-nums">
+            {played === 0 ? 'Upcoming' : `${watched}/${series.states.length} watched`}
+          </span>
+        )}
+        <span className="text-[10px] text-slate-600">{series.states.length} match{series.states.length === 1 ? '' : 'es'}</span>
+      </div>
+    </button>
+  )
+}
+
+function MatchRow({ game, country, revealed }) {
+  const result = revealed ? countryResultColor(game, country) : null
+  const team = (t, scoreStr, won) => (
+    <div className="flex items-center gap-2 min-w-0">
+      <span className={`text-xs truncate ${revealed && won ? 'text-slate-100 font-semibold' : 'text-slate-300'}`}>{t.name}</span>
+      {revealed && scoreStr && <span className="text-[11px] text-slate-400 tabular-nums shrink-0 ml-auto">{scoreStr}</span>}
+    </div>
+  )
+  return (
+    <li className={`px-3 py-2.5 flex flex-col gap-1 border-l-2 ${result === 'win' ? 'border-l-emerald-500' : result === 'loss' ? 'border-l-red-500' : revealed ? 'border-l-amber-500' : 'border-l-transparent'}`}>
+      <div className="flex items-center gap-2 text-[10px]">
+        <span className="font-semibold text-slate-400 uppercase tracking-wide">{game.gameType}</span>
+        <span className="text-slate-600">{formatStartDate(game.gameDate)}</span>
+        {game.venue && <span className="text-slate-600 truncate">· {game.venue}</span>}
+      </div>
+      {team(game.homeTeam, game.homeScoreStr, game.homeWon)}
+      {team(game.awayTeam, game.awayScoreStr, game.awayWon)}
+      <span className={`text-[11px] ${revealed ? (result ? OUTCOME_TEXT[result === 'win' ? 'win' : 'loss'] : 'text-amber-400') : 'text-slate-600'}`}>
+        {revealed
+          ? game.statusDetail
+          : game.status === 'final' ? 'Played · not watched yet'
+          : game.status === 'live' ? 'Live'
+          : 'Scheduled'}
+      </span>
+    </li>
+  )
+}
+
 function ResultsLogTab({ games }) {
   const { watchedForLeague } = useWatched()
   const [format, setFormat] = useState('all')
   const [country, setCountry] = useState('')
+  const [selectedKey, setSelectedKey] = useState(null)
   const cricketWatchedIds = useMemo(() => watchedForLeague('cricket').map(g => g.gameId), [watchedForLeague])
 
   const countryGames = useMemo(() => {
     if (!country) return []
     return applyFormatFilter(
-      seriesActiveInYear(games).filter(g => g.homeTeam.name === country || g.awayTeam.name === country),
+      games.filter(g => g.homeTeam.name === country || g.awayTeam.name === country),
       format
-    ).sort((a, b) => a.gameDate - b.gameDate)
+    )
   }, [games, country, format])
+
+  // One entry per series, newest first.
+  const series = useMemo(() => {
+    const map = new Map()
+    for (const g of countryGames) {
+      const key = g.seriesLabel || 'Other matches'
+      if (!map.has(key)) map.set(key, [])
+      map.get(key).push(g)
+    }
+    return [...map.entries()]
+      .map(([name, matches]) => {
+        const summary = summarizeSeries(name, matches, cricketWatchedIds, seriesKindOf(matches[0]) ?? 'bilateral')
+        const sorted = [...matches].sort((a, b) => a.gameDate - b.gameDate)
+        return {
+          ...summary,
+          matches: sorted,
+          end: sorted[sorted.length - 1].gameDate,
+          // A tournament is won or lost on its final (or most wins), not the
+          // country's match tally.
+          outcome: !summary.result ? null
+            : seriesKindOf(matches[0]) === 'bilateral' ? seriesOutcome(sorted, country)
+            : summary.result.full.includes(country) ? 'win' : 'loss',
+        }
+      })
+      .sort((a, b) => b.start - a.start)
+  }, [countryGames, cricketWatchedIds, country])
+
+  const selected = series.find(s => s.key === selectedKey) ?? null
 
   const record = useMemo(() => {
     let wins = 0, losses = 0
@@ -728,34 +839,60 @@ function ResultsLogTab({ games }) {
     <div className="flex flex-col gap-4">
       <div className="flex items-center gap-2 flex-wrap">
         <FormatPills active={format} onChange={setFormat} />
-        <CountrySelect value={country} onChange={setCountry} />
+        <CountrySelect value={country} onChange={c => { setCountry(c); setSelectedKey(null) }} />
       </div>
 
       {!country && (
         <EmptyState emoji="🏆" title="Pick a country"
-          message="Select a nation above to see every match they've played — the ones you've watched are revealed in color." />
+          message="Select a nation above to see every series they've played, newest first. Click one to see its matches." />
       )}
 
-      {country && countryGames.length === 0 && (
+      {country && series.length === 0 && (
         <EmptyState emoji="🏆" title="No matches found" message={`No ${country} matches loaded yet.`} />
       )}
 
-      {countryGames.length > 0 && (
+      {series.length > 0 && (
         <>
           <RecordBadge wins={record.wins} losses={record.losses} />
-          <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-3">
-            {countryGames.map(g => {
-              const revealed = g.status === 'final' && isMatchFullyWatched(g, cricketWatchedIds)
-              return (
-                <GameCard
-                  key={g.id}
-                  game={g}
-                  resultColor={revealed ? countryResultColor(g, country) : null}
-                  forceWatched={revealed}
-                  readOnly
-                />
-              )
-            })}
+          <div className="flex flex-col lg:flex-row lg:items-start gap-4">
+            <ul className="flex flex-col gap-2 lg:w-[26rem] lg:shrink-0">
+              {series.map(s => (
+                <li key={s.key}>
+                  <SeriesRow series={s} active={s.key === selectedKey} onClick={() => setSelectedKey(s.key === selectedKey ? null : s.key)} />
+                </li>
+              ))}
+            </ul>
+
+            <div className="order-first lg:order-none lg:flex-1 lg:min-w-0 lg:sticky lg:top-4">
+              {selected ? (
+                <div className="rounded-xl border border-slate-800 bg-[#161622] overflow-hidden">
+                  <div className="flex items-start gap-2 px-3 py-2.5 bg-[#1a1a28] border-b border-slate-800">
+                    <div className="flex flex-col min-w-0 flex-1">
+                      <span className="text-sm font-semibold text-slate-100">{selected.label}</span>
+                      <span className="text-[11px] text-slate-500">
+                        {formatRange(selected.start, selected.end)}
+                        {selected.result ? <> · <span className={OUTCOME_TEXT[selected.outcome]}>{selected.result.full.replace(/\n/g, ' · ')}</span></> : ''}
+                      </span>
+                    </div>
+                    <button onClick={() => setSelectedKey(null)} aria-label="Close series" className="text-slate-500 hover:text-slate-200 text-lg leading-none px-1">×</button>
+                  </div>
+                  <ul className="divide-y divide-slate-800/60">
+                    {selected.matches.map(g => (
+                      <MatchRow
+                        key={g.id}
+                        game={g}
+                        country={country}
+                        revealed={g.status === 'final' && isMatchFullyWatched(g, cricketWatchedIds)}
+                      />
+                    ))}
+                  </ul>
+                </div>
+              ) : (
+                <div className="hidden lg:flex rounded-xl border border-dashed border-slate-800 p-4 text-xs text-slate-500">
+                  Click a series to see its matches in order, with scores for the ones you’ve watched.
+                </div>
+              )}
+            </div>
           </div>
         </>
       )}

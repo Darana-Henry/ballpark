@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo } from 'react'
 import { useWatched } from '../contexts/WatchedContext'
 import { LEAGUE_MAP } from '../constants/leagues'
 import { isNotPlayed } from '../utils/cricketDayRows'
+import NFLCatchUpPace from './NFLCatchUpPace'
 
 // ─── Glass style ──────────────────────────────────────────────────────────────
 
@@ -160,7 +161,10 @@ function ProgressLine({ label, watched, total, caption, accentColor }) {
   )
 }
 
-export default function SeasonStatsPanel({ league, trackedTeamId = null, games = null }) {
+// `catchUp` (NFL only) is the catch-up plan from useCatchUpPlan: while it's
+// set, the card's middle shows the pace needed instead of the watched count,
+// which the header already gives.
+export default function SeasonStatsPanel({ league, trackedTeamId = null, games = null, catchUp = null }) {
   const { watchedGames } = useWatched()
   const [leaders, setLeaders] = useState([])
   const [loadingPlayers, setLoadingPlayers] = useState(!!FETCHERS[league])
@@ -290,7 +294,11 @@ export default function SeasonStatsPanel({ league, trackedTeamId = null, games =
         </div>
       )}
 
-      {stats.total === 0 ? (
+      {catchUp ? (
+        <div className="flex-1 flex items-center justify-center mb-3">
+          <NFLCatchUpPace plan={catchUp} />
+        </div>
+      ) : stats.total === 0 ? (
         <div className="flex-1 flex items-center justify-center">
           <p className="text-slate-600 text-sm text-center leading-relaxed">
             Watch games to<br />build your record

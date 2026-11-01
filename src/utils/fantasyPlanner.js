@@ -1,10 +1,10 @@
-// Transfer and chip suggestions for the user's squad, built on the same
-// projection as the My team pitch (fantasyLineup.js): form × fixture ×
+// Transfer, squad and chip suggestions for the user's squad, built on the
+// same projection as the My team pitch (fantasyLineup.js): form × fixture ×
 // chance of playing, per round.
 //
-// A squad is scored over the planning horizon as the sum, round by round, of
-// its best XI plus the captain counted twice, so a bench upgrade is worth
-// little and a starter upgrade a lot, as in the game.
+// A squad is scored over a run of rounds as the sum, round by round, of its
+// best XI plus the captain counted twice, so a bench upgrade is worth little
+// and a starter upgrade a lot, as in the game.
 
 import { upcomingFixtures } from './fantasyFixtures'
 import { projectPoints, pickLineup } from './fantasyLineup'
@@ -22,20 +22,21 @@ export function projectRounds(players, fixtures, teams, fromRound, count) {
   return { rounds, byPlayer }
 }
 
-function lineupIn(squad, projected, i) {
+/** The best XI, bench and captain of `squad` in round index `i`. */
+export function lineupIn(squad, projected, i) {
   return pickLineup(squad.map(p => ({ ...p, projection: { points: projected.get(p.id).perRound[i] } })))
 }
 
 const byDesc = (a, b) => b - a
 
-// Best XI plus captain, over the first `horizon` rounds. The same pick as
-// pickLineup (each position's minimum, then the best of the rest up to its
-// maximum), on bare numbers: the planner scores thousands of squads.
-function squadScore(squad, projected, horizon) {
+// Best XI plus captain, summed over `horizon` rounds from round index `from`.
+// The same pick as pickLineup (each position's minimum, then the best of the
+// rest up to its maximum), on bare numbers: searches score many squads.
+export function squadScore(squad, projected, horizon, from = 0) {
   let total = 0
-  for (let i = 0; i < horizon; i++) {
+  for (let i = from; i < from + horizon; i++) {
     const pts = { 1: [], 2: [], 3: [], 4: [] }
-    for (const p of squad) pts[p.position].push(projected.get(p.id).perRound[i])
+    for (const p of squad) pts[p.position].push(projected.get(p.id).perRound[i] ?? 0)
     for (const list of Object.values(pts)) list.sort(byDesc)
     const starters = [...pts[1].slice(0, 1), ...pts[2].slice(0, 3), ...pts[3].slice(0, 2), ...pts[4].slice(0, 1)]
     const rest = [...pts[2].slice(3, 5), ...pts[3].slice(2, 5), ...pts[4].slice(1, 3)].sort(byDesc).slice(0, 11 - starters.length)
@@ -51,6 +52,33 @@ export function sellPrice(player, sellOnFee) {
   return rise <= 0 ? player.price : player.purchasePrice + Math.floor(rise * sellOnFee) / 10
 }
 
+const bought = p => ({ ...p, purchasePrice: p.price })
+
+function clubCounts(squad) {
+  const perClub = new Map()
+  for (const p of squad) perClub.set(p.team, (perClub.get(p.team) ?? 0) + 1)
+  return perClub
+}
+
+// Every legal swap for each of `outs`: same position, within budget and the
+// per-club limit. Returns, per out, its best `keep` options by gain in
+// `score`, over `base` (the current squad's score).
+function swaps({ current, money, pool, score, base, teamLimit, sellOnFee, outs = current, keep = 5 }) {
+  const owned = new Set(current.map(p => p.id))
+  const perClub = clubCounts(current)
+  return outs.map(out => {
+    const budget = money + sellPrice(out, sellOnFee)
+    const options = []
+    for (const cand of pool) {
+      if (cand.position !== out.position || owned.has(cand.id) || cand.price > budget + 1e-9) continue
+      if (cand.team !== out.team && (perClub.get(cand.team) ?? 0) >= teamLimit) continue
+      const next = current.map(p => (p.id === out.id ? bought(cand) : p))
+      options.push({ out, in: cand, gain: score(next) - base })
+    }
+    return options.sort((a, b) => b.gain - a.gain).slice(0, keep)
+  })
+}
+
 /**
  * Greedy transfer plan: each step makes the single swap that adds the most to
  * the squad's score, within budget and the per-club limit, until `maxMoves`
@@ -61,86 +89,153 @@ export function sellPrice(player, sellOnFee) {
  * `squad` items need `purchasePrice`; `pool` is the candidates to buy.
  */
 export function planTransfers({ squad, pool, bank, projected, horizon, teamLimit, sellOnFee, maxMoves }) {
+  const score = s => squadScore(s, projected, horizon)
   let current = [...squad]
   let money = bank
-  let score = squadScore(current, projected, horizon)
-  const start = score
+  let base = score(current)
+  const start = base
   const moves = []
   let singles = []
-  const byPosition = pos => pool.filter(p => p.position === pos)
-
   for (let step = 0; step < maxMoves; step++) {
-    const owned = new Set(current.map(p => p.id))
-    const perClub = new Map()
-    for (const p of current) perClub.set(p.team, (perClub.get(p.team) ?? 0) + 1)
-    let best = null
-    const all = []
-    for (const out of current) {
-      const budget = money + sellPrice(out, sellOnFee)
-      const options = []
-      for (const cand of byPosition(out.position)) {
-        if (owned.has(cand.id) || cand.price > budget + 1e-9) continue
-        if (cand.team !== out.team && (perClub.get(cand.team) ?? 0) >= teamLimit) continue
-        const next = current.map(p => (p === out ? { ...cand, purchasePrice: cand.price } : p))
-        options.push({ out, in: cand, gain: squadScore(next, projected, horizon) - score })
-      }
-      options.sort((a, b) => b.gain - a.gain)
-      all.push(...options.slice(0, 5))
-      if (options[0] && (!best || options[0].gain > best.gain)) best = { ...options[0], options: options.slice(0, 5) }
-    }
-    if (step === 0) singles = all.sort((a, b) => b.gain - a.gain).slice(0, 5)
-    if (!best || best.gain < 0.05) break
-    moves.push({ ...best, bankAfter: money + sellPrice(best.out, sellOnFee) - best.in.price })
+    const perOut = swaps({ current, money, pool, score, base, teamLimit, sellOnFee })
+    if (step === 0) singles = perOut.flat().sort((a, b) => b.gain - a.gain).slice(0, 5)
+    const best = perOut.filter(o => o.length).reduce((a, o) => (!a || o[0].gain > a[0].gain ? o : a), null)
+    if (!best || best[0].gain < 0.05) break
+    const move = best[0]
+    moves.push({ ...move, options: best, bankAfter: money + sellPrice(move.out, sellOnFee) - move.in.price })
     money = moves.at(-1).bankAfter
-    current = current.map(p => (p === best.out ? { ...best.in, purchasePrice: best.in.price } : p))
-    score += best.gain
+    current = current.map(p => (p.id === move.out.id ? bought(move.in) : p))
+    base += move.gain
   }
-  return { moves, singles, gain: score - start }
+  return { moves, singles, gain: base - start }
+}
+
+/** The best `keep` replacements for one player in `squad`, by gain over `horizon` rounds. */
+export function replacementsFor(out, { squad, pool, bank, projected, horizon, teamLimit, sellOnFee }, keep = 5) {
+  const score = s => squadScore(s, projected, horizon)
+  return swaps({ current: squad, money: bank, pool, score, base: score(squad), teamLimit, sellOnFee, outs: [out], keep })[0]
+}
+
+/**
+ * The best squad reachable from `squad` with unlimited transfers (a wildcard
+ * or free hit), by local search: the best single swap while one helps, then
+ * the best pair of swaps (a downgrade paying for an upgrade, which no single
+ * swap finds), until neither helps. Starting from the user's squad, a player
+ * is only replaced for a real gain. The pair search tries each position's
+ * top 10 by `rank` and its 3 cheapest.
+ */
+export function bestSquad({ squad, pool, bank, score, rank, teamLimit, sellOnFee }) {
+  let current = [...squad]
+  let money = bank
+  let base = score(current)
+  const opts = { pool, score, teamLimit, sellOnFee }
+  const shortlist = Object.fromEntries([1, 2, 3, 4].map(pos => {
+    const at = pool.filter(p => p.position === pos)
+    const top = [...at].sort((a, b) => rank(b) - rank(a)).slice(0, 10)
+    const cheap = [...at].sort((a, b) => a.price - b.price).slice(0, 3)
+    return [pos, [...new Set([...top, ...cheap])]]
+  }))
+  const apply = list => {
+    for (const s of list) {
+      money += sellPrice(s.out, sellOnFee) - s.in.price
+      current = current.map(p => (p.id === s.out.id ? bought(s.in) : p))
+    }
+  }
+
+  for (let guard = 0; guard < 60; guard++) {
+    const single = swaps({ ...opts, current, money, base, keep: 1 }).flat().reduce((a, s) => (!a || s.gain > a.gain ? s : a), null)
+    if (single && single.gain >= 0.05) {
+      apply([single])
+      base += single.gain
+      continue
+    }
+    const pair = bestPair(current, money, shortlist, base, opts)
+    if (!pair || pair.gain < 0.05) break
+    apply(pair.swaps)
+    base += pair.gain
+  }
+  return { squad: current, bank: money, score: base }
+}
+
+function bestPair(current, money, shortlist, base, { score, teamLimit, sellOnFee }) {
+  const owned = new Set(current.map(p => p.id))
+  let best = null
+  for (let i = 0; i < current.length; i++) {
+    for (let j = i + 1; j < current.length; j++) {
+      const a = current[i]
+      const b = current[j]
+      const budget = money + sellPrice(a, sellOnFee) + sellPrice(b, sellOnFee)
+      const perClub = clubCounts(current.filter(p => p !== a && p !== b))
+      for (const x of shortlist[a.position]) {
+        if (owned.has(x.id) || x.price > budget + 1e-9 || (perClub.get(x.team) ?? 0) >= teamLimit) continue
+        for (const y of shortlist[b.position]) {
+          if (y === x || owned.has(y.id) || x.price + y.price > budget + 1e-9) continue
+          if ((perClub.get(y.team) ?? 0) + (y.team === x.team ? 1 : 0) >= teamLimit) continue
+          const next = current.map(p => (p === a ? bought(x) : p === b ? bought(y) : p))
+          const gain = score(next) - base
+          if (!best || gain > best.gain) best = { gain, swaps: [{ out: a, in: x }, { out: b, in: y }] }
+        }
+      }
+    }
+  }
+  return best
 }
 
 // Chips in the game's feeds → what the games call them and, as fan guides
 // describe them, what they do (the feeds don't say). `uteam` is
 // Allsvenskan's; its name and effect aren't confirmed anywhere, but the game
 // marks it a transfer chip from round 2, like Eliteserien's rich uncle.
+// `kind` is how the planner treats it: a one-round boost to the squad, a
+// one-round squad (on your budget or an unlimited one), or a rebuild.
 export const CHIPS = {
-  wildcard: { label: 'Wildcard' },
-  frush: { label: 'Attack Attack', effect: 'doubles your forwards' },
-  pdbus: { label: 'Park the Bus', effect: 'doubles your defenders' },
-  '2capt': { label: 'Two Captains', effect: 'doubles a second player' },
-  rich: { label: 'Rich Uncle', effect: 'is a one-round squad on an unlimited budget' },
-  uteam: { label: 'Unlimited Team', effect: 'is (unconfirmed) a one-round squad on an unlimited budget' },
-  freehit: { label: 'Free Hit', effect: 'is a one-round squad' },
-  bboost: { label: 'Bench Boost', effect: 'scores your bench too' },
-  '3xc': { label: 'Triple Captain', effect: 'triples your captain' },
+  wildcard: { label: 'Wildcard', kind: 'rebuild' },
+  frush: { label: 'Attack Attack', effect: 'doubles your forwards', kind: 'boost' },
+  pdbus: { label: 'Park the Bus', effect: 'doubles your defenders', kind: 'boost' },
+  '2capt': { label: 'Two Captains', effect: 'doubles a second player', kind: 'boost' },
+  rich: { label: 'Rich Uncle', effect: 'is a one-round squad on an unlimited budget', kind: 'unlimited' },
+  uteam: { label: 'Unlimited Team', effect: 'is (unconfirmed) a one-round squad on an unlimited budget', kind: 'unlimited' },
+  freehit: { label: 'Free Hit', effect: 'is a one-round squad', kind: 'oneRound' },
+  bboost: { label: 'Bench Boost', effect: 'scores your bench too', kind: 'boost' },
+  '3xc': { label: 'Triple Captain', effect: 'triples your captain', kind: 'boost' },
 }
 
-// What a chip adds in one round for the squad as it stands, in projected
-// points. Attack Attack doubles the forwards, Park the Bus the defenders, Two
-// Captains a second captain, Triple Captain the captain once more, Bench
-// Boost the bench; a one-round transfer chip (rich uncle, uteam) is
-// a squad on an unlimited budget, measured against the current XI. `def` is
-// one of the league's `rules.chips`.
-export function chipValueInRound(def, squad, projected, i, pool, teamLimit) {
-  const { starters } = lineupIn(squad, projected, i)
-  const points = p => p.projection.points
-  if (def.name === 'frush') return sum(starters.filter(p => p.position === 4).map(points))
-  if (def.name === 'pdbus') return sum(starters.filter(p => p.position === 2).map(points))
-  if (def.name === '2capt') return starters[1] ? points(starters[1]) : 0
-  if (def.name === '3xc') return starters[0] ? points(starters[0]) : 0
-  if (def.name === 'bboost') {
-    const ids = new Set(starters.map(p => p.id))
-    return sum(squad.filter(p => !ids.has(p.id)).map(p => projected.get(p.id).perRound[i]))
-  }
-  if (def.type === 'transfer' && def.name !== 'wildcard') {
-    const current = sum(starters.map(points)) + (starters[0] ? points(starters[0]) : 0)
-    return dreamScore(pool, projected, i, teamLimit) - current
-  }
+/**
+ * What a boost chip adds in round index `i` for `squad`, in projected points,
+ * and the players it scores through: Attack Attack the starting forwards,
+ * Park the Bus the starting defenders, Two Captains the second-best starter,
+ * Triple Captain the captain, Bench Boost the bench. Null for other chips.
+ */
+export function chipBonus(name, squad, projected, i) {
+  const { starters, bench } = lineupIn(squad, projected, i)
+  const through = players => ({ value: sum(players.map(p => p.projection.points)), players })
+  if (name === 'frush') return through(starters.filter(p => p.position === 4))
+  if (name === 'pdbus') return through(starters.filter(p => p.position === 2))
+  if (name === '2capt') return through(starters.slice(1, 2))
+  if (name === '3xc') return through(starters.slice(0, 1))
+  if (name === 'bboost') return through(bench)
   return null
 }
 
-// The best squad money can't buy: top projected players at each position,
-// at most `teamLimit` per club, best XI plus captain.
-function dreamScore(pool, projected, i, teamLimit) {
+/**
+ * The best transfers ahead of a boost chip: single swaps scored on the
+ * normal `horizon` plus the chip's bonus in round index `i`, so a defender
+ * who doubles well under Park the Bus rises up the list. Only the players the
+ * chip works through are swapped (defenders for Park the Bus, forwards for
+ * Attack Attack; anyone otherwise).
+ */
+export function chipTransfers(name, { squad, pool, bank, projected, horizon, teamLimit, sellOnFee }, i, keep = 3) {
+  const score = s => squadScore(s, projected, horizon) + chipBonus(name, s, projected, i).value
+  const position = { pdbus: 2, frush: 4 }[name]
+  const outs = position ? squad.filter(p => p.position === position) : squad
+  return swaps({ current: squad, money: bank, pool, score, base: score(squad), teamLimit, sellOnFee, outs, keep: 1 })
+    .flat().filter(s => s.gain >= 0.05).sort((a, b) => b.gain - a.gain).slice(0, keep)
+}
+
+/**
+ * The best squad money can't buy for round index `i`: the top projected
+ * players at each position, at most `teamLimit` per club.
+ */
+export function dreamSquad(pool, projected, i, teamLimit) {
   const ranked = [...pool].sort((a, b) => projected.get(b.id).perRound[i] - projected.get(a.id).perRound[i])
   const quota = { 1: 2, 2: 5, 3: 5, 4: 3 }
   const perClub = new Map()
@@ -149,8 +244,7 @@ function dreamScore(pool, projected, i, teamLimit) {
     if (!quota[p.position] || (perClub.get(p.team) ?? 0) >= teamLimit) continue
     quota[p.position]--
     perClub.set(p.team, (perClub.get(p.team) ?? 0) + 1)
-    squad.push(p)
+    squad.push(bought(p))
   }
-  const { starters, captain } = lineupIn(squad, projected, i)
-  return sum(starters.map(p => p.projection.points)) + (captain?.projection.points ?? 0)
+  return squad
 }

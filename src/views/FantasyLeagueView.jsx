@@ -7,6 +7,8 @@ import FantasyTopManagers from '../components/FantasyTopManagers'
 import FantasyMyTeam from '../components/FantasyMyTeam'
 import FantasyBestLads from '../components/FantasyBestLads'
 import FantasyPlanner from '../components/FantasyPlanner'
+import FantasyChips from '../components/FantasyChips'
+import FantasyIdealTeam from '../components/FantasyIdealTeam'
 import FantasyPerformance from '../components/FantasyPerformance'
 import { POSITIONS, withForm, availability } from '../utils/fantasyPlayers'
 import { leagueTable, nextRound, upcomingFixtures } from '../utils/fantasyFixtures'
@@ -67,6 +69,13 @@ const derive = perLeague(data => {
     const games = (NEXT.byTeam.get(team) ?? []).flat()
     return games.length ? games.reduce((sum, g) => sum + g.difficulty, 0) / games.length : Infinity
   }
+  // The team's projected goals over the next 3 rounds (a double counts both
+  // games) and its average clean-sheet chance per game (fantasyFixtures.js).
+  const nextGoals = team => (NEXT.byTeam.get(team) ?? []).flat().reduce((sum, g) => sum + g.goalsFor, 0)
+  const nextCleanSheet = team => {
+    const games = (NEXT.byTeam.get(team) ?? []).flat()
+    return games.length ? (games.reduce((sum, g) => sum + g.cleanSheet, 0) / games.length) * 100 : -1
+  }
 
   return {
     TEAMS: Object.fromEntries(data.teams.map(t => [t.id, t])),
@@ -81,6 +90,8 @@ const derive = perLeague(data => {
       availability: availability(p),
       penaltiesTaken: p.penalties?.taken ?? 0,
       nextAvg: nextAvg(p.team),
+      nextGoals: nextGoals(p.team),
+      nextCleanSheet: nextCleanSheet(p.team),
       teamRank: TABLE.get(p.team)?.rank ?? Infinity,
     })),
   }
@@ -173,7 +184,7 @@ function RoundCell({ pts, mins }) {
 function PlayersPanel() {
   const { data } = useFantasyData()
   const { TEAMS, LAST_ROUND, RECENT, MY_PICKS, NEXT } = derive(data)
-  const COLUMN_COUNT = VALUE_COLUMNS.length + RECENT.length + FORM_COLUMNS.length + NEXT.rounds.length + 7
+  const COLUMN_COUNT = VALUE_COLUMNS.length + RECENT.length + FORM_COLUMNS.length + NEXT.rounds.length + 9
   const [positions, setPositions] = useState(new Set())
   const [statuses, setStatuses] = useState(new Set())
   const [banRisk, setBanRisk] = useState(false)
@@ -313,7 +324,9 @@ function PlayersPanel() {
               <th className="text-left font-semibold px-2 py-2.5">{sortHeader('penaltiesTaken', 'Pens', 'Penalties taken this season (ESPN)')}</th>
               <th className="text-left font-semibold px-3 py-2.5">Status</th>
               {NEXT.rounds.map(r => <th key={r} className="font-semibold px-1 py-2.5 min-w-[4.5rem]">GW{r}</th>)}
-              <th className="text-right font-semibold px-3 py-2.5 whitespace-nowrap">{sortHeader('nextAvg', 'Avg', 'Average fixture difficulty over the next 3 rounds (1 easy, 5 hard)', true)}</th>
+              <th className="text-right font-semibold px-2 py-2.5 whitespace-nowrap">{sortHeader('nextAvg', 'Avg', 'Average fixture difficulty over the next 3 rounds (1 easy, 5 hard)', true)}</th>
+              <th className="text-right font-semibold px-2 py-2.5 whitespace-nowrap">{sortHeader('nextGoals', 'Proj G', "Team's projected goals over the next 3 rounds (our model from this season's results)")}</th>
+              <th className="text-right font-semibold px-3 py-2.5 whitespace-nowrap">{sortHeader('nextCleanSheet', 'CS %', "Team's average clean-sheet chance per game over the next 3 rounds")}</th>
             </tr>
           </thead>
           <tbody>
@@ -348,9 +361,15 @@ function PlayersPanel() {
                     {FORM_COLUMNS.map(c => statCell(c, p))}
                     <td className="px-2 py-2"><PenaltyBadge player={p} /></td>
                     <td className="px-3 py-2"><StatusCell player={p} /></td>
-                    {(NEXT.byTeam.get(p.team) ?? []).map((games, i) => <FixtureCell key={NEXT.rounds[i]} games={games} />)}
-                    <td className={`px-3 py-2 text-right tabular-nums ${sort.key === 'nextAvg' ? 'text-slate-100 font-semibold' : 'text-slate-300'}`}>
+                    {(NEXT.byTeam.get(p.team) ?? []).map((games, i) => <FixtureCell key={NEXT.rounds[i]} games={games} projections />)}
+                    <td className={`px-2 py-2 text-right tabular-nums ${sort.key === 'nextAvg' ? 'text-slate-100 font-semibold' : 'text-slate-300'}`}>
                       {Number.isFinite(p.nextAvg) ? p.nextAvg.toFixed(1) : '–'}
+                    </td>
+                    <td className={`px-2 py-2 text-right tabular-nums ${sort.key === 'nextGoals' ? 'text-slate-100 font-semibold' : 'text-slate-300'}`}>
+                      {p.nextGoals.toFixed(1)}
+                    </td>
+                    <td className={`px-3 py-2 text-right tabular-nums ${sort.key === 'nextCleanSheet' ? 'text-slate-100 font-semibold' : 'text-slate-300'}`}>
+                      {p.nextCleanSheet >= 0 ? `${Math.round(p.nextCleanSheet)}%` : '–'}
                     </td>
                   </tr>
                   {open && (
@@ -375,7 +394,9 @@ function PlayersPanel() {
 const PANELS = {
   players:  { label: 'Players',      Panel: PlayersPanel },
   team:     { label: 'My team',      Panel: FantasyMyTeam },
-  plan:     { label: 'Transfers & chips', Panel: FantasyPlanner },
+  ideal:    { label: 'Ideal team',   Panel: FantasyIdealTeam },
+  plan:     { label: 'Transfers',    Panel: FantasyPlanner },
+  chips:    { label: 'Chips',        Panel: FantasyChips },
   best:     { label: 'Best by club', Panel: FantasyBestLads },
   fixtures: { label: 'Fixtures',     Panel: FantasyFixtures },
   top:      { label: 'Top managers', Panel: FantasyTopManagers },

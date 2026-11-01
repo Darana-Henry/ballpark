@@ -2,9 +2,12 @@
 // written by scripts/fetch-fantasy-deadlines.mjs. calendarName is the short
 // name used in that script's calendar event titles.
 // emoji is the fallback shown if logoUrl fails to load (see FantasyLeagueIcon).
+// site is the game's own website, for links to a manager's team
+// (`<site>/entry/<id>/event/<round>`).
 export const FANTASY_LEAGUES = [
   {
     id: 'eliteserien',
+    site: 'https://fantasy.eliteserien.no',
     name: 'Eliteserien Fantasy',
     calendarName: 'Eliteserien',
     emoji: '🇳🇴',
@@ -18,6 +21,7 @@ export const FANTASY_LEAGUES = [
   },
   {
     id: 'allsvenskan',
+    site: 'https://fantasy.allsvenskan.se',
     name: 'Allsvenskan Fantasy',
     calendarName: 'Allsvenskan',
     emoji: '🇸🇪',
@@ -31,6 +35,7 @@ export const FANTASY_LEAGUES = [
   },
   {
     id: 'premierLeague',
+    site: 'https://fantasy.premierleague.com',
     name: 'Premier League Fantasy',
     calendarName: 'FPL',
     emoji: '🇬🇧',

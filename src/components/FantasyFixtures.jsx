@@ -37,20 +37,28 @@ function Movement({ team }) {
 }
 
 // One round for one team: nothing (blank), one opponent, or two (double).
-// Also used for the players table's next-fixture columns.
-export function FixtureCell({ games }) {
+// Also used for the players table's next-fixture columns, where
+// `projections` adds the team's projected goals and clean-sheet chance under
+// each opponent.
+export function FixtureCell({ games, projections = false }) {
   const { TEAMS } = derive(useFantasyData().data)
   if (!games.length) return <td className="px-1 py-1.5"><div className="h-8 rounded-md bg-slate-900/60 text-slate-600 text-[11px] flex items-center justify-center">—</div></td>
   return (
     <td className="px-1 py-1.5">
       <div className="flex flex-col gap-0.5">
         {games.map((g, i) => (
-          <div
-            key={i}
-            className={`rounded-md text-center font-semibold whitespace-nowrap ${games.length > 1 ? 'text-[10px] py-0.5' : 'text-xs h-8 flex items-center justify-center'} ${DIFFICULTY[g.difficulty].className}`}
-            title={`${g.home ? 'Home' : 'Away'} vs ${TEAMS[g.opponent].name} · ${DIFFICULTY[g.difficulty].label} (${g.difficulty}) · they average ${g.strength.toFixed(2)} pts per game`}
-          >
-            {TEAMS[g.opponent].short} <span className="font-normal opacity-75">({g.home ? 'H' : 'A'})</span>
+          <div key={i}>
+            <div
+              className={`rounded-md text-center font-semibold whitespace-nowrap ${games.length > 1 ? 'text-[10px] py-0.5' : 'text-xs h-8 flex items-center justify-center'} ${DIFFICULTY[g.difficulty].className}`}
+              title={`${g.home ? 'Home' : 'Away'} vs ${TEAMS[g.opponent].name} · ${DIFFICULTY[g.difficulty].label} (${g.difficulty}) · they average ${g.strength.toFixed(2)} pts per game\nProjected score ${g.goalsFor.toFixed(1)}–${g.goalsAgainst.toFixed(1)} · ${Math.round(g.cleanSheet * 100)}% clean-sheet chance`}
+            >
+              {TEAMS[g.opponent].short} <span className="font-normal opacity-75">({g.home ? 'H' : 'A'})</span>
+            </div>
+            {projections && (
+              <p className="text-[10px] text-center tabular-nums text-slate-400 whitespace-nowrap mt-0.5" title="Team's projected goals · clean-sheet chance">
+                {g.goalsFor.toFixed(1)}g · {Math.round(g.cleanSheet * 100)}%
+              </p>
+            )}
           </div>
         ))}
       </div>

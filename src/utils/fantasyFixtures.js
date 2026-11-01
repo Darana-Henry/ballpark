@@ -68,13 +68,48 @@ export const DIFFICULTY = {
 
 const bands = [[2.0, 5], [1.6, 4], [1.2, 3], [0.9, 2]]
 
+// Each team's goals expected for and against in a fixture, from a Poisson
+// model of this season's results: league goals per game at the venue ×
+// the team's attack (goals scored per game over the league's) × the
+// opponent's defence (goals conceded per game over the league's). Each team
+// starts with PRIOR games at the league average, so a few early results
+// don't swing it. The clean-sheet chance is that of conceding none.
+const PRIOR = 4
+
+function goalModel(fixtures) {
+  const played = fixtures.filter(f => f.homeScore != null)
+  const mean = values => (values.length ? values.reduce((a, b) => a + b, 0) / values.length : null)
+  const homeAvg = mean(played.map(f => f.homeScore)) ?? 1.5
+  const awayAvg = mean(played.map(f => f.awayScore)) ?? 1.2
+  const avg = (homeAvg + awayAvg) / 2
+  const tally = new Map()
+  const add = (team, scored, conceded) => {
+    const t = tally.get(team) ?? { scored: 0, conceded: 0, games: 0 }
+    tally.set(team, { scored: t.scored + scored, conceded: t.conceded + conceded, games: t.games + 1 })
+  }
+  for (const f of played) {
+    add(f.home, f.homeScore, f.awayScore)
+    add(f.away, f.awayScore, f.homeScore)
+  }
+  const rate = (team, key) => {
+    const t = tally.get(team) ?? { scored: 0, conceded: 0, games: 0 }
+    return (t[key] + PRIOR * avg) / (t.games + PRIOR) / avg
+  }
+  return (team, opponent, home) => {
+    const goalsFor = (home ? homeAvg : awayAvg) * rate(team, 'scored') * rate(opponent, 'conceded')
+    const goalsAgainst = (home ? awayAvg : homeAvg) * rate(opponent, 'scored') * rate(team, 'conceded')
+    return { goalsFor, goalsAgainst, cleanSheet: Math.exp(-goalsAgainst) }
+  }
+}
+
 /**
  * Every team's fixtures from `fromRound` on, by round: `byTeam.get(id)` is an
  * array of rounds, each a list (empty for a blank round, two for a double) of
- * `{ opponent, home, difficulty, strength }`.
+ * `{ opponent, home, difficulty, strength, goalsFor, goalsAgainst, cleanSheet }`.
  */
 export function upcomingFixtures(fixtures, teams, fromRound, count) {
   const ppg = pointsPerGame(fixtures)
+  const goals = goalModel(fixtures)
   const rate = (opponent, opponentVenue) => {
     const p = ppg.get(opponent) ?? { all: 1.4, home: 1.4, away: 1.4 }
     const strength = (p.all + p[opponentVenue]) / 2
@@ -85,8 +120,8 @@ export function upcomingFixtures(fixtures, teams, fromRound, count) {
   for (const f of fixtures) {
     const i = roundNumbers.indexOf(f.round)
     if (i === -1) continue
-    byTeam.get(f.home)?.[i].push({ opponent: f.away, home: true, ...rate(f.away, 'away') })
-    byTeam.get(f.away)?.[i].push({ opponent: f.home, home: false, ...rate(f.home, 'home') })
+    byTeam.get(f.home)?.[i].push({ opponent: f.away, home: true, ...rate(f.away, 'away'), ...goals(f.home, f.away, true) })
+    byTeam.get(f.away)?.[i].push({ opponent: f.home, home: false, ...rate(f.home, 'home'), ...goals(f.away, f.home, false) })
   }
   return { rounds: roundNumbers, byTeam }
 }

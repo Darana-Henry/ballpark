@@ -1,94 +1,67 @@
-import { useMemo } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useFantasyData, perLeague } from '../contexts/fantasyData'
 import { withForm, availability } from '../utils/fantasyPlayers'
-import { upcomingFixtures, DIFFICULTY } from '../utils/fantasyFixtures'
+import { upcomingFixtures } from '../utils/fantasyFixtures'
 import { projectPoints, pickLineup } from '../utils/fantasyLineup'
+import { derivePlan } from '../utils/fantasyPlan'
+import { replacementsFor, sellPrice } from '../utils/fantasyPlanner'
+import { SquadPitch, WithSidePanel } from './FantasySquadPitch'
+import { SwapLine } from './FantasyPlanRows'
+import { panelStyle, useGames, scrollIntoViewOnPhone } from './fantasyPlanShared'
 
 const derive = perLeague(data => ({
-  TEAMS: Object.fromEntries(data.teams.map(t => [t.id, t])),
   PICKS: data.mySquad?.picks ?? [],
   // Suggestions are for the round after the squad's: the next deadline.
   ROUND: (data.mySquad?.round ?? 0) + 1,
   LAST: Math.max(...data.fixtures.map(f => f.round ?? 0)),
 }))
-const ROWS = [1, 2, 3, 4]
 
-const STATUS_SHIRT = {
-  injured: '#ef4444',
-  suspended: '#ef4444',
-  unavailable: '#64748b',
-  doubtful: '#f59e0b',
+const CHANGE_BADGE = {
+  in: { text: '↑', className: 'bg-emerald-500 text-white', title: 'Start (benched last round)' },
+  out: { text: '↓', className: 'bg-red-500 text-white', title: 'Bench (started last round)' },
 }
 
-function Shirt({ color }) {
+// Tapping a player on the pitch: the best players to swap them for, in
+// budget and within the club limit, by gain over the next 3 rounds.
+function Replacements({ player, onClose }) {
+  const { data } = useFantasyData()
+  const { plan, RULES, SQUAD_INFO, ROUND, HORIZON } = derivePlan(data)
+  const games = useGames()
+  const owned = plan.squad.find(p => p.id === player.id)
+  const options = owned ? replacementsFor(owned, { ...plan.common, horizon: HORIZON }, 5) : []
+  const sale = sellPrice(owned ?? player, RULES.sellOnFee)
+  const rounds = HORIZON > 1 ? `GW${ROUND}–${ROUND + HORIZON - 1}` : `GW${ROUND}`
+  // On a phone the list opens below the bench, out of sight of a forward's card.
+  const ref = useRef(null)
+  useEffect(() => scrollIntoViewOnPhone(ref.current), [])
   return (
-    <svg viewBox="0 0 40 38" className="w-9 h-9 sm:w-11 sm:h-11 drop-shadow" aria-hidden="true">
-      <path d="M8 4 L15 1.5 Q20 6 25 1.5 L32 4 L39 12 L33 17 L32 15.5 L32 37 L8 37 L8 15.5 L7 17 L1 12 Z" fill={color} stroke="rgba(0,0,0,0.35)" strokeWidth="1" />
-    </svg>
-  )
-}
-
-function PlayerCard({ player, captain, vice, change }) {
-  const { TEAMS } = derive(useFantasyData().data)
-  const { projection, games } = player
-  const shirt = STATUS_SHIRT[player.availability] ?? '#6366f1'
-  const fixture = games.length
-    ? games.map(g => `${TEAMS[g.opponent].short} (${g.home ? 'H' : 'A'})`).join(' + ')
-    : 'No game'
-  const hint = [
-    `${player.fullName} · ${TEAMS[player.team].name}`,
-    `Form ${projection.form.toFixed(1)} pts per round × fixture ${projection.fixture.toFixed(2)} × fitness ${Math.round(projection.fitness * 100)}%`,
-    player.news,
-  ].filter(Boolean).join('\n')
-  return (
-    <div className="relative flex flex-col items-center w-[4.25rem] sm:w-24" title={hint}>
-      <div className="relative">
-        <Shirt color={shirt} />
-        {(captain || vice) && (
-          <span className={`absolute -top-1 -right-2 w-5 h-5 rounded-full text-[10px] font-bold flex items-center justify-center border ${captain ? 'bg-amber-400 text-slate-900 border-amber-200' : 'bg-slate-200 text-slate-900 border-white'}`}>
-            {captain ? 'C' : 'V'}
-          </span>
-        )}
-        {change && (
-          <span className={`absolute -top-1 -left-2 w-5 h-5 rounded-full text-[11px] font-bold flex items-center justify-center ${change === 'in' ? 'bg-emerald-500 text-white' : 'bg-red-500 text-white'}`} title={change === 'in' ? 'Start (benched last round)' : 'Bench (started last round)'}>
-            {change === 'in' ? '↑' : '↓'}
-          </span>
-        )}
-      </div>
-      <div className="w-full mt-0.5 rounded-t-md bg-slate-950/90 px-1 py-0.5 text-center">
-        <p className="text-[10px] sm:text-xs font-semibold text-slate-100 truncate">{player.shortName}</p>
-      </div>
-      <div className={`w-full px-1 py-0.5 text-center text-[9px] sm:text-[10px] font-semibold truncate ${games.length ? DIFFICULTY[Math.round(games.reduce((s, g) => s + g.difficulty, 0) / games.length)].className : 'bg-slate-800 text-slate-400'}`}>
-        {fixture}
-      </div>
-      <div className="w-full rounded-b-md bg-white/90 px-1 py-0.5 text-center text-[10px] sm:text-xs font-bold text-slate-900 tabular-nums">
-        {projection.points.toFixed(1)}
-      </div>
-    </div>
-  )
-}
-
-// Pitch markings: halfway line and centre circle at the top (the attacking
-// end is up), penalty box at the keeper's end.
-function Pitch({ children }) {
-  return (
-    <div
-      className="relative overflow-hidden rounded-2xl border border-emerald-900/60 py-4 sm:py-6"
-      style={{ background: 'repeating-linear-gradient(180deg, #166534 0 48px, #15803d 48px 96px)' }}
-    >
-      <div className="absolute inset-3 border-2 border-white/25 rounded-sm pointer-events-none" />
-      <div className="absolute left-1/2 top-3 -translate-x-1/2 -translate-y-1/2 w-28 h-28 sm:w-36 sm:h-36 rounded-full border-2 border-white/25 pointer-events-none" />
-      <div className="absolute left-1/2 bottom-3 -translate-x-1/2 w-1/2 h-20 sm:h-24 border-2 border-b-0 border-white/25 pointer-events-none" />
-      <div className="absolute left-1/2 bottom-3 -translate-x-1/2 w-1/4 h-8 sm:h-10 border-2 border-b-0 border-white/25 pointer-events-none" />
-      <div className="relative flex flex-col gap-4 sm:gap-6">{children}</div>
-    </div>
+    <section ref={ref} className="rounded-2xl p-3 scroll-mb-24" style={panelStyle}>
+      <header className="flex items-baseline gap-2 mb-1">
+        <h3 className="text-sm font-bold text-slate-100">Replace {player.name}</h3>
+        <button onClick={onClose} className="ml-auto text-[11px] text-slate-500 hover:text-slate-300">Close</button>
+      </header>
+      <p className="text-[11px] text-slate-500 mb-2">
+        Sells for £{sale.toFixed(1)}m · up to £{(sale + SQUAD_INFO.bank).toFixed(1)}m to spend · gain in projected pts over {rounds} (your best XI + captain)
+      </p>
+      {options.length ? (
+        <div className="flex flex-col gap-1">
+          {options.map(o => <SwapLine key={o.in.id} swap={o} games={games(o.in)} showOut={false} />)}
+        </div>
+      ) : (
+        <p className="text-xs text-slate-500 py-2">No one in budget at this position: they'd need £{(sale + SQUAD_INFO.bank).toFixed(1)}m or less and a club you have fewer than {RULES.squadTeamLimit} players from.</p>
+      )}
+      {options.length > 0 && options[0].gain < 0.05 && (
+        <p className="text-[11px] text-slate-500 mt-2">No replacement beats keeping this player over {rounds}.</p>
+      )}
+    </section>
   )
 }
 
 export default function FantasyMyTeam() {
   const { data } = useFantasyData()
   const { PICKS, ROUND } = derive(data)
-  const plan = useMemo(() => {
+  const [selected, setSelected] = useState(null)
+  const lineup = useMemo(() => {
     const { PICKS, ROUND, LAST } = derive(data)
     if (!PICKS.length || ROUND > LAST) return null
     const { byTeam } = upcomingFixtures(data.fixtures, data.teams, ROUND, 1)
@@ -102,21 +75,21 @@ export default function FantasyMyTeam() {
     return { squad, ...pickLineup(squad) }
   }, [data])
 
-  if (!plan) {
+  if (!lineup) {
     return <p className="text-sm text-slate-500 text-center py-10">{PICKS.length ? 'The season is over.' : 'Your squad couldn\'t be fetched yet.'}</p>
   }
 
-  const { starters, bench, captain, vice, formation } = plan
+  const { starters, captain, vice, formation } = lineup
   const startingIds = new Set(starters.map(p => p.id))
   // Against the lineup the user actually fielded last round.
   const changeOf = p => (startingIds.has(p.id) ? (p.pick.bench ? 'in' : null) : (p.pick.bench ? null : 'out'))
   const total = starters.reduce((sum, p) => sum + p.projection.points, 0) + (captain?.projection.points ?? 0)
   const moves = starters.filter(p => p.pick.bench).length
-  const lastCaptain = plan.squad.find(p => p.pick.captain)
-  const card = p => <PlayerCard key={p.id} player={p} captain={p === captain} vice={p === vice} change={changeOf(p)} />
+  const lastCaptain = lineup.squad.find(p => p.pick.captain)
+  const canReplace = Boolean(derivePlan(data).plan)
 
   return (
-    <div className="max-w-3xl">
+    <div className="max-w-3xl lg:max-w-none">
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-4">
         {[
           ['Gameweek', `GW${ROUND}`, `from your GW${data.mySquad.round} squad`],
@@ -124,7 +97,7 @@ export default function FantasyMyTeam() {
           ['Projected', `${total.toFixed(1)} pts`, 'captain counted twice'],
           ['Captain', captain?.shortName ?? '–', `vice ${vice?.shortName ?? '–'}`],
         ].map(([label, value, note]) => (
-          <div key={label} className="rounded-xl px-3 py-2" style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.07)' }}>
+          <div key={label} className="rounded-xl px-3 py-2" style={panelStyle}>
             <p className="text-[10px] uppercase tracking-wider text-slate-500">{label}</p>
             <p className="text-base font-bold text-slate-100 truncate">{value}</p>
             <p className="text-[11px] text-slate-500 truncate">{note}</p>
@@ -135,28 +108,22 @@ export default function FantasyMyTeam() {
       <p className="text-xs text-slate-400 mb-3">
         {moves ? `${moves} change${moves > 1 ? 's' : ''} from your GW${data.mySquad.round} lineup (↑ start, ↓ bench)` : `Same XI as your GW${data.mySquad.round} lineup`}
         {lastCaptain && captain && lastCaptain.id !== captain.id ? ` · captain moves from ${lastCaptain.shortName} to ${captain.shortName}` : ''}.
+        {canReplace && <span className="text-slate-500"> Tap a player for their best replacements.</span>}
       </p>
 
-      <Pitch>
-        {/* Forwards at the top, keeper at the bottom */}
-        {[...ROWS].reverse().map(pos => (
-          <div key={pos} className="flex justify-evenly px-1">
-            {starters.filter(p => p.position === pos).map(card)}
-          </div>
-        ))}
-      </Pitch>
-
-      <div className="mt-3 rounded-2xl px-2 py-3" style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)' }}>
-        <p className="text-[10px] uppercase tracking-wider text-slate-500 px-1 mb-2">Bench · in order</p>
-        <div className="flex justify-evenly">
-          {bench.map((p, i) => (
-            <div key={p.id} className="flex flex-col items-center gap-1">
-              <span className="text-[10px] text-slate-500">{i === 0 && p.position === 1 ? 'GK' : i}</span>
-              {card(p)}
-            </div>
-          ))}
-        </div>
-      </div>
+      <WithSidePanel
+        side={selected && <Replacements key={selected.id} player={selected} onClose={() => setSelected(null)} />}
+        hint={canReplace ? 'Tap a player on the pitch to see their best replacements here.' : null}
+      >
+        <SquadPitch
+          lineup={lineup}
+          cardProps={p => ({
+            badge: CHANGE_BADGE[changeOf(p)],
+            selected: selected?.id === p.id,
+            onClick: canReplace ? () => setSelected(s => (s?.id === p.id ? null : p)) : undefined,
+          })}
+        />
+      </WithSidePanel>
 
       <p className="text-[11px] text-slate-600 mt-3 leading-relaxed">
         The white number is projected points: form (points per round, mostly the last 4) × fixture (easier opponents score more, double rounds count twice) × chance of playing.

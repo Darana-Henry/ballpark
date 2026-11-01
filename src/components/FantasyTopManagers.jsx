@@ -10,8 +10,13 @@ const derive = perLeague(data => {
   // How many of the top managers own and captain each player.
   const owned = new Map()
   const captained = new Map()
+  // Which of the top managers (by rank) own each player.
+  const ownerRanks = new Map()
   for (const e of ENTRIES) {
-    for (const id of e.picks) owned.set(id, (owned.get(id) ?? 0) + 1)
+    for (const id of e.picks) {
+      owned.set(id, (owned.get(id) ?? 0) + 1)
+      ownerRanks.set(id, [...(ownerRanks.get(id) ?? []), e.rank])
+    }
     if (e.captain) captained.set(e.captain, (captained.get(e.captain) ?? 0) + 1)
   }
   // The user's players stay listed even when no top manager has them: those are the differentials.
@@ -21,9 +26,10 @@ const derive = perLeague(data => {
     owners: owned.get(id) ?? 0,
     topShare: ENTRIES.length ? ((owned.get(id) ?? 0) / ENTRIES.length) * 100 : 0,
     captains: captained.get(id) ?? 0,
+    ranks: ownerRanks.get(id) ?? [],
     mine: MY_PICKS.has(id),
   }))
-  return { TEAMS: Object.fromEntries(data.teams.map(t => [t.id, t])), ENTRIES, ROWS }
+  return { TEAMS: Object.fromEntries(data.teams.map(t => [t.id, t])), PLAYERS, ENTRIES, ROWS }
 })
 
 const SHOW = {
@@ -34,18 +40,72 @@ const SHOW = {
 
 const pct = n => `${n.toFixed(n > 0 && n < 10 ? 1 : 0)}%`
 
+// Owner ranks shown as badges in the table; the rest are in the tooltip.
+const BADGE_RANKS = 10
+const CHIP_NAMES = { wildcard: 'Wildcard', freehit: 'Free Hit', bboost: 'Bench Boost', '3xc': 'Triple Captain', rich: 'Rich Uncle', uteam: 'Unlimited Team', frush: 'Attack Attack', pdbus: 'Park the Bus', '2capt': 'Two Captains' }
+
+// The top managers themselves: rank, points, captain, chip, a link to the
+// team on the game's site, and a tap to show only that squad in the table.
+function TopTeams({ selected, onSelect }) {
+  const { data, league } = useFantasyData()
+  const { ENTRIES, PLAYERS } = derive(data)
+  const [all, setAll] = useState(false)
+  const round = data.topManagers.round
+  const list = all ? ENTRIES : ENTRIES.slice(0, 10)
+  return (
+    <section className="rounded-xl p-3 mb-4" style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.07)' }}>
+      <header className="flex items-baseline gap-2 mb-2">
+        <h3 className="text-sm font-bold text-slate-100">Top teams</h3>
+        <span className="text-[11px] text-slate-500">GW{round} squads · tap a team to see its players below · ↗ opens it on the game's site</span>
+        <button onClick={() => setAll(v => !v)} className="ml-auto text-[11px] text-slate-400 hover:text-slate-200 whitespace-nowrap">{all ? 'Top 10' : `All ${ENTRIES.length}`}</button>
+      </header>
+      <div className="grid sm:grid-cols-2 gap-1">
+        {list.map(e => {
+          const active = selected === e.id
+          return (
+            <div key={e.id} className={`flex items-center gap-2 rounded-lg text-xs ${active ? 'bg-indigo-500/20 ring-1 ring-inset ring-indigo-400/50' : 'bg-white/[0.03] hover:bg-white/[0.06]'}`}>
+              <button onClick={() => onSelect(active ? null : e.id)} className="flex-1 min-w-0 flex items-center gap-2 px-2.5 py-1.5 text-left">
+                <span className="w-6 text-right font-bold tabular-nums text-slate-500">#{e.rank}</span>
+                <span className="flex-1 min-w-0 truncate font-semibold text-slate-100">{e.name}</span>
+                {e.chip && <span className="text-[10px] px-1.5 rounded bg-amber-400/15 text-amber-300 whitespace-nowrap">{CHIP_NAMES[e.chip] ?? e.chip}</span>}
+                <span className="text-slate-500 truncate max-w-[6rem]" title="Captain">C: {PLAYERS[e.captain]?.shortName ?? '–'}</span>
+                <span className="w-12 text-right tabular-nums text-slate-300">{e.total}</span>
+              </button>
+              {league.site && (
+                <a
+                  href={`${league.site}/entry/${e.id}/event/${round}`}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="px-2.5 py-1.5 text-slate-500 hover:text-indigo-300"
+                  title={`Open ${e.name} on the game's site`}
+                  aria-label={`Open ${e.name} on the game's site`}
+                >
+                  ↗
+                </a>
+              )}
+            </div>
+          )
+        })}
+      </div>
+    </section>
+  )
+}
+
 export default function FantasyTopManagers() {
   const { data } = useFantasyData()
   const { TEAMS, ENTRIES } = derive(data)
   const [show, setShow] = useState('all')
   const [positions, setPositions] = useState(new Set())
+  const [entryId, setEntryId] = useState(null)
+  const entry = ENTRIES.find(e => e.id === entryId)
 
   const rows = useMemo(() => {
     const test = SHOW[show].test ?? (() => true)
+    const picks = entryId ? new Set(derive(data).ENTRIES.find(e => e.id === entryId)?.picks) : null
     return derive(data).ROWS
-      .filter(r => test(r) && (!positions.size || positions.has(r.player.position)))
-      .sort((a, b) => b.owners - a.owners || b.captains - a.captains || b.player.ownership - a.player.ownership)
-  }, [data, show, positions])
+      .filter(r => test(r) && (!positions.size || positions.has(r.player.position)) && (!picks || picks.has(r.player.id)))
+      .sort((a, b) => (picks ? a.player.position - b.player.position : 0) || b.owners - a.owners || b.captains - a.captains || b.player.ownership - a.player.ownership)
+  }, [data, show, positions, entryId])
 
   if (!ENTRIES.length) {
     return <p className="text-sm text-slate-500 text-center py-10">Top managers' squads couldn't be fetched yet.</p>
@@ -78,7 +138,9 @@ export default function FantasyTopManagers() {
         ))}
       </div>
 
-      <div className="flex flex-wrap items-center gap-x-3 gap-y-2 mb-4">
+      <TopTeams selected={entryId} onSelect={setEntryId} />
+
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-2 mb-2">
         <div className="flex gap-1">
           {Object.entries(SHOW).map(([key, { label }]) => <Chip key={key} active={show === key} onClick={() => setShow(key)}>{label}</Chip>)}
         </div>
@@ -87,10 +149,19 @@ export default function FantasyTopManagers() {
             <Chip key={id} active={positions.has(Number(id))} onClick={() => togglePosition(Number(id))}>{label}</Chip>
           ))}
         </div>
+        {entry && (
+          <button onClick={() => setEntryId(null)} className="px-2.5 py-1 rounded-lg text-xs font-semibold bg-indigo-500/20 text-indigo-200 border border-indigo-400/40">
+            #{entry.rank} {entry.name}'s squad ×
+          </button>
+        )}
         <span className="text-xs text-slate-600 ml-auto">
           {rows.length} players{chips > 0 && ` · ${chips} of the ${n} played a chip this round`}
         </span>
       </div>
+      <p className="text-[11px] text-slate-500 mb-3">
+        <b className="text-slate-400">Top {n}</b> share of the top {n} squads with the player · <b className="text-slate-400">All</b> share of every manager ·{' '}
+        <b className="text-slate-400">Capt</b> how many of the top {n} captain them · <b className="text-slate-400">Top 10</b> which of the top 10 teams own them (hover for all {n})
+      </p>
 
       <div className="rounded-xl overflow-x-auto" style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.07)' }}>
         <table className="w-full text-sm">
@@ -102,7 +173,8 @@ export default function FantasyTopManagers() {
               <th className="text-right font-semibold px-2 py-2.5">£</th>
               <th className="text-right font-semibold px-2 py-2.5 whitespace-nowrap" title={`Share of the top ${n} who own this player`}>Top {n}</th>
               <th className="text-right font-semibold px-2 py-2.5 whitespace-nowrap" title="Share of all managers who own this player">All</th>
-              <th className="text-right font-semibold px-3 py-2.5" title={`Top ${n} managers captaining this player`}>C</th>
+              <th className="text-right font-semibold px-2 py-2.5" title={`How many of the top ${n} managers captain this player`}>Capt</th>
+              <th className="text-left font-semibold px-3 py-2.5 whitespace-nowrap" title="Ranks of the top 10 teams that own this player">Top 10</th>
             </tr>
           </thead>
           <tbody>
@@ -125,7 +197,16 @@ export default function FantasyTopManagers() {
                   </span>
                 </td>
                 <td className="px-2 py-2 text-right tabular-nums text-slate-400">{pct(r.player.ownership)}</td>
-                <td className="px-3 py-2 text-right tabular-nums text-slate-300">{r.captains || ''}</td>
+                <td className="px-2 py-2 text-right tabular-nums text-slate-300">
+                  {entry?.captain === r.player.id ? <span className="text-amber-300 font-bold" title={`${entry.name}'s captain`}>C</span> : r.captains || ''}
+                </td>
+                <td className="px-3 py-2" title={r.ranks.length ? `Owned by #${r.ranks.join(', #')}` : undefined}>
+                  <span className="flex gap-0.5">
+                    {r.ranks.filter(rank => rank <= BADGE_RANKS).map(rank => (
+                      <span key={rank} className={`min-w-5 px-1 rounded text-[10px] font-semibold text-center tabular-nums ${entry?.rank === rank ? 'bg-indigo-400 text-slate-900' : 'bg-white/10 text-slate-300'}`}>{rank}</span>
+                    ))}
+                  </span>
+                </td>
               </tr>
             ))}
           </tbody>

@@ -20,6 +20,7 @@ import NFLPerformanceHistory from '../components/NFLPerformanceHistory'
 import { buildFormByTeam } from '../utils/teamForm'
 import { getNFLSeason, fetchNFLLeagueLeaders, playersToWatch } from '../api/nfl'
 import SeasonCountdown from '../components/SeasonCountdown'
+import { useCatchUpPlan } from '../hooks/useCatchUpPlan'
 
 
 
@@ -166,6 +167,7 @@ function NFLPlayoffBracket({ games, isProcessed }) {
 function QueueTab({ games, ranks, form, watchList }) {
   const { isWatched, isDismissed } = useWatched()
   const [showWatched, setShowWatched] = useState(false)
+  const catchUp = useCatchUpPlan(games)
 
   const weekOptions = useMemo(() => buildWeekOptions(games), [games])
   // Open on the week in progress rather than week 1. Derived rather than set
@@ -221,7 +223,7 @@ function QueueTab({ games, ranks, form, watchList }) {
           <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Up Next For You</p>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <GameCard ranks={ranks} form={form} playersToWatch={watchList} game={upNext} isUpNext showDismissAction />
-            <SeasonStatsPanel league="nfl" trackedTeamId={null} games={games} />
+            <SeasonStatsPanel league="nfl" trackedTeamId={null} games={games} catchUp={catchUp} />
           </div>
         </>
       )}
@@ -229,7 +231,7 @@ function QueueTab({ games, ranks, form, watchList }) {
       {/* Between seasons or all caught up: the season record still shows. */}
       {!upNext && (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <SeasonStatsPanel league="nfl" trackedTeamId={null} games={games} />
+          <SeasonStatsPanel league="nfl" trackedTeamId={null} games={games} catchUp={catchUp} />
         </div>
       )}
 

@@ -105,6 +105,10 @@ When the user provides their CricAPI key:
 3. Update `BBLView.jsx` to call the API once the key is in localStorage
 4. Match BBL on team names (no numeric IDs in CricAPI)
 
+## NFL Catch-Up Pace
+
+The NFL queue's Season Record card (`SeasonStatsPanel`'s `catchUp` prop, from `src/hooks/useCatchUpPlan.js`) shows `NFLCatchUpPace.jsx` in place of the big watched count (maths in `src/utils/catchUp.js`): games a day to be caught up when the playoffs start, so they can be watched live without a spoiler-prone backlog. It counts every regular-season game not watched or skipped (played already or still to come) over the days left, counting today, until the start of the first playoff day. ESPN lists the playoff games with teams TBD; failing that, it's the Saturday after the last regular-season game. Recent pace is NFL games marked watched (`updatedAt`) in the last 14 days. Once the playoffs start the card goes back to the watched count.
+
 ## Fantasy Deadlines
 
 `scripts/fetch-fantasy-deadlines.mjs` (`npm run fantasy:deadlines`) runs in the deploy workflow every 6 hours and writes:

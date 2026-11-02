@@ -17,7 +17,8 @@
     "pl:gameweeks": "node scripts/fetch-pl-gameweeks.mjs",
     "eliteserien:players": "node scripts/fetch-fantasy-players.mjs eliteserien",
     "allsvenskan:players": "node scripts/fetch-fantasy-players.mjs allsvenskan",
-    "fpl:players": "node scripts/fetch-fantasy-players.mjs premierLeague"
+    "fpl:players": "node scripts/fetch-fantasy-players.mjs premierLeague",
+    "ucl:players": "node scripts/fetch-ucl-fantasy.mjs"
   },
   "dependencies": {
     "firebase": "^12.13.0",

@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react'
-import { useFantasyData, perLeague } from '../contexts/fantasyData'
+import { useFantasyData, useLabels, perLeague } from '../contexts/fantasyData'
 import { leagueTable, nextRound, upcomingFixtures, DIFFICULTY } from '../utils/fantasyFixtures'
 import Chip from './FilterChip'
 
@@ -25,12 +25,13 @@ const derive = perLeague(data => {
 
 function Movement({ team }) {
   const { TABLE, PREVIOUS, LAST_ROUND } = derive(useFantasyData().data)
+  const { R } = useLabels()
   const now = TABLE.get(team)?.rank
   const before = PREVIOUS.get(team)?.rank
   if (!now || !before || now === before) return <span className="w-6" />
   const up = now < before
   return (
-    <span className={`w-6 text-[10px] font-semibold ${up ? 'text-emerald-400' : 'text-red-400'}`} title={`#${before} before GW${LAST_ROUND}`}>
+    <span className={`w-6 text-[10px] font-semibold ${up ? 'text-emerald-400' : 'text-red-400'}`} title={`#${before} before ${R}${LAST_ROUND}`}>
       {up ? '▲' : '▼'}{Math.abs(before - now)}
     </span>
   )
@@ -69,6 +70,7 @@ export function FixtureCell({ games, projections = false }) {
 export default function FantasyFixtures() {
   const { data } = useFantasyData()
   const { LAST_ROUND, FROM_ROUND, MINE } = derive(data)
+  const { R } = useLabels()
   const [count, setCount] = useState(5)
   const [sort, setSort] = useState({ key: 'avg', desc: false })
 
@@ -122,9 +124,9 @@ export default function FantasyFixtures() {
         <table className="w-full text-sm">
           <thead>
             <tr className="text-[11px] uppercase tracking-wider text-slate-500 border-b border-white/5">
-              <th className="sticky md:static z-10 left-0 w-14 min-w-14 bg-[#10101a] md:bg-transparent text-left font-semibold px-3 py-2.5 whitespace-nowrap">{sortHeader('rank', '#', `League position after GW${LAST_ROUND}`)}</th>
+              <th className="sticky md:static z-10 left-0 w-14 min-w-14 bg-[#10101a] md:bg-transparent text-left font-semibold px-3 py-2.5 whitespace-nowrap">{sortHeader('rank', '#', `League position after ${R}${LAST_ROUND}`)}</th>
               <th className="sticky md:static z-10 left-14 bg-[#10101a] md:bg-transparent text-left font-semibold px-2 py-2.5">Team</th>
-              {rounds.map(r => <th key={r} className="font-semibold px-1 py-2.5 min-w-[4.5rem]">GW{r}</th>)}
+              {rounds.map(r => <th key={r} className="font-semibold px-1 py-2.5 min-w-[4.5rem]">{R}{r}</th>)}
               <th className="text-right font-semibold px-3 py-2.5 whitespace-nowrap">{sortHeader('avg', 'Avg', 'Average difficulty over these rounds (1 easy, 5 hard)')}</th>
               {uneven && <th className="text-right font-semibold px-3 py-2.5">{sortHeader('games', 'Games', 'Matches in these rounds (blanks and doubles)')}</th>}
             </tr>

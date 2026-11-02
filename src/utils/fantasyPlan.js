@@ -7,6 +7,7 @@
 import { perLeague } from '../contexts/fantasyData'
 import { POSITIONS, withForm, availability } from './fantasyPlayers'
 import { pickLineup } from './fantasyLineup'
+import { nextRound } from './fantasyFixtures'
 import {
   projectRounds, planTransfers, squadScore, bestSquad, dreamSquad, chipBonus, chipTransfers, CHIPS,
 } from './fantasyPlanner'
@@ -19,21 +20,28 @@ export const CHIP_WINDOW = 5
 // A wildcard is judged over the 3 rounds from when it's played, like transfers.
 const REBUILD_ROUNDS = 3
 
+// A squad is 2 keepers, 5 defenders, 5 midfielders and 3 forwards in every game here.
+const QUOTA = { 1: 2, 2: 5, 3: 5, 4: 3 }
+
 export const derivePlan = perLeague(data => {
   const SQUAD_INFO = data.mySquad
-  // Plans start at the next deadline: the round after the squad's.
-  const ROUND = (SQUAD_INFO?.round ?? 0) + 1
+  // Plans start at the next deadline: the round after the squad's, or with
+  // no squad (the Champions League game's is behind a login) the first round
+  // with a match still to play.
+  const ROUND = SQUAD_INFO ? SQUAD_INFO.round + 1 : nextRound(data.fixtures)
   const LAST = Math.max(...data.fixtures.map(f => f.round ?? 0))
   // Transfers are judged over the next 3 rounds (fewer near the end of the season).
   const HORIZON = Math.max(0, Math.min(3, LAST - ROUND + 1))
   const consts = { SQUAD_INFO, RULES: data.rules, TEAMS: Object.fromEntries(data.teams.map(t => [t.id, t])), ROUND, LAST, HORIZON }
-  return { ...consts, plan: SQUAD_INFO && HORIZON > 0 ? build(data, consts) : null }
+  // Without a squad the plan still exists (for the ideal team from scratch),
+  // with an empty `squad` and the game's whole budget as the bank.
+  return { ...consts, plan: HORIZON > 0 ? build(data, consts) : null }
 })
 
 function build(data, { SQUAD_INFO, RULES, ROUND, LAST, HORIZON }) {
   const players = data.players.map(p => ({ ...withForm(p), availability: availability(p) }))
   const { rounds, byPlayer } = projectRounds(players, data.fixtures, data.teams, ROUND, LAST - ROUND + 1)
-  const picks = new Map(SQUAD_INFO.picks.map(p => [p.id, p]))
+  const picks = new Map((SQUAD_INFO?.picks ?? []).map(p => [p.id, p]))
   const squad = players.filter(p => picks.has(p.id)).map(p => ({ ...p, purchasePrice: picks.get(p.id).purchasePrice }))
   const total = (p, from, count) => byPlayer.get(p.id).perRound.slice(from, from + count).reduce((a, b) => a + b, 0)
   const horizonTotal = p => total(p, 0, HORIZON)
@@ -47,9 +55,12 @@ function build(data, { SQUAD_INFO, RULES, ROUND, LAST, HORIZON }) {
     return [...new Set([...best, ...cheap])]
   })
   const pool = poolFor(0, HORIZON)
-  const common = { squad, pool, bank: SQUAD_INFO.bank, projected: byPlayer, teamLimit: RULES.squadTeamLimit, sellOnFee: RULES.sellOnFee }
-  const transfers = planTransfers({ ...common, horizon: HORIZON, maxMoves: MAX_MOVES })
-  return { rounds, byPlayer, squad, pool, poolFor, total, horizonTotal, common, transfers }
+  const bank = SQUAD_INFO ? SQUAD_INFO.bank : RULES.budget ?? 100
+  const common = { squad, pool, bank, projected: byPlayer, teamLimit: RULES.squadTeamLimit, sellOnFee: RULES.sellOnFee ?? 0 }
+  const transfers = squad.length
+    ? planTransfers({ ...common, horizon: HORIZON, maxMoves: MAX_MOVES })
+    : { moves: [], singles: [], gain: 0 }
+  return { players, rounds, byPlayer, squad, pool, poolFor, total, horizonTotal, common, transfers }
 }
 
 /**
@@ -81,6 +92,24 @@ function difference(before, after) {
 
 const rebuilt = perLeague(() => new Map())
 
+// The cheapest 15 that fill every position within the club limit: fit
+// players only, the ones who've played first among equal prices.
+function cheapestSquad(players, budget, teamLimit) {
+  const left = { ...QUOTA }
+  const perClub = new Map()
+  const squad = []
+  const byPrice = players
+    .filter(p => !OUT.has(p.availability))
+    .sort((a, b) => a.price - b.price || b.minutesTotal - a.minutesTotal)
+  for (const p of byPrice) {
+    if (!left[p.position] || (perClub.get(p.team) ?? 0) >= teamLimit) continue
+    left[p.position]--
+    perClub.set(p.team, (perClub.get(p.team) ?? 0) + 1)
+    squad.push({ ...p, purchasePrice: p.price })
+  }
+  return { squad, bank: budget - squad.reduce((sum, p) => sum + p.price, 0) }
+}
+
 /**
  * The best squad within the user's budget (bank plus every player's sell
  * price) for `count` rounds from round index `from`: the ideal team, and what
@@ -90,12 +119,14 @@ export function rebuiltSquad(data, from, count) {
   const cache = rebuilt(data)
   const key = `${from}:${count}`
   if (!cache.has(key)) {
-    const { plan, SQUAD_INFO, RULES } = derivePlan(data)
-    const { byPlayer, squad, poolFor, total } = plan
+    const { plan } = derivePlan(data)
+    const { byPlayer, squad, poolFor, total, common, players } = plan
     const score = s => squadScore(s, byPlayer, count, from)
+    // From scratch, the search starts at the cheapest legal squad and spends the rest.
+    const start = squad.length ? { squad, bank: common.bank } : cheapestSquad(players, common.bank, common.teamLimit)
     const result = bestSquad({
-      squad, pool: poolFor(from, count), bank: SQUAD_INFO.bank, score,
-      rank: p => total(p, from, count), teamLimit: RULES.squadTeamLimit, sellOnFee: RULES.sellOnFee,
+      squad: start.squad, pool: poolFor(from, count), bank: start.bank, score,
+      rank: p => total(p, from, count), teamLimit: common.teamLimit, sellOnFee: common.sellOnFee,
     })
     cache.set(key, { ...result, from, count, gain: result.score - score(squad), ...difference(squad, result.squad) })
   }

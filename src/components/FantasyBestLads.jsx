@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react'
-import { useFantasyData, perLeague } from '../contexts/fantasyData'
+import { useFantasyData, useLabels, perLeague } from '../contexts/fantasyData'
 import { POSITIONS, availability } from '../utils/fantasyPlayers'
 import { leagueTable } from '../utils/fantasyFixtures'
 import Chip from './FilterChip'
@@ -34,6 +34,7 @@ const STATUS_DOT = { doubtful: 'bg-amber-400', injured: 'bg-red-500', suspended:
 
 function PlayerLine({ entry, second, aboveAverage }) {
   const { MY_PICKS } = derive(useFantasyData().data)
+  const { C } = useLabels()
   if (!entry) return <p className={`text-xs text-slate-600 ${second ? 'pl-2' : ''}`}>–</p>
   const { player, points } = entry
   const mine = MY_PICKS.has(player.id)
@@ -48,7 +49,7 @@ function PlayerLine({ entry, second, aboveAverage }) {
         {player.name}
       </span>
       {dot && <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${dot}`} title={player.news ?? player.availability} />}
-      <span className="ml-auto tabular-nums text-slate-500 shrink-0">£{player.price.toFixed(1)}</span>
+      <span className="ml-auto tabular-nums text-slate-500 shrink-0">{C}{player.price.toFixed(1)}</span>
       <span className={`w-8 text-right tabular-nums shrink-0 ${second ? '' : `font-bold ${aboveAverage ? 'text-emerald-400' : 'text-slate-100'}`}`}>{points}</span>
     </div>
   )
@@ -57,6 +58,7 @@ function PlayerLine({ entry, second, aboveAverage }) {
 export default function FantasyBestLads() {
   const { data } = useFantasyData()
   const { LAST_ROUND, TABLE, TEAMS } = derive(data)
+  const { R, C } = useLabels()
   const [windowKey, setWindowKey] = useState('season')
 
   const { byTeam, benchmark } = useMemo(() => {
@@ -87,7 +89,7 @@ export default function FantasyBestLads() {
           {Object.entries(WINDOWS).map(([key, w]) => <Chip key={key} active={windowKey === key} onClick={() => setWindowKey(key)}>{w.label}</Chip>)}
         </div>
         <span className="text-xs text-slate-600 ml-auto">
-          Clubs in league order after GW{LAST_ROUND} · top scorer per position, runner-up below · <span className="text-indigo-300">your players</span> ·{' '}
+          Clubs in league order after {R}{LAST_ROUND} · top scorer per position, runner-up below · <span className="text-indigo-300">your players</span> ·{' '}
           <span className="text-emerald-400">above average</span>
         </span>
       </div>
@@ -129,7 +131,7 @@ export default function FantasyBestLads() {
             <tr className="text-[10px] uppercase tracking-wider text-slate-500">
               <th className="text-left font-semibold py-1">Pos</th>
               <th className="text-right font-semibold py-1">Avg pts</th>
-              <th className="text-right font-semibold py-1">Avg £</th>
+              <th className="text-right font-semibold py-1">Avg {C}</th>
               <th className="text-right font-semibold py-1">+25%</th>
               <th className="text-left font-semibold py-1 pl-4">Top of them</th>
             </tr>

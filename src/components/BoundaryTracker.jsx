@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useRef, useId } from 'react'
+import TrackerMatchPanel from './TrackerMatchPanel'
 
 const BALLS = 6
 const GROUP_SIZE = 10
@@ -236,7 +237,7 @@ function DiffGraph({ grid, homeAbbr, awayAbbr, homeColor, awayColor, currentOver
   )
 }
 
-export default function BoundaryTracker({ game, standings = {}, onClose }) {
+export default function BoundaryTracker({ game, games = [], standings = {}, onClose }) {
   // ODI is 50 overs with a 10-over powerplay; everything else (T20/BBL) is
   // 20 overs with a 6-over powerplay. Derived once from the game itself, so
   // no new prop threading is needed — intlCricket.js already tags every game
@@ -307,7 +308,7 @@ export default function BoundaryTracker({ game, standings = {}, onClose }) {
 
   useEffect(() => {
     function onKey(e) {
-      if (e.key === 'Q' && e.shiftKey) { onClose(); return }
+      if (e.key === 'Escape' || (e.key === 'Q' && e.shiftKey)) { onClose(); return }
       if (e.ctrlKey && e.key === 'z') { e.preventDefault(); undoLast(); return }
 
       const { over, ball } = focused
@@ -374,8 +375,12 @@ export default function BoundaryTracker({ game, standings = {}, onClose }) {
         style={{
           gridTemplateColumns: COLS,
           background: rowBg,
-          padding: '2px 10px',
-          minHeight: '36px',
+          padding: '1px 10px',
+          // Rows share the grid card's height so the whole tracker fits the
+          // screen without scrolling; 36px when there's room, 20px at least.
+          flex: '1 1 0',
+          minHeight: '20px',
+          maxHeight: '36px',
           borderBottom: isLastPP
             ? '1px solid rgba(99,102,241,0.25)'
             : '1px solid rgba(255,255,255,0.04)',
@@ -401,7 +406,8 @@ export default function BoundaryTracker({ game, standings = {}, onClose }) {
               onClick={() => setFocused({ over: o, ball: b })}
               className="flex items-center justify-center cursor-pointer mx-0.5"
               style={{
-                height: '28px',
+                height: '100%',
+                maxHeight: '28px',
                 borderRadius: '5px',
                 background: isFocused ? 'rgba(255,255,255,0.1)' : 'transparent',
                 border: isFocused
@@ -452,7 +458,7 @@ export default function BoundaryTracker({ game, standings = {}, onClose }) {
         key={groupIndex}
         onClick={() => setFocused({ over: groupStart, ball: 0 })}
         className="w-full flex items-center justify-between px-3 transition-colors hover:bg-white/[0.03]"
-        style={{ minHeight: '36px', borderBottom: '1px solid rgba(255,255,255,0.04)' }}
+        style={{ flex: '1 1 0', minHeight: '20px', maxHeight: '36px', borderBottom: '1px solid rgba(255,255,255,0.04)' }}
       >
         <span className="flex items-center gap-2 text-[11px] font-mono tabular-nums font-medium text-slate-500">
           <span className="text-slate-600">▸</span> Overs {groupStart + 1}–{groupEnd + 1}
@@ -482,11 +488,11 @@ export default function BoundaryTracker({ game, standings = {}, onClose }) {
 
   return (
     <div
-      className="fixed inset-0 z-50 flex gap-4 p-4 overflow-auto"
+      className="fixed inset-0 z-50 flex gap-4 p-4 overflow-hidden"
       style={{ background: '#0d0d14' }}
     >
           {/* Left — legend + grid */}
-          <div className="flex flex-col gap-2 shrink-0" style={{ width: '620px' }}>
+          <div className="flex flex-col gap-2 shrink-0 min-h-0" style={{ width: '620px' }}>
 
             {/* Controls row */}
             <div className="flex items-center gap-4 px-1">
@@ -519,12 +525,12 @@ export default function BoundaryTracker({ game, standings = {}, onClose }) {
             </div>
 
             {/* Grid card */}
-            <div className="rounded-2xl overflow-hidden"
+            <div className="rounded-2xl overflow-hidden flex-1 min-h-0 flex flex-col"
               style={{ border: '1px solid rgba(255,255,255,0.08)' }}>
 
               {/* Column header */}
               <div
-                className="grid text-[9px] font-bold uppercase tracking-widest text-slate-500 border-b border-white/[0.07]"
+                className="grid shrink-0 text-[9px] font-bold uppercase tracking-widest text-slate-500 border-b border-white/[0.07]"
                 style={{
                   gridTemplateColumns: COLS,
                   background: 'rgba(255,255,255,0.04)',
@@ -545,7 +551,7 @@ export default function BoundaryTracker({ game, standings = {}, onClose }) {
                     const groupStart = groupIndex * GROUP_SIZE
                     const groupEnd = Math.min(groupStart + GROUP_SIZE, totalOvers)
                     return (
-                      <div key={groupIndex}>
+                      <div key={groupIndex} className="contents">
                         {grid.slice(groupStart, groupEnd).map((row, i) => renderRow(row, groupStart + i))}
                       </div>
                     )
@@ -553,6 +559,9 @@ export default function BoundaryTracker({ game, standings = {}, onClose }) {
                 : grid.map((row, o) => renderRow(row, o))
               }
             </div>
+
+            {/* Under the grid: mark watched / skip, and the series so far */}
+            <TrackerMatchPanel game={game} games={games} />
 
           </div>
 
@@ -567,9 +576,19 @@ export default function BoundaryTracker({ game, standings = {}, onClose }) {
                 background: 'rgba(255,255,255,0.02)',
               }}
             >
-              <p className="text-[9px] text-slate-600 uppercase tracking-widest font-bold shrink-0">
-                Boundary gap · per over
-              </p>
+              <div className="flex items-center justify-between gap-3 shrink-0">
+                <p className="text-[9px] text-slate-600 uppercase tracking-widest font-bold shrink-0">
+                  Boundary gap · per over
+                </p>
+                <button
+                  onClick={onClose}
+                  title="Close the tracker (Esc)"
+                  className="flex items-center gap-2 px-2.5 py-1 rounded-lg text-xs font-medium text-slate-400 border border-slate-700 hover:text-slate-100 hover:border-slate-500 transition-colors"
+                >
+                  <span aria-hidden>✕</span> Close
+                  <kbd className="px-1 rounded text-[10px] font-mono text-slate-500" style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)' }}>Esc</kbd>
+                </button>
+              </div>
               <div className="flex-1 min-h-0">
                 <DiffGraph
                   grid={grid}
@@ -687,7 +706,7 @@ export default function BoundaryTracker({ game, standings = {}, onClose }) {
 
               {/* Keyboard hints */}
               <p className="text-slate-700 text-center shrink-0" style={{ fontSize: 'max(8px, 1.8cqh)' }}>
-                Shift+Q close · Ctrl+Z undo · Space boundary · ⌫ clear · ↑↓←→ move · Ctrl+↑↓←→ jump
+                Esc close · Ctrl+Z undo · Space boundary · ⌫ clear · ↑↓←→ move · Ctrl+↑↓←→ jump
               </p>
             </div>
 

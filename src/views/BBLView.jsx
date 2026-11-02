@@ -8,6 +8,7 @@ import LoadingSpinner from '../components/LoadingSpinner'
 import EmptyState from '../components/EmptyState'
 import { useWatched } from '../contexts/WatchedContext'
 import SeasonCountdown from '../components/SeasonCountdown'
+import TransfersTab from '../components/TransfersTab'
 
 // ─── API Key Gate ─────────────────────────────────────────────────────────────
 
@@ -390,6 +391,7 @@ const TABS = [
   { id: 'watched',   label: 'Watched'   },
   { id: 'standings', label: 'Standings' },
   { id: 'stats',     label: 'Stats'     },
+  { id: 'transfers', label: 'Transfers' },
 ]
 
 const ENV_KEY = import.meta.env.VITE_CRICAPI_KEY || ''
@@ -561,10 +563,11 @@ export default function BBLView() {
       {!loading && !error && games.length > 0 && tab === 'all'       && <AllGamesTab games={games} onTrack={setTrackedGame} />}
       {!loading && !error && games.length > 0 && tab === 'watched'   && <WatchedTab games={games} onTrack={setTrackedGame} />}
       {!loading && !error && games.length > 0 && tab === 'standings' && <StandingsTab games={games} />}
+      {tab === 'transfers' && <TransfersTab league="bbl" />}
       {!loading && !error && games.length > 0 && tab === 'stats'     && <StatsTab />}
 
       {trackedGame && (
-        <BoundaryTracker game={trackedGame} standings={bblStandings} onClose={() => setTrackedGame(null)} />
+        <BoundaryTracker game={trackedGame} games={games} standings={bblStandings} onClose={() => setTrackedGame(null)} />
       )}
     </div>
   )

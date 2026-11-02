@@ -645,7 +645,7 @@ export default function HomeView() {
       )}
 
       {trackedGame && (
-        <BoundaryTracker game={trackedGame} standings={bblStandings} onClose={() => setTrackedGame(null)} />
+        <BoundaryTracker game={trackedGame} games={states[trackedGame.league]?.games ?? []} standings={trackedGame.league === 'bbl' ? bblStandings : {}} onClose={() => setTrackedGame(null)} />
       )}
     </div>
   )

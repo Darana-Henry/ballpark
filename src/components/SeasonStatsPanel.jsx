@@ -161,8 +161,8 @@ function ProgressLine({ label, watched, total, caption, accentColor }) {
   )
 }
 
-// `catchUp` (NFL only) is the catch-up plan from useCatchUpPlan: while it's
-// set, the card's middle shows the pace needed instead of the watched count,
+// `catchUp` is a catch-up plan (useCatchUpPlan for the NFL, useCricketCatchUp
+// for cricket): while it's set, the card's middle shows the pace needed instead of the watched count,
 // which the header already gives.
 export default function SeasonStatsPanel({ league, trackedTeamId = null, games = null, catchUp = null }) {
   const { watchedGames } = useWatched()

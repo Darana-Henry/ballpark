@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-10-30T18:11:12.913Z",
+  "generatedAt": "2026-11-02T14:39:05.617Z",
   "note": "Past seasons from the game's history (totals and final ranks). Round-by-round data for 2025 rounds 1-27 is copied from the user's Fantasy Eliteserien Stats sheet (09.Performance Graph); later seasons are archived by scripts/fetch-fantasy-players.mjs as they're played.",
   "seasons": [
     {"season":"2019","points":1515,"rank":13003},
@@ -9,7 +9,7 @@
     {"season":"2023","points":1737,"rank":5902},
     {"season":"2024","points":1541,"rank":9442},
     {"season":"2025","points":1973,"rank":524},
-    {"season":"2026","points":1550,"rank":2609,"live":true}
+    {"season":"2026","points":1604,"rank":2641,"live":true}
   ],
   "rounds": {
     "2025": [
@@ -65,7 +65,8 @@
       {"round":21,"points":62,"total":1350,"rank":3943,"overallRank":2345,"hits":0,"bench":11},
       {"round":22,"points":59,"total":1409,"rank":7818,"overallRank":2310,"hits":0,"bench":15},
       {"round":23,"points":64,"total":1473,"rank":11004,"overallRank":2673,"hits":0,"bench":13},
-      {"round":24,"points":77,"total":1550,"rank":5730,"overallRank":2609,"hits":0,"bench":0}
+      {"round":24,"points":77,"total":1550,"rank":5730,"overallRank":2609,"hits":0,"bench":0},
+      {"round":25,"points":54,"total":1604,"rank":7473,"overallRank":2641,"hits":0,"bench":6}
     ]
   }
 }

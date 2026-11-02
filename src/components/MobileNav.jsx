@@ -8,6 +8,7 @@ const ALL_TABS = [
   { id: 'fpl', name: 'FPL', emoji: '👑' },
   { id: 'eliteserien', name: 'Elite', emoji: '🇳🇴' },
   { id: 'allsvenskan', name: 'Allsv', emoji: '🇸🇪' },
+  { id: 'uclFantasy', name: 'UCL', emoji: '⭐' },
   { id: 'stats', name: 'Stats', emoji: '📊' },
 ]
 

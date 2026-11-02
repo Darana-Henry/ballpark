@@ -2,6 +2,7 @@
 // written by scripts/fetch-fantasy-deadlines.mjs. calendarName is the short
 // name used in that script's calendar event titles.
 // emoji is the fallback shown if logoUrl fails to load (see FantasyLeagueIcon).
+// roundShort and currency label rounds and prices (GW and £ unless set).
 // site is the game's own website, for links to a manager's team
 // (`<site>/entry/<id>/event/<round>`).
 export const FANTASY_LEAGUES = [
@@ -75,6 +76,8 @@ export const FANTASY_LEAGUES = [
   },
   {
     id: 'championsLeague',
+    roundShort: 'MD',
+    currency: '€',
     name: 'Champions League Fantasy',
     calendarName: 'UCL',
     emoji: '⭐',

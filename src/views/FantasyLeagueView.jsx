@@ -1,5 +1,5 @@
 import { useState, useMemo, Fragment } from 'react'
-import { FantasyDataContext, useFantasyData, perLeague } from '../contexts/fantasyData'
+import { FantasyDataContext, useFantasyData, useLabels, perLeague } from '../contexts/fantasyData'
 import FantasyLeagueIcon from '../components/FantasyLeagueIcon'
 import Chip from '../components/FilterChip'
 import FantasyFixtures, { FixtureCell } from '../components/FantasyFixtures'
@@ -102,6 +102,12 @@ const VALUE_COLUMNS = [
   { key: 'price', label: '£', title: 'Current price', format: p => p.price.toFixed(1) },
   { key: 'ownership', label: 'Own %', title: 'Selected by % of managers', format: p => p.ownership.toFixed(1) },
 ]
+// Only some games publish these (the Champions League's does); shown when present.
+const SEASON_STAT_COLUMNS = [
+  { key: 'goals', label: 'G', title: 'Goals this season' },
+  { key: 'assists', label: 'A', title: 'Assists this season' },
+  { key: 'cleanSheets', label: 'CS', title: 'Clean sheets this season' },
+]
 const FORM_COLUMNS = [
   { key: 'total', label: 'Pts', title: 'Season points' },
   { key: 'last7', label: 'L7', title: 'Points in the last 7 rounds' },
@@ -151,6 +157,7 @@ const toggleIn = (set, value) => {
 
 function RoundStrip({ player }) {
   const { data } = useFantasyData()
+  const { R } = useLabels()
   return (
     <div className="flex flex-wrap gap-1 py-2">
       {data.rounds.map((round, i) => {
@@ -160,9 +167,9 @@ function RoundStrip({ player }) {
           <div
             key={round}
             className={`w-12 rounded-md px-1 py-1 text-center ${mins ? 'bg-slate-800/70' : 'bg-slate-900/60'}`}
-            title={`GW${round}: ${pts ?? '–'} pts, ${mins ?? '–'} min`}
+            title={`${R}${round}: ${pts ?? '–'} pts, ${mins ?? '–'} min`}
           >
-            <p className="text-[9px] text-slate-600">GW{round}</p>
+            <p className="text-[9px] text-slate-600">{R}{round}</p>
             <p className={`text-xs font-semibold tabular-nums ${pts >= 6 ? 'text-emerald-400' : mins ? 'text-slate-200' : 'text-slate-600'}`}>{pts ?? '–'}</p>
             <p className="text-[9px] text-slate-500 tabular-nums">{mins ?? '–'}′</p>
           </div>
@@ -184,7 +191,11 @@ function RoundCell({ pts, mins }) {
 function PlayersPanel() {
   const { data } = useFantasyData()
   const { TEAMS, LAST_ROUND, RECENT, MY_PICKS, NEXT } = derive(data)
-  const COLUMN_COUNT = VALUE_COLUMNS.length + RECENT.length + FORM_COLUMNS.length + NEXT.rounds.length + 9
+  const { R, C } = useLabels()
+  // The Champions League game has no penalty data, so no column for it.
+  const HAS_PENS = data.players.some(p => p.penalties)
+  const STAT_COLUMNS = data.players[0]?.goals !== undefined ? SEASON_STAT_COLUMNS : []
+  const COLUMN_COUNT = VALUE_COLUMNS.length + RECENT.length + FORM_COLUMNS.length + STAT_COLUMNS.length + NEXT.rounds.length + (HAS_PENS ? 9 : 8)
   const [positions, setPositions] = useState(new Set())
   const [statuses, setStatuses] = useState(new Set())
   const [banRisk, setBanRisk] = useState(false)
@@ -240,7 +251,7 @@ function PlayersPanel() {
   )
 
   const statHeader = c => (
-    <th key={c.key} className="text-right font-semibold px-2 py-2.5 whitespace-nowrap">{sortHeader(c.key, c.label, c.title)}</th>
+    <th key={c.key} className="text-right font-semibold px-2 py-2.5 whitespace-nowrap">{sortHeader(c.key, c.label === '£' ? C : c.label, c.title)}</th>
   )
   const statCell = (c, p) => (
     <td
@@ -281,7 +292,7 @@ function PlayersPanel() {
             step="0.1"
             value={priceCap}
             onChange={e => setPriceCap(e.target.value)}
-            placeholder="Max £"
+            placeholder={`Max ${C}`}
             aria-label="Maximum price"
             className={`${selectClass} w-20`}
           />
@@ -294,7 +305,7 @@ function PlayersPanel() {
           />
           <div className="flex flex-wrap gap-1">
             <Chip active={playedOnly} onClick={() => setPlayedOnly(v => !v)}>Played this season</Chip>
-            <Chip active={onPens} onClick={() => setOnPens(v => !v)}>Takes pens</Chip>
+            {HAS_PENS && <Chip active={onPens} onClick={() => setOnPens(v => !v)}>Takes pens</Chip>}
             {data.mySquad && <Chip active={mineOnly} onClick={() => setMineOnly(v => !v)}>My team</Chip>}
           </div>
           <div className="flex items-center gap-3 ml-auto">
@@ -315,15 +326,16 @@ function PlayersPanel() {
               <th className="sticky md:static left-0 w-12 min-w-12 bg-[#10101a] md:bg-transparent text-left font-semibold px-3 py-2.5">Pos</th>
               <th className="sticky md:static left-12 bg-[#10101a] md:bg-transparent text-left font-semibold px-2 py-2.5">Player</th>
               <th className="text-left font-semibold px-2 py-2.5">Team</th>
-              <th className="text-right font-semibold px-2 py-2.5">{sortHeader('teamRank', '#', `Team's league position after GW${LAST_ROUND}`, true)}</th>
+              <th className="text-right font-semibold px-2 py-2.5">{sortHeader('teamRank', '#', `Team's league position after ${R}${LAST_ROUND}`, true)}</th>
               {VALUE_COLUMNS.map(statHeader)}
               {RECENT.map(({ round }) => (
-                <th key={round} className="text-center font-semibold px-1.5 py-2.5 whitespace-nowrap" title={`GW${round}: points and minutes`}>GW{round}</th>
+                <th key={round} className="text-center font-semibold px-1.5 py-2.5 whitespace-nowrap" title={`${R}${round}: points and minutes`}>{R}{round}</th>
               ))}
               {FORM_COLUMNS.map(statHeader)}
-              <th className="text-left font-semibold px-2 py-2.5">{sortHeader('penaltiesTaken', 'Pens', 'Penalties taken this season (ESPN)')}</th>
+              {STAT_COLUMNS.map(statHeader)}
+              {HAS_PENS && <th className="text-left font-semibold px-2 py-2.5">{sortHeader('penaltiesTaken', 'Pens', 'Penalties taken this season (ESPN)')}</th>}
               <th className="text-left font-semibold px-3 py-2.5">Status</th>
-              {NEXT.rounds.map(r => <th key={r} className="font-semibold px-1 py-2.5 min-w-[4.5rem]">GW{r}</th>)}
+              {NEXT.rounds.map(r => <th key={r} className="font-semibold px-1 py-2.5 min-w-[4.5rem]">{R}{r}</th>)}
               <th className="text-right font-semibold px-2 py-2.5 whitespace-nowrap">{sortHeader('nextAvg', 'Avg', 'Average fixture difficulty over the next 3 rounds (1 easy, 5 hard)', true)}</th>
               <th className="text-right font-semibold px-2 py-2.5 whitespace-nowrap">{sortHeader('nextGoals', 'Proj G', "Team's projected goals over the next 3 rounds (our model from this season's results)")}</th>
               <th className="text-right font-semibold px-3 py-2.5 whitespace-nowrap">{sortHeader('nextCleanSheet', 'CS %', "Team's average clean-sheet chance per game over the next 3 rounds")}</th>
@@ -359,7 +371,8 @@ function PlayersPanel() {
                     {VALUE_COLUMNS.map(c => statCell(c, p))}
                     {RECENT.map(({ round, index }) => <RoundCell key={round} pts={p.points[index]} mins={p.minutes[index]} />)}
                     {FORM_COLUMNS.map(c => statCell(c, p))}
-                    <td className="px-2 py-2"><PenaltyBadge player={p} /></td>
+                    {STAT_COLUMNS.map(c => statCell(c, p))}
+                    {HAS_PENS && <td className="px-2 py-2"><PenaltyBadge player={p} /></td>}
                     <td className="px-3 py-2"><StatusCell player={p} /></td>
                     {(NEXT.byTeam.get(p.team) ?? []).map((games, i) => <FixtureCell key={NEXT.rounds[i]} games={games} projections />)}
                     <td className={`px-2 py-2 text-right tabular-nums ${sort.key === 'nextAvg' ? 'text-slate-100 font-semibold' : 'text-slate-300'}`}>
@@ -391,24 +404,31 @@ function PlayersPanel() {
   )
 }
 
+// `needs` hides a panel when the league has no such data: the Champions
+// League game keeps the user's squad, its leaderboards and past seasons
+// behind a login.
 const PANELS = {
   players:  { label: 'Players',      Panel: PlayersPanel },
-  team:     { label: 'My team',      Panel: FantasyMyTeam },
+  team:     { label: 'My team',      Panel: FantasyMyTeam, needs: 'mySquad' },
+  // Without a squad, the ideal team is built from scratch instead.
   ideal:    { label: 'Ideal team',   Panel: FantasyIdealTeam },
-  plan:     { label: 'Transfers',    Panel: FantasyPlanner },
-  chips:    { label: 'Chips',        Panel: FantasyChips },
+  plan:     { label: 'Transfers',    Panel: FantasyPlanner, needs: 'mySquad' },
+  chips:    { label: 'Chips',        Panel: FantasyChips, needs: 'mySquad' },
   best:     { label: 'Best by club', Panel: FantasyBestLads },
   fixtures: { label: 'Fixtures',     Panel: FantasyFixtures },
-  top:      { label: 'Top managers', Panel: FantasyTopManagers },
-  history:  { label: 'Performance',  Panel: FantasyPerformance },
+  top:      { label: 'Top managers', Panel: FantasyTopManagers, needs: 'topManagers' },
+  history:  { label: 'Performance',  Panel: FantasyPerformance, needs: 'history' },
 }
+const hasData = (needs, data, history) => !needs || (needs === 'history' ? Boolean(history) : Boolean(data[needs]))
 
 /** `league` is the FANTASY_LEAGUE_MAP entry; `data` and `history` its two data files. */
 export default function FantasyLeagueView({ league, data, history }) {
   const [panel, setPanel] = useState('players')
   const { Panel } = PANELS[panel]
+  const panels = Object.entries(PANELS).filter(([, p]) => hasData(p.needs, data, history))
   const context = useMemo(() => ({ league, data, history }), [league, data, history])
   const lastRound = data.rounds.at(-1)
+  const R = league.roundShort ?? 'GW'
   return (
     <FantasyDataContext.Provider value={context}>
       <div className="p-4 md:p-6">
@@ -417,15 +437,15 @@ export default function FantasyLeagueView({ league, data, history }) {
           <div>
             <h2 className="text-2xl font-bold text-slate-100 leading-tight">{league.name}</h2>
             <p className="text-sm text-slate-500 mt-0.5">
-              Through GW{lastRound} · refreshed {new Date(data.generatedAt).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}
-              {data.mySquad && <> · <span className="text-indigo-300">{data.mySquad.name}</span> as of GW{data.mySquad.round}</>}
+              Through {R}{lastRound} · refreshed {new Date(data.generatedAt).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}
+              {data.mySquad && <> · <span className="text-indigo-300">{data.mySquad.name}</span> as of {R}{data.mySquad.round}</>}
             </p>
           </div>
         </div>
 
         {/* Swipes sideways on phones, where the tabs don't all fit */}
         <div className="flex mb-5 rounded-2xl p-1 gap-0.5 w-full sm:w-fit overflow-x-auto scrollbar-hide" style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.08)' }}>
-          {Object.entries(PANELS).map(([key, { label }]) => (
+          {panels.map(([key, { label }]) => (
             <button
               key={key}
               onClick={() => setPanel(key)}

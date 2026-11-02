@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState } from 'react'
-import { useFantasyData } from '../contexts/fantasyData'
+import { useFantasyData, useLabels } from '../contexts/fantasyData'
 import { POSITIONS } from '../utils/fantasyPlayers'
 import { derivePlan, rebuiltSquad, squadLineup } from '../utils/fantasyPlan'
 import { sellPrice } from '../utils/fantasyPlanner'
-import { pairMoves, facts, whySwap } from '../utils/fantasyExplain'
+import { pairMoves, facts, whySwap, whyPick } from '../utils/fantasyExplain'
 import { SquadPitch, WithSidePanel } from './FantasySquadPitch'
 import { Fixtures } from './FantasyPlanRows'
 import { panelStyle, fmt, useGames, NEW_BADGE, scrollIntoViewOnPhone } from './fantasyPlanShared'
@@ -16,6 +16,7 @@ import Chip from './FilterChip'
 
 function Row({ p, price, tone, from, count, onSelect, selected }) {
   const { TEAMS, plan } = derivePlan(useFantasyData().data)
+  const { C } = useLabels()
   const games = useGames()
   const Tag = onSelect ? 'button' : 'div'
   return (
@@ -28,7 +29,7 @@ function Row({ p, price, tone, from, count, onSelect, selected }) {
       <span className="w-8 text-[10px] font-semibold text-slate-500">{POSITIONS[p.position]}</span>
       <span className="flex-1 min-w-0 truncate">
         <span className={tone}>{p.name}</span>
-        <span className="text-slate-500"> · {TEAMS[p.team].short} · £{price.toFixed(1)}</span>
+        <span className="text-slate-500"> · {TEAMS[p.team].short} · {C}{price.toFixed(1)}</span>
       </span>
       <span className="hidden sm:flex"><Fixtures games={games(p, from, count)} /></span>
       <span className="w-10 text-right tabular-nums text-slate-400" title={`Projected pts over ${count} round${count > 1 ? 's' : ''}`}>{plan.total(p, from, count).toFixed(1)}</span>
@@ -58,15 +59,16 @@ export function InOutLists({ squad, ins, outs, from, count, onSelect, selectedId
 }
 
 // One side of the comparison: the projection's inputs for one player.
-function Side({ player, f, price, tone, from, count }) {
+function Side({ player, f, price, tone, from, count, heading }) {
   const { TEAMS } = derivePlan(useFantasyData().data)
+  const { C } = useLabels()
   const games = useGames()
   const attack = player.position >= 3
   return (
     <div className="flex-1 min-w-0 rounded-xl p-2.5 bg-white/[0.03]">
-      <p className={`text-[10px] uppercase tracking-wider ${tone}`}>{tone.includes('emerald') ? 'Bring in' : 'Drop'}</p>
+      <p className={`text-[10px] uppercase tracking-wider ${tone}`}>{heading ?? (tone.includes('emerald') ? 'Bring in' : 'Drop')}</p>
       <p className="text-sm font-semibold text-slate-100 truncate" title={player.fullName}>{player.name}</p>
-      <p className="text-[11px] text-slate-500">{POSITIONS[player.position]} · {TEAMS[player.team].short} · £{price.toFixed(1)}</p>
+      <p className="text-[11px] text-slate-500">{POSITIONS[player.position]} · {TEAMS[player.team].short} · {C}{price.toFixed(1)}</p>
       <div className="my-1.5"><Fixtures games={games(player, from, count)} /></div>
       <dl className="grid grid-cols-[auto_1fr] gap-x-2 gap-y-0.5 text-[11px]">
         <dt className="text-slate-500">Projected</dt><dd className="text-right font-bold text-slate-100 tabular-nums">{f.projected.toFixed(1)}</dd>
@@ -117,6 +119,83 @@ function Why({ id, moves, mine, from, count, label, onClose }) {
   )
 }
 
+// Tapping a player in a squad built from scratch: why they're in it.
+function WhyPick({ player, squad, from, count, label, onClose }) {
+  const { plan } = derivePlan(useFantasyData().data)
+  const { C } = useLabels()
+  const ref = useRef(null)
+  useEffect(() => scrollIntoViewOnPhone(ref.current), [player.id])
+  return (
+    <section ref={ref} className="rounded-2xl p-3 scroll-mb-24" style={panelStyle}>
+      <header className="flex items-baseline gap-2 mb-2">
+        <h3 className="text-sm font-bold text-slate-100">Why this player</h3>
+        <button onClick={onClose} className="ml-auto text-[11px] text-slate-500 hover:text-slate-300">Close</button>
+      </header>
+      <p className="text-xs text-slate-300 leading-relaxed mb-3">{whyPick(player, plan, from, count, label, squad, C)}</p>
+      <Side player={player} f={facts(player, plan, from, count)} price={player.price} tone="text-emerald-400" heading="In the ideal team" from={from} count={count} />
+    </section>
+  )
+}
+
+// No squad to compare with (the Champions League game's is behind a login):
+// the best 15 on the game's whole budget, as for a new team or a wildcard.
+function FromScratch({ count, setCount }) {
+  const { data } = useFantasyData()
+  const { ROUND, HORIZON, plan } = derivePlan(data)
+  const { R, C } = useLabels()
+  const [selectedId, setSelectedId] = useState(null)
+  const rounds = Math.min(count, HORIZON)
+  const ideal = rebuiltSquad(data, 0, rounds)
+  const lineup = squadLineup(ideal.squad, plan.byPlayer, 0, rounds)
+  const budget = plan.common.bank
+  const cost = ideal.squad.reduce((s, p) => s + p.price, 0)
+  const label = rounds > 1 ? `${R}${ROUND}–${ROUND + rounds - 1}` : `${R}${ROUND}`
+  const selected = ideal.squad.find(p => p.id === selectedId)
+  const pick = n => { setCount(n); setSelectedId(null) }
+  return (
+    <div className="max-w-3xl lg:max-w-none">
+      <div className="flex flex-wrap items-center gap-2 mb-4">
+        <div className="flex gap-1">
+          <Chip active={rounds === 1} onClick={() => pick(1)}>Next round</Chip>
+          {HORIZON > 1 && <Chip active={rounds > 1} onClick={() => pick(3)}>Next {HORIZON} rounds</Chip>}
+        </div>
+        <span className="text-xs text-slate-600 ml-auto">Best 15 from scratch on the game's {C}{budget.toFixed(0)}m · tap a player for why</span>
+      </div>
+
+      <div className="grid grid-cols-3 gap-2 mb-4 lg:max-w-[46rem]">
+        {[
+          ['Projected', `${ideal.score.toFixed(1)} pts`, `best XI + captain, ${label}`],
+          ['Cost', `${C}${cost.toFixed(1)}m`, `of ${C}${budget.toFixed(1)}m`],
+          ['Left over', `${C}${ideal.bank.toFixed(1)}m`, ideal.bank > 2 ? 'nothing better to spend it on' : 'in the bank'],
+        ].map(([title, value, note]) => (
+          <div key={title} className="rounded-xl px-3 py-2" style={panelStyle}>
+            <p className="text-[10px] uppercase tracking-wider text-slate-500">{title}</p>
+            <p className="text-base font-bold truncate text-slate-100">{value}</p>
+            <p className="text-[11px] text-slate-500 truncate" title={note}>{note}</p>
+          </div>
+        ))}
+      </div>
+
+      <WithSidePanel
+        side={selected && <WhyPick key={selected.id} player={selected} squad={ideal.squad} from={0} count={rounds} label={label} onClose={() => setSelectedId(null)} />}
+        hint="Tap a player on the pitch to see why they're in the team."
+      >
+        <SquadPitch
+          lineup={lineup}
+          rounds={rounds}
+          cardProps={p => ({ selected: selectedId === p.id, onClick: () => setSelectedId(s => (s === p.id ? null : p.id)) })}
+        />
+      </WithSidePanel>
+
+      <p className="text-[11px] text-slate-600 mt-4 leading-relaxed lg:max-w-[46rem]">
+        Your team in this game is behind its login, which this app doesn't use, so this is the best squad from nothing: 2 keepers, 5 defenders, 5 midfielders and 3 forwards, at most {plan.common.teamLimit} from a club, within {C}{budget.toFixed(0)}m.
+        It starts from the cheapest legal squad and swaps players one at a time, then in pairs (a cheaper player to pay for a better one), while that raises the projection: the best XI plus captain over {label}.
+        Points under each player are their projection over {label} (form × fixture × chance of playing).
+      </p>
+    </div>
+  )
+}
+
 export default function FantasyIdealTeam() {
   const { data } = useFantasyData()
   const { SQUAD_INFO, RULES, ROUND, HORIZON, plan } = derivePlan(data)
@@ -124,8 +203,9 @@ export default function FantasyIdealTeam() {
   const [selectedId, setSelectedId] = useState(null)
 
   if (!plan) {
-    return <p className="text-sm text-slate-500 text-center py-10">{SQUAD_INFO ? 'The season is over.' : 'Your squad couldn\'t be fetched yet.'}</p>
+    return <p className="text-sm text-slate-500 text-center py-10">The season is over.</p>
   }
+  if (!SQUAD_INFO) return <FromScratch count={count} setCount={setCount} />
 
   const rounds = Math.min(count, HORIZON)
   const ideal = rebuiltSquad(data, 0, rounds)

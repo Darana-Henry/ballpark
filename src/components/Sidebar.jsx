@@ -13,7 +13,7 @@ function LeagueIcon({ league }) {
   const [err, setErr] = useState(false)
   if (!league.logoUrl || err) {
     return (
-      <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm shrink-0 ${league.iconBg}`}>
+      <div className={`w-7 h-7 rounded-full flex items-center justify-center text-sm shrink-0 ${league.iconBg}`}>
         {league.emoji}
       </div>
     )
@@ -22,9 +22,9 @@ function LeagueIcon({ league }) {
     <img
       src={league.logoUrl}
       alt={league.name}
-      width={32}
-      height={32}
-      className={`w-8 h-8 rounded-full object-contain p-1 shrink-0 ${league.iconBg}`}
+      width={28}
+      height={28}
+      className={`w-7 h-7 rounded-full object-contain p-1 shrink-0 ${league.iconBg}`}
       onError={() => setErr(true)}
     />
   )
@@ -36,7 +36,7 @@ function NavItem({ league, active, onClick, coverage }) {
     <button
       onClick={onClick}
       className={[
-        'flex items-center gap-3 w-full px-3 py-2.5 rounded-xl text-left transition-all duration-150',
+        'flex items-center gap-3 w-full px-3 py-1 rounded-xl text-left transition-all duration-150',
         active
           ? 'bg-slate-800/80 text-slate-100'
           : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/40',
@@ -124,7 +124,7 @@ export default function Sidebar({ activeLeague, onLeagueChange }) {
   return (
     <aside className="hidden md:flex flex-col w-60 shrink-0 h-screen sticky top-0" style={{ background: 'rgba(6,8,22,0.75)', backdropFilter: 'blur(24px)', WebkitBackdropFilter: 'blur(24px)', borderRight: '1px solid rgba(255,255,255,0.07)' }}>
       {/* Logo */}
-      <div className="px-4 pt-6 pb-5">
+      <div className="px-4 pt-4 pb-3">
         <div className="flex items-center gap-3">
           <div className="w-9 h-9 rounded-full bg-slate-800 border border-slate-700/50 flex items-center justify-center shrink-0">
             <span className="text-lg leading-none">⚾</span>
@@ -136,18 +136,20 @@ export default function Sidebar({ activeLeague, onLeagueChange }) {
         </div>
       </div>
 
+      {/* Compact enough to fit a laptop screen; scrolls only in a shorter window */}
+      <div className="flex-1 min-h-0 overflow-y-auto pb-4 [scrollbar-width:thin] [scrollbar-color:rgba(255,255,255,0.15)_transparent]">
       {/* Home */}
-      <div className="px-3 mb-4">
+      <div className="px-3 mb-2">
         <button
           onClick={() => onLeagueChange('home')}
           className={[
-            'flex items-center gap-3 w-full px-3 py-2.5 rounded-xl text-left transition-all duration-150',
+            'flex items-center gap-3 w-full px-3 py-1 rounded-xl text-left transition-all duration-150',
             activeLeague === 'home'
               ? 'bg-slate-800/80 text-slate-100'
               : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/40',
           ].join(' ')}
         >
-          <div className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 ${activeLeague === 'home' ? 'bg-slate-700' : 'bg-slate-800/60'}`}>
+          <div className={`w-7 h-7 rounded-full flex items-center justify-center shrink-0 ${activeLeague === 'home' ? 'bg-slate-700' : 'bg-slate-800/60'}`}>
             <HomeIcon />
           </div>
           <span className={`text-sm font-semibold ${activeLeague === 'home' ? 'text-slate-100' : 'text-slate-300'}`}>
@@ -173,14 +175,14 @@ export default function Sidebar({ activeLeague, onLeagueChange }) {
       </nav>
 
       {/* Previews section */}
-      <div className="px-4 mt-5 mb-1">
+      <div className="px-4 mt-2 mb-0.5">
         <p className="text-[10px] font-semibold text-slate-600 uppercase tracking-widest">Previews</p>
       </div>
       <div className="px-3">
         <button
           onClick={() => onLeagueChange('europe')}
           className={[
-            'flex items-center gap-3 w-full px-3 py-2.5 rounded-xl text-left transition-all duration-150',
+            'flex items-center gap-3 w-full px-3 py-1 rounded-xl text-left transition-all duration-150',
             activeLeague === 'europe'
               ? 'bg-slate-800/80 text-slate-100'
               : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/40',
@@ -189,9 +191,9 @@ export default function Sidebar({ activeLeague, onLeagueChange }) {
           <img
             src="https://upload.wikimedia.org/wikipedia/en/f/f5/UEFA_Champions_League.svg"
             alt="UEFA Champions League"
-            width={32}
-            height={32}
-            className="w-8 h-8 rounded-full object-contain p-1 shrink-0 bg-white"
+            width={28}
+            height={28}
+            className="w-7 h-7 rounded-full object-contain p-1 shrink-0 bg-white"
           />
           <span className={`flex-1 text-sm font-semibold ${activeLeague === 'europe' ? 'text-slate-100' : 'text-slate-300'}`}>
             Europe
@@ -206,20 +208,20 @@ export default function Sidebar({ activeLeague, onLeagueChange }) {
       </div>
 
       {/* Fantasy section */}
-      <div className="px-4 mt-5 mb-1">
+      <div className="px-4 mt-2 mb-0.5">
         <p className="text-[10px] font-semibold text-slate-600 uppercase tracking-widest">Fantasy</p>
       </div>
       <div className="px-3">
         <button
           onClick={() => onLeagueChange('deadlines')}
           className={[
-            'flex items-center gap-3 w-full px-3 py-2.5 rounded-xl text-left transition-all duration-150',
+            'flex items-center gap-3 w-full px-3 py-1 rounded-xl text-left transition-all duration-150',
             activeLeague === 'deadlines'
               ? 'bg-slate-800/80 text-slate-100'
               : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/40',
           ].join(' ')}
         >
-          <div className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 ${activeLeague === 'deadlines' ? 'bg-slate-700' : 'bg-slate-800/60'}`}>
+          <div className={`w-7 h-7 rounded-full flex items-center justify-center shrink-0 ${activeLeague === 'deadlines' ? 'bg-slate-700' : 'bg-slate-800/60'}`}>
             <AlarmClockIcon />
           </div>
           <span className={`text-sm font-semibold ${activeLeague === 'deadlines' ? 'text-slate-100' : 'text-slate-300'}`}>
@@ -227,18 +229,18 @@ export default function Sidebar({ activeLeague, onLeagueChange }) {
           </span>
         </button>
         {/* [view id, fantasy league, label] */}
-        {[['fpl', 'premierLeague', 'Premier League'], ['eliteserien', 'eliteserien', 'Eliteserien'], ['allsvenskan', 'allsvenskan', 'Allsvenskan']].map(([id, leagueId, name]) => (
+        {[['fpl', 'premierLeague', 'Premier League'], ['eliteserien', 'eliteserien', 'Eliteserien'], ['allsvenskan', 'allsvenskan', 'Allsvenskan'], ['uclFantasy', 'championsLeague', 'Champions League']].map(([id, leagueId, name]) => (
           <button
             key={id}
             onClick={() => onLeagueChange(id)}
             className={[
-              'flex items-center gap-3 w-full px-3 py-2.5 rounded-xl text-left transition-all duration-150',
+              'flex items-center gap-3 w-full px-3 py-1 rounded-xl text-left transition-all duration-150',
               activeLeague === id
                 ? 'bg-slate-800/80 text-slate-100'
                 : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/40',
             ].join(' ')}
           >
-            <FantasyLeagueIcon league={FANTASY_LEAGUE_MAP[leagueId]} size={32} />
+            <FantasyLeagueIcon league={FANTASY_LEAGUE_MAP[leagueId]} size={28} />
             <span className={`text-sm font-semibold ${activeLeague === id ? 'text-slate-100' : 'text-slate-300'}`}>
               {name}
             </span>
@@ -247,20 +249,20 @@ export default function Sidebar({ activeLeague, onLeagueChange }) {
       </div>
 
       {/* Analytics section */}
-      <div className="px-4 mt-5 mb-1">
+      <div className="px-4 mt-2 mb-0.5">
         <p className="text-[10px] font-semibold text-slate-600 uppercase tracking-widest">Analytics</p>
       </div>
       <div className="px-3">
         <button
           onClick={() => onLeagueChange('stats')}
           className={[
-            'flex items-center gap-3 w-full px-3 py-2.5 rounded-xl text-left transition-all duration-150',
+            'flex items-center gap-3 w-full px-3 py-1 rounded-xl text-left transition-all duration-150',
             activeLeague === 'stats'
               ? 'bg-slate-800/80 text-slate-100'
               : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/40',
           ].join(' ')}
         >
-          <div className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 ${activeLeague === 'stats' ? 'bg-slate-700' : 'bg-slate-800/60'}`}>
+          <div className={`w-7 h-7 rounded-full flex items-center justify-center shrink-0 ${activeLeague === 'stats' ? 'bg-slate-700' : 'bg-slate-800/60'}`}>
             <BarChartIcon />
           </div>
           <span className={`text-sm font-semibold ${activeLeague === 'stats' ? 'text-slate-100' : 'text-slate-300'}`}>
@@ -269,10 +271,10 @@ export default function Sidebar({ activeLeague, onLeagueChange }) {
         </button>
       </div>
 
-      <div className="flex-1" />
+      </div>
 
       {/* Footer */}
-      <div className="px-4 py-4" style={{ borderTop: '1px solid rgba(255,255,255,0.06)' }}>
+      <div className="px-4 py-2" style={{ borderTop: '1px solid rgba(255,255,255,0.06)' }}>
         <p className="text-[11px] text-slate-700">Ballpark © {new Date().getFullYear()}</p>
       </div>
     </aside>

@@ -7,6 +7,12 @@ export const FantasyDataContext = createContext(null)
 
 export const useFantasyData = () => useContext(FantasyDataContext)
 
+/** The league's round abbreviation and currency: "GW" and "£" unless it sets its own. */
+export function useLabels() {
+  const { league } = useContext(FantasyDataContext)
+  return { R: league?.roundShort ?? 'GW', C: league?.currency ?? '£' }
+}
+
 // Wraps a function of a league's data so it runs once per data file: panels
 // derive lookup tables and tables from the data, and the data never changes
 // while the page is open.

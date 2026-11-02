@@ -66,6 +66,9 @@ jobs:
       - name: Fetch Premier League fantasy players
         run: npm run fpl:players
 
+      - name: Fetch Champions League fantasy players
+        run: npm run ucl:players
+
       - name: Build
         env:
           VITE_FIREBASE_API_KEY: ${{ secrets.VITE_FIREBASE_API_KEY }}

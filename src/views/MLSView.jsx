@@ -8,6 +8,7 @@ import LoadingSpinner from '../components/LoadingSpinner'
 import EmptyState from '../components/EmptyState'
 import { useWatched } from '../contexts/WatchedContext'
 import SeasonCountdown from '../components/SeasonCountdown'
+import TransfersTab from '../components/TransfersTab'
 
 // isWatched guarded internally — never derive a result for a game the user
 // hasn't watched, even if a future caller forgets to pre-filter.
@@ -550,6 +551,7 @@ const TABS = [
   { id: 'standings',  label: 'Standings'  },
   { id: 'playoffs',   label: 'Playoffs'   },
   { id: 'stats',      label: 'Stats'      },
+  { id: 'transfers', label: 'Transfers' },
 ]
 
 export default function MLSView() {
@@ -604,6 +606,7 @@ export default function MLSView() {
       {!loading && !error && tab === 'all'     && <AllGamesTab games={games} />}
       {!loading && !error && tab === 'watched' && <WatchedTab games={games} />}
       {tab === 'standings' && <StandingsTab />}
+      {tab === 'transfers' && <TransfersTab league="mls" />}
       {tab === 'playoffs'  && <MLSBracketTab games={games} />}
       {!loading && !error && tab === 'stats' && <StatsTab games={games} />}
     </div>

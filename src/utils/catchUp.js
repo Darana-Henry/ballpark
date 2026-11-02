@@ -38,21 +38,32 @@ export function catchUpPlan(games, isDone, watchedAt, now = new Date()) {
   const start = playoffStart(games)
   if (!start || now >= start.date) return null
   const regular = games.filter(g => !isPlayoff(g))
-  const behind = regular.filter(g => g.status === 'final' && !isDone(g)).length
-  const toCome = regular.filter(g => g.status !== 'final' && !isDone(g)).length
+  return { ...paceToDeadline(regular, isDone, watchedAt, start.date, now), estimated: start.estimated }
+}
+
+/**
+ * The same plan for any deadline: every item not done (played already, or
+ * still to come before `deadline`), spread over the days left counting today,
+ * with the last 14 days' pace from `watchedAt` (times things were marked
+ * watched). Items are whatever counts as one sitting: an NFL game, a cricket
+ * T20I or ODI, or one day of a Test.
+ */
+export function paceToDeadline(items, isDone, watchedAt, deadline, now = new Date()) {
+  const behind = items.filter(g => g.status === 'final' && !isDone(g)).length
+  const toCome = items.filter(g => g.status !== 'final' && !isDone(g)).length
   const total = behind + toCome
   // Days left, counting today: a game watched tonight still counts.
   const today = new Date(now)
   today.setHours(0, 0, 0, 0)
-  const days = Math.max(1, Math.round((start.date - today) / DAY))
+  const days = Math.max(1, Math.round((deadline - today) / DAY))
   // Pace over the last 14 days, from when games were marked watched.
   const since = now - 14 * DAY
   const recent = watchedAt.filter(t => t >= since && t <= now).length
   const pace = recent / 14
   const projectedLeft = Math.max(0, total - Math.round(pace * days))
   return {
-    start: start.date,
-    estimated: start.estimated,
+    start: deadline,
+    estimated: false,
     behind,
     toCome,
     total,

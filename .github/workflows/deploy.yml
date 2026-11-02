@@ -69,6 +69,12 @@ jobs:
       - name: Fetch Champions League fantasy players
         run: npm run ucl:players
 
+      # Never fails the build: a league whose source is down keeps its
+      # committed src/data/transfers/<league>.json. Player details are carried
+      # over, so a run only looks up new moves.
+      - name: Fetch transfers
+        run: npm run transfers
+
       - name: Build
         env:
           VITE_FIREBASE_API_KEY: ${{ secrets.VITE_FIREBASE_API_KEY }}

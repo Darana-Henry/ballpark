@@ -5,6 +5,7 @@ import leaders from '../data/cricketLeaders.json'
 import { expandTestDays, isMatchFullyWatched, isNotPlayed } from '../utils/cricketDayRows'
 import GameCard from '../components/GameCard'
 import SeasonStatsPanel from '../components/SeasonStatsPanel'
+import { useCricketCatchUp } from '../hooks/useCricketCatchUp'
 import BoundaryTracker from '../components/BoundaryTracker'
 import LoadingSpinner from '../components/LoadingSpinner'
 import EmptyState from '../components/EmptyState'
@@ -512,16 +513,18 @@ function MatchesTab({ games, onTrack }) {
   const kindGames = useMemo(() => seriesActiveInYear(games).filter(g => seriesKindOf(g) === kind), [games, kind])
   // The season record covers the whole year's cricket, every series type, with
   // Tests as their day-rows since that's what gets ticked off.
-  const seasonGames = useMemo(() => expandTestDays(seriesActiveInYear(games)), [games])
+  const yearGames = useMemo(() => seriesActiveInYear(games), [games])
+  const seasonGames = useMemo(() => expandTestDays(yearGames), [yearGames])
+  const catchUp = useCricketCatchUp(yearGames)
   return (
     <div className="flex flex-col gap-4">
       <SubTabs tabs={SERIES_KINDS} active={kind} onChange={setKind} />
-      <MatchQueue key={kind} games={kindGames} seasonGames={seasonGames} onTrack={onTrack} />
+      <MatchQueue key={kind} games={kindGames} seasonGames={seasonGames} catchUp={catchUp} onTrack={onTrack} />
     </div>
   )
 }
 
-function MatchQueue({ games, seasonGames, onTrack }) {
+function MatchQueue({ games, seasonGames, catchUp, onTrack }) {
   const { isWatched, isDismissed } = useWatched()
   const [format, setFormat] = useState('all')
   const [country, setCountry] = useState('')
@@ -567,7 +570,7 @@ function MatchQueue({ games, seasonGames, onTrack }) {
           <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Up Next For You</p>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <TrackableGameCard game={upNext} isUpNext showDismissAction onTrack={onTrack} />
-            <SeasonStatsPanel league="cricket" games={seasonGames} />
+            <SeasonStatsPanel league="cricket" games={seasonGames} catchUp={catchUp} />
           </div>
         </>
       )}
@@ -575,7 +578,7 @@ function MatchQueue({ games, seasonGames, onTrack }) {
       {/* All caught up: the season record still shows. */}
       {!upNext && (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <SeasonStatsPanel league="cricket" games={seasonGames} />
+          <SeasonStatsPanel league="cricket" games={seasonGames} catchUp={catchUp} />
         </div>
       )}
 
@@ -1292,7 +1295,7 @@ export default function IntlCricketView() {
       {tab === 'leaders' && <LeadersTab />}
 
       {trackedGame && (
-        <BoundaryTracker game={trackedGame} onClose={() => setTrackedGame(null)} />
+        <BoundaryTracker game={trackedGame} games={games} onClose={() => setTrackedGame(null)} />
       )}
     </div>
   )

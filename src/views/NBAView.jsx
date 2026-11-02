@@ -13,6 +13,7 @@ import { useWatched } from '../contexts/WatchedContext'
 import { getSeasonYear } from '../utils/season'
 import { useSeasonFilter } from '../hooks/useSeasonFilter'
 import SeasonCountdown from '../components/SeasonCountdown'
+import TransfersTab from '../components/TransfersTab'
 
 const LAKERS_ID = '13'
 
@@ -732,6 +733,7 @@ const TABS = [
   { id: 'standings', label: 'Standings' },
   { id: 'playoffs',  label: 'Playoffs'  },
   { id: 'stats',     label: 'Stats'     },
+  { id: 'transfers', label: 'Transfers' },
 ]
 
 export default function NBAView() {
@@ -786,6 +788,7 @@ export default function NBAView() {
       {!loading && !error && tab === 'all'       && <AllGamesTab games={games} />}
       {!loading && !error && tab === 'watched'   && <WatchedTab games={games} />}
       {tab === 'standings' && <StandingsTab games={games} />}
+      {tab === 'transfers' && <TransfersTab league="nba" />}
       {tab === 'playoffs'  && <NBABracketTab games={games} />}
       {tab === 'stats'     && <StatsTab games={games} />}
     </div>

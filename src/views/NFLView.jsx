@@ -20,6 +20,7 @@ import NFLPerformanceHistory from '../components/NFLPerformanceHistory'
 import { buildFormByTeam } from '../utils/teamForm'
 import { getNFLSeason, fetchNFLLeagueLeaders, playersToWatch } from '../api/nfl'
 import SeasonCountdown from '../components/SeasonCountdown'
+import TransfersTab from '../components/TransfersTab'
 import { useCatchUpPlan } from '../hooks/useCatchUpPlan'
 
 
@@ -625,6 +626,7 @@ const TABS = [
   { id: 'leaders',   label: 'Leaders'     },
   { id: 'form',      label: 'Performance' },
   { id: 'qbs',       label: 'Quarterbacks'},
+  { id: 'transfers', label: 'Transfers' },
 ]
 
 export default function NFLView() {
@@ -713,6 +715,7 @@ export default function NFLView() {
       {!loading && !error && tab === 'all'       && <AllGamesTab games={games} ranks={ranks} form={form} watchList={watchList} />}
       {!loading && !error && tab === 'watched'   && <WatchedTab games={games} ranks={ranks} form={form} watchList={watchList} />}
       {tab === 'standings' && <StandingsTab games={games} />}
+      {tab === 'transfers' && <TransfersTab league="nfl" />}
       {tab === 'playoffs'  && <NFLBracketTab games={games} />}
       {tab === 'leaders'   && <NFLLeagueLeaders teamAbbrById={teamAbbrById} data={leaders} />}
       {tab === 'form'      && <NFLPerformanceHistory games={games} teamIdByAbbr={teamIdByAbbr} season={season} />}

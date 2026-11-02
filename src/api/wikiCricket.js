@@ -781,3 +781,133 @@ export async function fetchWikiCricketGames({ year = new Date().getFullYear(), f
     newResults,
   }
 }
+
+// ─── Squads / captains ─────────────────────────────────────────────────────────
+// Tour articles list each side's squad per format in a "Squads" table: a header
+// row of team flags (each spanning one column per format), a row of format
+// headings, then one cell per column with the squad as a bullet list, the
+// captain marked "(c)". Read on demand by the boundary tracker, so the stored
+// schedule doesn't change.
+
+const FORMAT_HEADING = [[/t20/i, 't20i'], [/odi/i, 'odi'], [/test/i, 'test']]
+const CAPTAIN_LINE = /^\*.*?\[\[([^\]|]+)(?:\|([^\]]+))?\]\][^\n]*?\((?:\[\[[^\]|]*\|)?c(?:aptain)?(?:\]\])?\)/im
+
+function formatOfHeading(text) {
+  return FORMAT_HEADING.find(([re]) => re.test(text))?.[1] ?? null
+}
+
+export function parseSquadCaptains(text) {
+  const start = text.search(/\n==\s*Squads?\s*==/i)
+  if (start < 0) return {}
+  const rest = text.slice(start + 3)
+  const end = rest.search(/\n==[^=]/)
+  const section = end < 0 ? rest : rest.slice(0, end)
+  const captains = {}
+
+  for (const table of section.match(/\{\|[\s\S]*?\n\|\}/g) ?? []) {
+    const rows = table.split(/\n\|-[^\n]*/).slice(1)
+    const columns = []   // team per column
+    let formats = []     // format per column
+    for (const row of rows) {
+      const lines = row.split('\n').filter(l => l.trim())
+      if (lines.every(l => l.startsWith('!'))) {
+        const heads = lines.flatMap(l => l.slice(1).split('!!'))
+        const teams = heads.map(h => ({ span: parseInt(h.match(/colspan\s*=\s*"?(\d+)/i)?.[1] ?? '1'), team: h.match(FLAG_TEMPLATE) ? parseTeamCell(h).name : null }))
+        if (teams.some(t => t.team)) {
+          columns.length = 0
+          for (const t of teams) for (let i = 0; i < t.span; i++) columns.push(t.team)
+        } else {
+          formats = heads.map(h => formatOfHeading(stripRefs(h)))
+        }
+        continue
+      }
+      // Content row: cells start at lines beginning with a single "|".
+      const cells = row.split(/\n\|(?!\|)/).slice(1)
+      cells.forEach((cell, i) => {
+        const team = columns[i]
+        const m = cell.match(CAPTAIN_LINE)
+        if (!team || !m) return
+        const format = formats[i] ?? 'all'
+        captains[team] ??= {}
+        captains[team][format] = cleanText(m[2] || m[1])
+      })
+    }
+  }
+  return captains
+}
+
+const captainCache = new Map()
+
+// { [teamName]: captain } for one format of a tour, or {} when the article
+// has no squads table. A format-less table (one squad for the whole tour)
+// answers for every format.
+export function fetchCaptains(seriesArticle, matchType) {
+  if (!seriesArticle) return Promise.resolve({})
+  if (!captainCache.has(seriesArticle)) {
+    const run = fetchWikitexts([seriesArticle])
+      .then(pages => parseSquadCaptains(pages.get(seriesArticle)?.text ?? ''))
+      .catch(() => ({}))
+    captainCache.set(seriesArticle, run)
+  }
+  return captainCache.get(seriesArticle).then(all =>
+    Object.fromEntries(Object.entries(all)
+      .map(([team, byFormat]) => [team, byFormat[matchType] ?? byFormat.all ?? null])
+      .filter(([, c]) => c)))
+}
+
+// ─── Ground dimensions ─────────────────────────────────────────────────────────
+// The playing area's size, where the ground's Wikipedia article gives it (an
+// infobox `dimensions` field, or a "Playing dimensions" line): "167 × 123 m".
+// That's the whole field, not a given match's rope, which is brought in by a
+// different amount each game and isn't published anywhere free. Read on
+// demand by the boundary tracker, once per ground per session.
+
+const YARD = 0.9144
+const DIMENSION_PAIR = /(\d{2,3}(?:\.\d+)?)\s*(m|metres|meters|yards|yd)?\b[^\d\n]{0,12}?(?:x|×|by)\s*(\d{2,3}(?:\.\d+)?)\s*(m|metres|meters|yards|yd)?\b/i
+
+export function parseGroundDimensions(text) {
+  const candidates = [
+    text.match(/\|\s*(?:dimensions|field_size|playing_area)\s*=\s*([^\n]+)/i)?.[1],
+    ...(text.match(/[^\n]*(?:playing (?:dimensions|area)|field dimensions|dimensions of the (?:field|ground|playing))[^\n]*/gi) ?? []),
+  ].filter(Boolean)
+  for (const raw of candidates) {
+    // {{cvt|167 x 123|m}} → "167 x 123 m"
+    const line = raw.replace(/\{\{\s*(?:cvt|convert)\s*\|([^|}]+)\|([^|}]+)[^}]*\}\}/gi, '$1 $2')
+    const m = line.match(DIMENSION_PAIR)
+    if (!m) continue
+    const yards = /y/i.test(m[4] || m[2] || '')
+    let [a, b] = [parseFloat(m[1]), parseFloat(m[3])].map(n => (yards ? n * YARD : n))
+    if (a < b) [a, b] = [b, a]
+    // A cricket field is roughly 120–200 m across; anything else is a
+    // different measurement (a stand, the whole site).
+    if (b < 100 || a > 220) continue
+    return { long: Math.round(a), short: Math.round(b) }
+  }
+  return null
+}
+
+const groundCache = new Map()
+
+// The article for a venue like "Hagley Oval, Christchurch": the name before
+// the comma, else Wikipedia's best search hit for it as a cricket ground.
+async function groundArticle(venue) {
+  const name = venue.split(',')[0].trim()
+  const direct = (await fetchWikitexts([name])).get(name)
+  if (direct) return direct.text
+  const hit = (await wikiApi({ action: 'query', list: 'search', srsearch: `${name} cricket ground`, srlimit: '1' }))
+    .query?.search?.[0]?.title
+  // Only a page named for this ground: a loose hit (another oval) would put
+  // the wrong dimensions on it.
+  const words = name.toLowerCase().split(/\W+/).filter(w => w.length > 3 && !/^(oval|stadium|ground|park|cricket|international)$/.test(w))
+  if (!hit || !words.length || !words.every(w => hit.toLowerCase().includes(w))) return ''
+  return (await fetchWikitexts([hit])).get(hit)?.text ?? ''
+}
+
+/** `{ long, short }` in metres for a venue, or null when its article has no size. */
+export function fetchGroundDimensions(venue) {
+  if (!venue) return Promise.resolve(null)
+  if (!groundCache.has(venue)) {
+    groundCache.set(venue, groundArticle(venue).then(parseGroundDimensions).catch(() => null))
+  }
+  return groundCache.get(venue)
+}

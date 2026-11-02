@@ -18,7 +18,8 @@
     "eliteserien:players": "node scripts/fetch-fantasy-players.mjs eliteserien",
     "allsvenskan:players": "node scripts/fetch-fantasy-players.mjs allsvenskan",
     "fpl:players": "node scripts/fetch-fantasy-players.mjs premierLeague",
-    "ucl:players": "node scripts/fetch-ucl-fantasy.mjs"
+    "ucl:players": "node scripts/fetch-ucl-fantasy.mjs",
+    "transfers": "node scripts/fetch-transfers.mjs"
   },
   "dependencies": {
     "firebase": "^12.13.0",

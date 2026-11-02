@@ -8,6 +8,7 @@ import LoadingSpinner from '../components/LoadingSpinner'
 import EmptyState from '../components/EmptyState'
 import { useWatched } from '../contexts/WatchedContext'
 import SeasonCountdown from '../components/SeasonCountdown'
+import TransfersTab from '../components/TransfersTab'
 
 // isWatched guarded internally — never derive a result for a game the user
 // hasn't watched, even if a future caller forgets to pre-filter.
@@ -442,6 +443,7 @@ const TABS = [
   { id: 'watched',   label: 'Watched'   },
   { id: 'standings', label: 'Standings' },
   { id: 'stats',     label: 'Stats'     },
+  { id: 'transfers', label: 'Transfers' },
 ]
 
 export default function EPLView() {
@@ -496,6 +498,7 @@ export default function EPLView() {
       {!loading && !error && tab === 'all'       && <AllGamesTab games={games} />}
       {!loading && !error && tab === 'watched'   && <WatchedTab games={games} />}
       {tab === 'standings' && <StandingsTab />}
+      {tab === 'transfers' && <TransfersTab league="epl" />}
       {!loading && !error && tab === 'stats'     && <StatsTab games={games} />}
     </div>
   )

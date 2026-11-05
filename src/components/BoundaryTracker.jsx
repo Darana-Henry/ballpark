@@ -80,7 +80,7 @@ function BoundaryDot({ color }) {
   )
 }
 
-function DiffGraph({ grid, homeAbbr, awayAbbr, homeColor, awayColor, currentOver }) {
+function DiffGraph({ grid, homeAbbr, awayAbbr, homeColor, awayColor, currentOver, firstSide = 'home' }) {
   const uid = useId().replace(/:/g, '')
 
   // Cumulative diff (home - away) after each over
@@ -170,6 +170,36 @@ function DiffGraph({ grid, homeAbbr, awayAbbr, homeColor, awayColor, currentOver
         </text>
       ))}
 
+      {/* Boundaries per over, behind the line, rising from the zero line: one
+          block per boundary on their own scale (an over's six balls fill the
+          room above zero). The two sides
+          overlap in one column: the side batting second, marked later,
+          paints over the bottom blocks of the side that batted first. */}
+      {(() => {
+        const second = firstSide === 'home' ? 'away' : 'home'
+        const color = { home: homeColor, away: awayColor }
+        const slot = pts.length > 1 ? plotW / (pts.length - 1) : plotW
+        const w = Math.max(3, Math.min(16, slot * 0.6))
+        // Columns rise from the gap line's zero. Six blocks fill the room
+        // above it, never less than 40% of the plot so they stay readable
+        // when the line sits high.
+        const blockH = Math.max(zeroY - padT, plotH * 0.4) / BALLS
+        const floor = zeroY
+        return pts.map((_, o) => {
+          const count = side => grid[o].reduce((n, c) => n + (c[side] ? 1 : 0), 0)
+          const first = count(firstSide), later = count(second)
+          const height = Math.max(first, later)
+          return Array.from({ length: height }, (_, k) => (
+            <rect key={`${o}-${k}`}
+              x={xOf(o) - w / 2} y={floor - (k + 1) * blockH + 1}
+              width={w} height={blockH - 2} rx={1.5}
+              fill={k < later ? color[second] : color[firstSide]}
+              opacity={0.32}
+            />
+          ))
+        })
+      })()}
+
       {/* Filled areas */}
       <polygon points={areaPts} fill={homeColor} opacity={0.18} clipPath={`url(#${uid}-above)`} />
       <polygon points={areaPts} fill={awayColor} opacity={0.18} clipPath={`url(#${uid}-below)`} />
@@ -249,6 +279,9 @@ export default function BoundaryTracker({ game, games = [], standings = {}, onCl
   const [grid, setGrid]         = useState(() => emptyGrid(totalOvers))
   const [focused, setFocused]   = useState({ over: 0, ball: 0 })
   const [awayMode, setAwayMode] = useState(false)
+  // The side marked first is taken as batting first; the boundary columns
+  // let the other side's blocks paint over its bottom ones.
+  const [firstSide, setFirstSide] = useState(null)
   const historyRef              = useRef([])
 
   // Whichever block of 10 contains the focused over is the one expanded —
@@ -272,6 +305,7 @@ export default function BoundaryTracker({ game, games = [], standings = {}, onCl
   }
 
   const markCell = useCallback((over, ball, side) => {
+    setFirstSide(f => f ?? side)
     setGrid(prev => {
       pushHistory(prev, over, ball)
       const next = prev.map(r => r.map(c => ({ ...c })))
@@ -597,6 +631,7 @@ export default function BoundaryTracker({ game, games = [], standings = {}, onCl
                   homeColor={HOME}
                   awayColor={AWAY}
                   currentOver={focused.over}
+                  firstSide={firstSide ?? 'home'}
                 />
               </div>
             </div>

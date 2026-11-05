@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo } from 'react'
 import { fetchIntlCricketGames, refreshIntlCricketGames, NATIONS, NATION_ABBR } from '../api/intlCricket'
 import { withSeriesInfo, seriesYear, seriesActiveInYear, teamCode } from '../utils/cricketMatch'
 import leaders from '../data/cricketLeaders.json'
-import { expandTestDays, isMatchFullyWatched, isNotPlayed } from '../utils/cricketDayRows'
+import { expandTestDays, isMatchFullyWatched, isMatchDismissed, isNotPlayed } from '../utils/cricketDayRows'
 import GameCard from '../components/GameCard'
 import SeasonStatsPanel from '../components/SeasonStatsPanel'
 import { useCricketCatchUp } from '../hooks/useCricketCatchUp'
@@ -200,20 +200,23 @@ function formatStartDate(d) {
   return `${d.getUTCDate()} ${MONTH_ABBR[d.getUTCMonth()]} ${d.getUTCFullYear()}`
 }
 
-function blockState(m, cricketWatchedIds) {
-  if (m.status !== 'final') return 'upcoming'
-  if (isNotPlayed(m)) return 'notplayed'
-  return isMatchFullyWatched(m, cricketWatchedIds) ? 'watched' : 'played'
+function blockState(m, cricketWatchedIds, dismissedIds = []) {
+  if (m.status === 'final' && isNotPlayed(m)) return 'notplayed'
+  if (m.status === 'final' && isMatchFullyWatched(m, cricketWatchedIds)) return 'watched'
+  // Skipped as not interested: done, whether it's been played yet or not.
+  if (isMatchDismissed(m, dismissedIds)) return 'dismissed'
+  return m.status === 'final' ? 'played' : 'upcoming'
 }
 
-function summarizeSeries(name, matches, cricketWatchedIds, kind) {
+function summarizeSeries(name, matches, cricketWatchedIds, kind, dismissedIds = []) {
   const sorted = [...matches].sort((a, b) => a.gameDate - b.gameDate)
   const blocks = {}
   for (const m of sorted) {
-    (blocks[m.matchType] ||= []).push({ match: m, state: blockState(m, cricketWatchedIds) })
+    (blocks[m.matchType] ||= []).push({ match: m, state: blockState(m, cricketWatchedIds, dismissedIds) })
   }
-  const states = sorted.map(m => blockState(m, cricketWatchedIds))
-  const fullyWatched = states.every(st => st === 'watched' || st === 'notplayed')
+  const states = sorted.map(m => blockState(m, cricketWatchedIds, dismissedIds))
+  // Done: every match watched, skipped as not interested, or never played.
+  const fullyWatched = states.every(st => st === 'watched' || st === 'notplayed' || st === 'dismissed')
   // seriesTeams includes associates (e.g. host Namibia); older stored games
   // lack it, so fall back to the sides seen in the tracked matches.
   const teams = sorted[0].seriesTeams ?? [...new Set(sorted.flatMap(m => [m.homeTeam.name, m.awayTeam.name]))]
@@ -238,13 +241,14 @@ const BLOCK_CLASS = {
   watched:  'bg-emerald-500',
   played:   'bg-slate-500',
   notplayed: 'bg-amber-500',
+  dismissed: 'bg-red-500',
   upcoming: 'border border-slate-600',
 }
-const BLOCK_WORD = { watched: 'watched', played: 'played, not watched', notplayed: 'not played (rain, abandoned)', upcoming: 'to come' }
-const BLOCK_TEXT = { watched: 'text-emerald-400', played: 'text-slate-400', notplayed: 'text-amber-400', upcoming: 'text-slate-600' }
+const BLOCK_WORD = { watched: 'watched', played: 'played, not watched', notplayed: 'not played (rain, abandoned)', dismissed: 'not interested', upcoming: 'to come' }
+const BLOCK_TEXT = { watched: 'text-emerald-400', played: 'text-slate-400', notplayed: 'text-amber-400', dismissed: 'text-red-400', upcoming: 'text-slate-600' }
 
 function countStates(states) {
-  const n = { watched: 0, played: 0, notplayed: 0, upcoming: 0 }
+  const n = { watched: 0, played: 0, notplayed: 0, dismissed: 0, upcoming: 0 }
   for (const st of states) n[st]++
   return n
 }
@@ -257,18 +261,19 @@ function Battery({ states, showCounts = false }) {
   const pct = k => `${(n[k] / states.length) * 100}%`
   return (
     <div className="flex items-center justify-center gap-2"
-      title={`${states.length} matches · ${n.watched} watched · ${n.played} played, not watched · ${n.notplayed} not played · ${n.upcoming} to come`}>
+      title={`${states.length} matches · ${n.watched} watched · ${n.played} played, not watched · ${n.notplayed} not played · ${n.dismissed} not interested · ${n.upcoming} to come`}>
       <div className="flex items-center shrink-0">
         <div className="flex h-3.5 w-[66px] rounded-[4px] border border-slate-500 p-[2px]">
           <span className="h-full bg-emerald-500 rounded-l-[2px]" style={{ width: pct('watched') }} />
           <span className="h-full bg-amber-500" style={{ width: pct('notplayed') }} />
+          <span className="h-full bg-red-500" style={{ width: pct('dismissed') }} />
           <span className="h-full bg-slate-500" style={{ width: pct('played') }} />
         </div>
         <span className="w-[3px] h-1.5 rounded-r-sm bg-slate-500" />
       </div>
       {showCounts && (
         <span className="text-[11px] tabular-nums whitespace-nowrap">
-          {['watched', 'played', 'notplayed', 'upcoming'].map((k, i) => (
+          {['watched', 'played', 'notplayed', 'dismissed', 'upcoming'].map((k, i) => (
             <span key={k}>
               {i > 0 && <span className="text-slate-700"> · </span>}
               <span className={BLOCK_TEXT[k]}>{n[k]}</span>
@@ -352,7 +357,7 @@ function TogglePill({ active, onClick, children }) {
 // kind: 'bilateral' for the Series tab, 'tri-series' / 'tournament' for the
 // Tournaments tab's sub-tabs — same table, different slice of the schedule.
 function SeriesTab({ games, kind = 'bilateral' }) {
-  const { watchedForLeague } = useWatched()
+  const { watchedForLeague, watchedGames } = useWatched()
   // Series are grouped by the year they start in, whole — a tour running
   // December to February sits under the December year with all its matches.
   const yearOptions = useMemo(() => {
@@ -364,6 +369,10 @@ function SeriesTab({ games, kind = 'bilateral' }) {
   const [country, setCountry] = useState('')
   const [hideWatched, setHideWatched] = useState(false)
   const cricketWatchedIds = useMemo(() => watchedForLeague('cricket').map(g => g.gameId), [watchedForLeague])
+  const dismissedIds = useMemo(
+    () => Object.values(watchedGames ?? {}).filter(g => g.league === 'cricket' && g.dismissed).map(g => g.gameId),
+    [watchedGames]
+  )
 
   const rows = useMemo(() => {
     const map = new Map()
@@ -374,9 +383,9 @@ function SeriesTab({ games, kind = 'bilateral' }) {
       map.get(key).push(g)
     }
     return [...map.entries()]
-      .map(([name, matches]) => summarizeSeries(name, matches, cricketWatchedIds, kind))
+      .map(([name, matches]) => summarizeSeries(name, matches, cricketWatchedIds, kind, dismissedIds))
       .sort((a, b) => a.start - b.start)
-  }, [games, format, country, cricketWatchedIds, kind, year])
+  }, [games, format, country, cricketWatchedIds, dismissedIds, kind, year])
 
   const visible = hideWatched ? rows.filter(r => !r.fullyWatched) : rows
   const isBilateral = kind === 'bilateral'
@@ -727,7 +736,7 @@ function formatRange(start, end) {
 }
 
 function SeriesRow({ series, active, onClick }) {
-  const watched = series.states.filter(st => st === 'watched' || st === 'notplayed').length
+  const watched = series.states.filter(st => st === 'watched' || st === 'notplayed' || st === 'dismissed').length
   const played = series.states.filter(st => st !== 'upcoming').length
   return (
     <button
@@ -787,11 +796,15 @@ function MatchRow({ game, country, revealed }) {
 }
 
 function ResultsLogTab({ games }) {
-  const { watchedForLeague } = useWatched()
+  const { watchedForLeague, watchedGames } = useWatched()
   const [format, setFormat] = useState('all')
   const [country, setCountry] = useState('')
   const [selectedKey, setSelectedKey] = useState(null)
   const cricketWatchedIds = useMemo(() => watchedForLeague('cricket').map(g => g.gameId), [watchedForLeague])
+  const dismissedIds = useMemo(
+    () => Object.values(watchedGames ?? {}).filter(g => g.league === 'cricket' && g.dismissed).map(g => g.gameId),
+    [watchedGames]
+  )
 
   const countryGames = useMemo(() => {
     if (!country) return []
@@ -811,7 +824,7 @@ function ResultsLogTab({ games }) {
     }
     return [...map.entries()]
       .map(([name, matches]) => {
-        const summary = summarizeSeries(name, matches, cricketWatchedIds, seriesKindOf(matches[0]) ?? 'bilateral')
+        const summary = summarizeSeries(name, matches, cricketWatchedIds, seriesKindOf(matches[0]) ?? 'bilateral', dismissedIds)
         const sorted = [...matches].sort((a, b) => a.gameDate - b.gameDate)
         return {
           ...summary,
@@ -825,7 +838,7 @@ function ResultsLogTab({ games }) {
         }
       })
       .sort((a, b) => b.start - a.start)
-  }, [countryGames, cricketWatchedIds, country])
+  }, [countryGames, cricketWatchedIds, dismissedIds, country])
 
   const selected = series.find(s => s.key === selectedKey) ?? null
 
@@ -887,7 +900,7 @@ function ResultsLogTab({ games }) {
                         key={g.id}
                         game={g}
                         country={country}
-                        revealed={g.status === 'final' && isMatchFullyWatched(g, cricketWatchedIds)}
+                        revealed={g.status === 'final' && (isMatchFullyWatched(g, cricketWatchedIds) || isMatchDismissed(g, dismissedIds))}
                       />
                     ))}
                   </ul>

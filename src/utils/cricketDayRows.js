@@ -107,3 +107,14 @@ export function isMatchFullyWatched(match, cricketWatchedIds) {
   }
   return cricketWatchedIds.includes(match.id)
 }
+
+// A match marked "Not interested": for a Test, every day-row that was (or
+// will be) played. The Series tab shows it red and counts it as done, like a
+// watched one, so a series skipped in full drops off the to-watch list.
+export function isMatchDismissed(match, dismissedIds) {
+  if (match.matchType === 'test') {
+    return Array.from({ length: daysPlayed(match) }, (_, i) => `${match.id}_d${i + 1}`)
+      .every(id => dismissedIds.includes(id))
+  }
+  return dismissedIds.includes(match.id)
+}

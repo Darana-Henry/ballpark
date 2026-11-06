@@ -70,7 +70,7 @@ function SquadChoice({ card, v }) {
       </button>
       {showPitch && (
         <div className="mt-2">
-          <SquadPitch lineup={squadLineup(v.squad, plan.byPlayer, from, v.count)} rounds={v.count} cardProps={p => ({ badge: mine.has(p.id) ? undefined : NEW_BADGE })} />
+          <SquadPitch lineup={squadLineup(v.squad, plan.byPlayer, from, v.count, plan.common.scoring)} rounds={v.count} cardProps={p => ({ price: { now: p.price }, badge: mine.has(p.id) ? undefined : NEW_BADGE })} />
         </div>
       )}
     </div>

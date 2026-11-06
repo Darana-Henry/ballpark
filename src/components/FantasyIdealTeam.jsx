@@ -142,11 +142,11 @@ function WhyPick({ player, squad, from, count, label, onClose }) {
 function FromScratch({ count, setCount }) {
   const { data } = useFantasyData()
   const { ROUND, HORIZON, plan } = derivePlan(data)
-  const { R, C } = useLabels()
+  const { R, C, K } = useLabels()
   const [selectedId, setSelectedId] = useState(null)
   const rounds = Math.min(count, HORIZON)
   const ideal = rebuiltSquad(data, 0, rounds)
-  const lineup = squadLineup(ideal.squad, plan.byPlayer, 0, rounds)
+  const lineup = squadLineup(ideal.squad, plan.byPlayer, 0, rounds, plan.common.scoring)
   const budget = plan.common.bank
   const cost = ideal.squad.reduce((s, p) => s + p.price, 0)
   const label = rounds > 1 ? `${R}${ROUND}–${ROUND + rounds - 1}` : `${R}${ROUND}`
@@ -164,7 +164,7 @@ function FromScratch({ count, setCount }) {
 
       <div className="grid grid-cols-3 gap-2 mb-4 lg:max-w-[46rem]">
         {[
-          ['Projected', `${ideal.score.toFixed(1)} pts`, `best XI + captain, ${label}`],
+          ['Projected', `${ideal.score.toFixed(1)} pts`, `best XI + ${K}, ${label}`],
           ['Cost', `${C}${cost.toFixed(1)}m`, `of ${C}${budget.toFixed(1)}m`],
           ['Left over', `${C}${ideal.bank.toFixed(1)}m`, ideal.bank > 2 ? 'nothing better to spend it on' : 'in the bank'],
         ].map(([title, value, note]) => (
@@ -183,14 +183,14 @@ function FromScratch({ count, setCount }) {
         <SquadPitch
           lineup={lineup}
           rounds={rounds}
-          cardProps={p => ({ selected: selectedId === p.id, onClick: () => setSelectedId(s => (s === p.id ? null : p.id)) })}
+          cardProps={p => ({ price: { now: p.price }, selected: selectedId === p.id, onClick: () => setSelectedId(s => (s === p.id ? null : p.id)) })}
         />
       </WithSidePanel>
 
       <p className="text-[11px] text-slate-600 mt-4 leading-relaxed lg:max-w-[46rem]">
         Your team in this game is behind its login, which this app doesn't use, so this is the best squad from nothing: 2 keepers, 5 defenders, 5 midfielders and 3 forwards, at most {plan.common.teamLimit} from a club, within {C}{budget.toFixed(0)}m.
-        It starts from the cheapest legal squad and swaps players one at a time, then in pairs (a cheaper player to pay for a better one), while that raises the projection: the best XI plus captain over {label}.
-        Points under each player are their projection over {label} (form × fixture × chance of playing).
+        It starts from the cheapest legal squad and swaps players one at a time, then in pairs (a cheaper player to pay for a better one), while that raises the projection: the best XI plus {K} over {label}.
+        Under each name are the player's season points so far and their price; the white number is their projection over {label} (form × fixture × chance of playing).
       </p>
     </div>
   )
@@ -199,6 +199,7 @@ function FromScratch({ count, setCount }) {
 export default function FantasyIdealTeam() {
   const { data } = useFantasyData()
   const { SQUAD_INFO, RULES, ROUND, HORIZON, plan } = derivePlan(data)
+  const { R, C, K } = useLabels()
   const [count, setCount] = useState(1)
   const [selectedId, setSelectedId] = useState(null)
 
@@ -209,12 +210,16 @@ export default function FantasyIdealTeam() {
 
   const rounds = Math.min(count, HORIZON)
   const ideal = rebuiltSquad(data, 0, rounds)
-  const lineup = squadLineup(ideal.squad, plan.byPlayer, 0, rounds)
+  const lineup = squadLineup(ideal.squad, plan.byPlayer, 0, rounds, plan.common.scoring)
   const moves = pairMoves(ideal.ins, ideal.outs)
   const mine = new Set(plan.squad.map(p => p.id))
   const budget = SQUAD_INFO.bank + plan.squad.reduce((s, p) => s + sellPrice(p, RULES.sellOnFee), 0)
   const hits = Math.max(0, ideal.ins.length - SQUAD_INFO.freeTransfers) * SQUAD_INFO.transferCost
-  const label = rounds > 1 ? `GW${ROUND}–${ROUND + rounds - 1}` : `GW${ROUND}`
+  // Where extra transfers aren't allowed at all (the Bundesliga), say how far over the window it is instead.
+  const noHits = !SQUAD_INFO.transferCost
+  const unlimited = Boolean(SQUAD_INFO.unlimitedTransfers)
+  const overLimit = noHits && !unlimited ? Math.max(0, ideal.ins.length - SQUAD_INFO.freeTransfers) : 0
+  const label = rounds > 1 ? `${R}${ROUND}–${ROUND + rounds - 1}` : `${R}${ROUND}`
   const select = id => setSelectedId(s => (s === id ? null : id))
   // A dropped player's partner is highlighted on the pitch too.
   const partner = moves.find(m => m.out.id === selectedId)?.in.id
@@ -226,19 +231,24 @@ export default function FantasyIdealTeam() {
           <Chip active={rounds === 1} onClick={() => { setCount(1); setSelectedId(null) }}>Next round</Chip>
           {HORIZON > 1 && <Chip active={rounds > 1} onClick={() => { setCount(3); setSelectedId(null) }}>Next {HORIZON} rounds</Chip>}
         </div>
-        <span className="text-xs text-slate-600 ml-auto">Best squad on your £{budget.toFixed(1)}m · <span className="text-emerald-400">new</span> = bring in · tap a player for why</span>
+        <span className="text-xs text-slate-600 ml-auto">Best squad on your {C}{budget.toFixed(1)}m · <span className="text-emerald-400">new</span> = bring in · tap a player for why</span>
       </div>
 
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-4 lg:max-w-[46rem]">
         {[
           ['Projected', `${fmt(ideal.gain)} pts`, `over your squad, ${label}`],
-          ['Transfers', ideal.ins.length, ideal.ins.length ? `${SQUAD_INFO.freeTransfers} free · ${hits ? `−${hits} in hits` : 'no hit'}` : 'none needed'],
-          ['Net', `${fmt(ideal.gain - hits)} pts`, hits ? 'after hits' : 'no hits'],
-          ['Left in bank', `£${ideal.bank.toFixed(1)}m`, `of £${budget.toFixed(1)}m`],
+          ['Transfers', ideal.ins.length, !ideal.ins.length ? 'none needed'
+            : unlimited ? 'unlimited this break'
+              : noHits ? (overLimit ? `${overLimit} over the ${SQUAD_INFO.freeTransfers} allowed` : `within the ${SQUAD_INFO.freeTransfers} allowed`)
+                : `${SQUAD_INFO.freeTransfers} free · ${hits ? `−${hits} in hits` : 'no hit'}`],
+          noHits
+            ? ['Allowed now', unlimited || !overLimit ? 'Yes' : 'Not all', unlimited ? `break before ${R}${ROUND}` : overLimit ? 'needs the next unlimited break' : 'this window']
+            : ['Net', `${fmt(ideal.gain - hits)} pts`, hits ? 'after hits' : 'no hits'],
+          ['Left in bank', `${C}${ideal.bank.toFixed(1)}m`, `of ${C}${budget.toFixed(1)}m`],
         ].map(([title, value, note]) => (
           <div key={title} className="rounded-xl px-3 py-2" style={panelStyle}>
             <p className="text-[10px] uppercase tracking-wider text-slate-500">{title}</p>
-            <p className={`text-base font-bold truncate ${title === 'Net' ? (ideal.gain - hits >= 0 ? 'text-emerald-400' : 'text-red-400') : 'text-slate-100'}`}>{value}</p>
+            <p className={`text-base font-bold truncate ${title === 'Net' ? (ideal.gain - hits >= 0 ? 'text-emerald-400' : 'text-red-400') : title === 'Allowed now' ? (value === 'Yes' ? 'text-emerald-400' : 'text-amber-300') : 'text-slate-100'}`}>{value}</p>
             <p className="text-[11px] text-slate-500 truncate" title={note}>{note}</p>
           </div>
         ))}
@@ -252,6 +262,8 @@ export default function FantasyIdealTeam() {
           lineup={lineup}
           rounds={rounds}
           cardProps={p => ({
+            // Kept players also show what they'd sell for, when the sell-on fee makes it less.
+            price: { now: p.price, sells: mine.has(p.id) ? sellPrice(plan.squad.find(x => x.id === p.id), RULES.sellOnFee) : null },
             badge: mine.has(p.id) ? undefined : NEW_BADGE,
             selected: selectedId === p.id || partner === p.id,
             onClick: () => select(p.id),
@@ -263,10 +275,12 @@ export default function FantasyIdealTeam() {
       </WithSidePanel>
 
       <p className="text-[11px] text-slate-600 mt-4 leading-relaxed lg:max-w-[46rem]">
-        Built from your squad by swapping players one at a time, then in pairs (a cheaper player to pay for a better one), while that raises the projection: your best XI plus captain over {label}.
-        A player you already have is only replaced for a real gain. Points under each player are their projection over {label}. Each new player is paired with a drop at the same position, dearest with dearest.
-        {rounds === 1 ? ' This is the squad a Free Hit would pick.' : ' This is close to what a Wildcard now would build.'}
-        {' '}With {SQUAD_INFO.freeTransfers} free transfer{SQUAD_INFO.freeTransfers === 1 ? '' : 's'}, the Transfers tab shows which of these moves are worth it on their own.
+        Built from your squad by swapping players one at a time, then in pairs (a cheaper player to pay for a better one), while that raises the projection: your best XI plus {K} over {label}.
+        A player you already have is only replaced for a real gain. Under each name are the player's season points so far and their current price{RULES.sellOnFee ? ' (in brackets, what one of yours would sell for when that\'s less)' : ''}; the white number is their projection over {label}. Each new player is paired with a drop at the same position, dearest with dearest{RULES.squadShape ? ', then across positions where the squad shape changes' : ''}.
+        {noHits
+          ? ' The game has no wildcard or free hit: this is what to build in an unlimited-transfer break.'
+          : rounds === 1 ? ' This is the squad a Free Hit would pick.' : ' This is close to what a Wildcard now would build.'}
+        {' '}With {SQUAD_INFO.freeTransfers} {noHits ? '' : 'free '}transfer{SQUAD_INFO.freeTransfers === 1 ? '' : 's'}, the Transfers tab shows which of these moves are worth it on their own.
       </p>
     </div>
   )

@@ -7,16 +7,21 @@ const ATTACK = new Set([3, 4])
 
 /**
  * Pairs a rebuild's ins with its outs, like for like: within each position,
- * the dearest in replaces the dearest out. Positions always balance, since
- * every squad has the same number at each.
+ * the dearest in replaces the dearest out. Where the squad shape is flexible
+ * (the Bundesliga's), a rebuild can change how many play at a position, so
+ * whoever is left over is paired across positions the same way.
  */
 export function pairMoves(ins, outs) {
   const byPrice = (a, b) => b.price - a.price
-  return [1, 2, 3, 4].flatMap(pos => {
+  const moves = [1, 2, 3, 4].flatMap(pos => {
     const i = ins.filter(p => p.position === pos).sort(byPrice)
     const o = outs.filter(p => p.position === pos).sort(byPrice)
     return i.map((p, k) => ({ in: p, out: o[k] })).filter(m => m.out)
   })
+  const paired = new Set(moves.flatMap(m => [m.in.id, m.out.id]))
+  const restIn = ins.filter(p => !paired.has(p.id)).sort(byPrice)
+  const restOut = outs.filter(p => !paired.has(p.id)).sort(byPrice)
+  return [...moves, ...restIn.map((p, k) => ({ in: p, out: restOut[k] })).filter(m => m.out)]
 }
 
 /** The numbers behind a player's projection over `count` rounds from round index `from`. */
@@ -48,7 +53,10 @@ export function whySwap(incoming, outgoing, plan, from, count, label, sale = out
   if (b.fitness === 0) reasons.push(`${name(outgoing)} is ${outgoing.availability}${outgoing.news ? ` (${outgoing.news})` : ''}`)
   else if (b.fitness < 100) reasons.push(`${name(outgoing)} is only ${b.fitness}% to play`)
   if (b.games < a.games) reasons.push(b.games === 0 ? `${name(outgoing)} has no game` : `${name(incoming)} has ${a.games} games to ${b.games}`)
-  if (a.form - b.form >= 0.75) reasons.push(`better form (${a.form.toFixed(1)} pts a round over the last 4, to ${b.form.toFixed(1)})`)
+  // Form gaps are judged in the league's own points (the Bundesliga's are
+  // tens of times the Premier League platform's): `pointsScale` from its rules.
+  const unit = plan.common.pointsScale ?? 1
+  if (a.form - b.form >= 0.75 * unit) reasons.push(`better form (${a.form.toFixed(1)} pts a round over the last 4, to ${b.form.toFixed(1)})`)
   if (b.minutes4 < 200 && a.minutes4 - b.minutes4 >= 90) reasons.push(`more minutes (${a.minutes4} in the last 4 rounds, to ${b.minutes4})`)
   if (a.difficulty != null && b.difficulty != null && b.difficulty - a.difficulty >= 0.5) {
     reasons.push(`easier fixtures (difficulty ${a.difficulty.toFixed(1)} on average, to ${b.difficulty.toFixed(1)})`)
@@ -64,7 +72,7 @@ export function whySwap(incoming, outgoing, plan, from, count, label, sale = out
     ? `${name(incoming)} projects ${gain.toFixed(1)} more pts than ${name(outgoing)} over ${label}`
     : `${name(incoming)} projects about the same as ${name(outgoing)} over ${label}`
   const caveats = []
-  if (b.form - a.form >= 0.75) caveats.push(`${name(outgoing)} is in better form`)
+  if (b.form - a.form >= 0.75 * unit) caveats.push(`${name(outgoing)} is in better form`)
   if (a.difficulty != null && b.difficulty != null && a.difficulty - b.difficulty >= 0.5) caveats.push(`${name(incoming)}'s fixtures are harder`)
   const price = incoming.price - sale
   const money = Math.abs(price) >= 0.05 ? ` The swap ${price > 0 ? 'costs' : 'frees'} £${Math.abs(price).toFixed(1)}m${price < 0 ? ' for upgrades elsewhere' : ''}.` : ''

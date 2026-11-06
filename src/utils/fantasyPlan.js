@@ -9,7 +9,7 @@ import { POSITIONS, withForm, availability } from './fantasyPlayers'
 import { pickLineup } from './fantasyLineup'
 import { nextRound } from './fantasyFixtures'
 import {
-  projectRounds, planTransfers, squadScore, bestSquad, dreamSquad, chipBonus, chipTransfers, CHIPS,
+  projectRounds, planTransfers, squadScore, bestSquad, dreamSquad, chipBonus, chipTransfers, CHIPS, scoringFor,
 } from './fantasyPlanner'
 
 export const OUT = new Set(['injured', 'suspended', 'unavailable'])
@@ -42,7 +42,8 @@ function build(data, { SQUAD_INFO, RULES, ROUND, LAST, HORIZON }) {
   const players = data.players.map(p => ({ ...withForm(p), availability: availability(p) }))
   const { rounds, byPlayer } = projectRounds(players, data.fixtures, data.teams, ROUND, LAST - ROUND + 1)
   const picks = new Map((SQUAD_INFO?.picks ?? []).map(p => [p.id, p]))
-  const squad = players.filter(p => picks.has(p.id)).map(p => ({ ...p, purchasePrice: picks.get(p.id).purchasePrice }))
+  // A game that doesn't show what was paid (the Bundesliga's) sells at market value.
+  const squad = players.filter(p => picks.has(p.id)).map(p => ({ ...p, purchasePrice: picks.get(p.id).purchasePrice ?? p.price }))
   const total = (p, from, count) => byPlayer.get(p.id).perRound.slice(from, from + count).reduce((a, b) => a + b, 0)
   const horizonTotal = p => total(p, 0, HORIZON)
   // Buyable: fit, has played, and among the 40 best projections at their
@@ -50,13 +51,15 @@ function build(data, { SQUAD_INFO, RULES, ROUND, LAST, HORIZON }) {
   // fit players, the bench fodder that pays for a rebuild's stars.
   const poolFor = (from, count) => Object.keys(POSITIONS).flatMap(pos => {
     const fit = players.filter(p => p.position === Number(pos) && !OUT.has(p.availability))
-    const best = fit.filter(p => p.minutesTotal > 0).sort((a, b) => total(b, from, count) - total(a, from, count)).slice(0, 40)
+    // Points count as having played: an export not yet read in detail has no minutes.
+    const best = fit.filter(p => p.minutesTotal > 0 || p.total > 0).sort((a, b) => total(b, from, count) - total(a, from, count)).slice(0, 40)
     const cheap = [...fit].sort((a, b) => a.price - b.price || b.minutesTotal - a.minutesTotal).slice(0, 3)
     return [...new Set([...best, ...cheap])]
   })
   const pool = poolFor(0, HORIZON)
   const bank = SQUAD_INFO ? SQUAD_INFO.bank : RULES.budget ?? 100
-  const common = { squad, pool, bank, projected: byPlayer, teamLimit: RULES.squadTeamLimit, sellOnFee: RULES.sellOnFee ?? 0 }
+  const scoring = scoringFor(RULES)
+  const common = { squad, pool, bank, projected: byPlayer, teamLimit: RULES.squadTeamLimit, sellOnFee: RULES.sellOnFee ?? 0, scoring, pointsScale: RULES.pointsScale ?? 1 }
   const transfers = squad.length
     ? planTransfers({ ...common, horizon: HORIZON, maxMoves: MAX_MOVES })
     : { moves: [], singles: [], gain: 0 }
@@ -68,7 +71,7 @@ function build(data, { SQUAD_INFO, RULES, ROUND, LAST, HORIZON }) {
  * `from`, with each player's projection summed over them and their fixtures
  * in `games`: what the pitch views draw.
  */
-export function squadLineup(squad, byPlayer, from, count) {
+export function squadLineup(squad, byPlayer, from, count, scoring) {
   return pickLineup(squad.map(p => {
     const { perRound, games } = byPlayer.get(p.id)
     return {
@@ -76,7 +79,7 @@ export function squadLineup(squad, byPlayer, from, count) {
       games: games.slice(from, from + count).flat(),
       projection: { points: perRound.slice(from, from + count).reduce((a, b) => a + b, 0) },
     }
-  }))
+  }), scoring)
 }
 
 // Who goes and who comes between two squads, in squad order by position.
@@ -121,12 +124,12 @@ export function rebuiltSquad(data, from, count) {
   if (!cache.has(key)) {
     const { plan } = derivePlan(data)
     const { byPlayer, squad, poolFor, total, common, players } = plan
-    const score = s => squadScore(s, byPlayer, count, from)
+    const score = s => squadScore(s, byPlayer, count, from, common.scoring)
     // From scratch, the search starts at the cheapest legal squad and spends the rest.
     const start = squad.length ? { squad, bank: common.bank } : cheapestSquad(players, common.bank, common.teamLimit)
     const result = bestSquad({
       squad: start.squad, pool: poolFor(from, count), bank: start.bank, score,
-      rank: p => total(p, from, count), teamLimit: common.teamLimit, sellOnFee: common.sellOnFee,
+      rank: p => total(p, from, count), teamLimit: common.teamLimit, sellOnFee: common.sellOnFee, shape: common.scoring.shape,
     })
     cache.set(key, { ...result, from, count, gain: result.score - score(squad), ...difference(squad, result.squad) })
   }

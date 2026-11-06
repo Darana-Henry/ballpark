@@ -5,6 +5,12 @@
 // A squad is scored over a run of rounds as the sum, round by round, of its
 // best XI plus the captain counted twice, so a bench upgrade is worth little
 // and a starter upgrade a lot, as in the game.
+//
+// `scoring` (from scoringFor(rules)) covers the games that differ: the
+// Bundesliga's 3 star players (the best defender, midfielder and forward in
+// the XI score 1.5×) instead of a captain, and its flexible squad shape
+// (4–6 defenders, 4–6 midfielders, 2–4 forwards), where an outfield player
+// can be swapped for one at another position.
 
 import { upcomingFixtures } from './fantasyFixtures'
 import { projectPoints, pickLineup } from './fantasyLineup'
@@ -22,17 +28,25 @@ export function projectRounds(players, fixtures, teams, fromRound, count) {
   return { rounds, byPlayer }
 }
 
-/** The best XI, bench and captain of `squad` in round index `i`. */
-export function lineupIn(squad, projected, i) {
-  return pickLineup(squad.map(p => ({ ...p, projection: { points: projected.get(p.id).perRound[i] } })))
+/** How a league scores a squad, from its `rules`: stars or a captain, and the squad shape. */
+export function scoringFor(rules) {
+  return { stars: rules?.captaincy === 'stars', shape: rules?.squadShape ?? null }
+}
+const CAPTAIN = { stars: false, shape: null }
+
+/** The best XI, bench and captain (or star players) of `squad` in round index `i`. */
+export function lineupIn(squad, projected, i, scoring = CAPTAIN) {
+  return pickLineup(squad.map(p => ({ ...p, projection: { points: projected.get(p.id).perRound[i] } })), scoring)
 }
 
 const byDesc = (a, b) => b - a
 
-// Best XI plus captain, summed over `horizon` rounds from round index `from`.
-// The same pick as pickLineup (each position's minimum, then the best of the
-// rest up to its maximum), on bare numbers: searches score many squads.
-export function squadScore(squad, projected, horizon, from = 0) {
+// Best XI plus captain (or star players), summed over `horizon` rounds from
+// round index `from`. The same pick as pickLineup (each position's minimum,
+// then the best of the rest up to its maximum), on bare numbers: searches
+// score many squads. The best defender, midfielder and forward always start
+// (every formation fields at least one), so they're the star players.
+export function squadScore(squad, projected, horizon, from = 0, scoring = CAPTAIN) {
   let total = 0
   for (let i = from; i < from + horizon; i++) {
     const pts = { 1: [], 2: [], 3: [], 4: [] }
@@ -40,7 +54,10 @@ export function squadScore(squad, projected, horizon, from = 0) {
     for (const list of Object.values(pts)) list.sort(byDesc)
     const starters = [...pts[1].slice(0, 1), ...pts[2].slice(0, 3), ...pts[3].slice(0, 2), ...pts[4].slice(0, 1)]
     const rest = [...pts[2].slice(3, 5), ...pts[3].slice(2, 5), ...pts[4].slice(1, 3)].sort(byDesc).slice(0, 11 - starters.length)
-    total += sum(starters) + sum(rest) + Math.max(0, ...starters, ...rest)
+    const bonus = scoring.stars
+      ? 0.5 * [2, 3, 4].reduce((s, pos) => s + Math.max(0, pts[pos][0] ?? 0), 0)
+      : Math.max(0, ...starters, ...rest)
+    total += sum(starters) + sum(rest) + bonus
   }
   return total
 }
@@ -60,17 +77,28 @@ function clubCounts(squad) {
   return perClub
 }
 
-// Every legal swap for each of `outs`: same position, within budget and the
-// per-club limit. Returns, per out, its best `keep` options by gain in
-// `score`, over `base` (the current squad's score).
-function swaps({ current, money, pool, score, base, teamLimit, sellOnFee, outs = current, keep = 5 }) {
+// Whether `cand` can replace `out`: the same position, or, where the squad
+// shape is flexible, another outfield position that keeps every position
+// within its range (keepers are always swapped for keepers).
+function positionFits(out, cand, counts, shape) {
+  if (cand.position === out.position) return true
+  if (!shape || out.position === 1 || cand.position === 1) return false
+  return counts[out.position] - 1 >= shape[out.position][0] && counts[cand.position] + 1 <= shape[cand.position][1]
+}
+
+// Every legal swap for each of `outs`: a position that fits, within budget
+// and the per-club limit. Returns, per out, its best `keep` options by gain
+// in `score`, over `base` (the current squad's score).
+function swaps({ current, money, pool, score, base, teamLimit, sellOnFee, shape = null, outs = current, keep = 5 }) {
   const owned = new Set(current.map(p => p.id))
   const perClub = clubCounts(current)
+  const counts = { 1: 0, 2: 0, 3: 0, 4: 0 }
+  for (const p of current) counts[p.position]++
   return outs.map(out => {
     const budget = money + sellPrice(out, sellOnFee)
     const options = []
     for (const cand of pool) {
-      if (cand.position !== out.position || owned.has(cand.id) || cand.price > budget + 1e-9) continue
+      if (!positionFits(out, cand, counts, shape) || owned.has(cand.id) || cand.price > budget + 1e-9) continue
       if (cand.team !== out.team && (perClub.get(cand.team) ?? 0) >= teamLimit) continue
       const next = current.map(p => (p.id === out.id ? bought(cand) : p))
       options.push({ out, in: cand, gain: score(next) - base })
@@ -88,8 +116,8 @@ function swaps({ current, money, pool, score, base, teamLimit, sellOnFee, outs =
  *
  * `squad` items need `purchasePrice`; `pool` is the candidates to buy.
  */
-export function planTransfers({ squad, pool, bank, projected, horizon, teamLimit, sellOnFee, maxMoves }) {
-  const score = s => squadScore(s, projected, horizon)
+export function planTransfers({ squad, pool, bank, projected, horizon, teamLimit, sellOnFee, maxMoves, scoring = CAPTAIN }) {
+  const score = s => squadScore(s, projected, horizon, 0, scoring)
   let current = [...squad]
   let money = bank
   let base = score(current)
@@ -97,7 +125,7 @@ export function planTransfers({ squad, pool, bank, projected, horizon, teamLimit
   const moves = []
   let singles = []
   for (let step = 0; step < maxMoves; step++) {
-    const perOut = swaps({ current, money, pool, score, base, teamLimit, sellOnFee })
+    const perOut = swaps({ current, money, pool, score, base, teamLimit, sellOnFee, shape: scoring.shape })
     if (step === 0) singles = perOut.flat().sort((a, b) => b.gain - a.gain).slice(0, 5)
     const best = perOut.filter(o => o.length).reduce((a, o) => (!a || o[0].gain > a[0].gain ? o : a), null)
     if (!best || best[0].gain < 0.05) break
@@ -111,9 +139,9 @@ export function planTransfers({ squad, pool, bank, projected, horizon, teamLimit
 }
 
 /** The best `keep` replacements for one player in `squad`, by gain over `horizon` rounds. */
-export function replacementsFor(out, { squad, pool, bank, projected, horizon, teamLimit, sellOnFee }, keep = 5) {
-  const score = s => squadScore(s, projected, horizon)
-  return swaps({ current: squad, money: bank, pool, score, base: score(squad), teamLimit, sellOnFee, outs: [out], keep })[0]
+export function replacementsFor(out, { squad, pool, bank, projected, horizon, teamLimit, sellOnFee, scoring = CAPTAIN }, keep = 5) {
+  const score = s => squadScore(s, projected, horizon, 0, scoring)
+  return swaps({ current: squad, money: bank, pool, score, base: score(squad), teamLimit, sellOnFee, shape: scoring.shape, outs: [out], keep })[0]
 }
 
 /**
@@ -124,11 +152,11 @@ export function replacementsFor(out, { squad, pool, bank, projected, horizon, te
  * is only replaced for a real gain. The pair search tries each position's
  * top 10 by `rank` and its 3 cheapest.
  */
-export function bestSquad({ squad, pool, bank, score, rank, teamLimit, sellOnFee }) {
+export function bestSquad({ squad, pool, bank, score, rank, teamLimit, sellOnFee, shape = null }) {
   let current = [...squad]
   let money = bank
   let base = score(current)
-  const opts = { pool, score, teamLimit, sellOnFee }
+  const opts = { pool, score, teamLimit, sellOnFee, shape }
   const shortlist = Object.fromEntries([1, 2, 3, 4].map(pos => {
     const at = pool.filter(p => p.position === pos)
     const top = [...at].sort((a, b) => rank(b) - rank(a)).slice(0, 10)
@@ -149,6 +177,7 @@ export function bestSquad({ squad, pool, bank, score, rank, teamLimit, sellOnFee
       base += single.gain
       continue
     }
+    // Pairs stay like for like: across positions, singles cover it.
     const pair = bestPair(current, money, shortlist, base, opts)
     if (!pair || pair.gain < 0.05) break
     apply(pair.swaps)

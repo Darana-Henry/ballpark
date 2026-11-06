@@ -22,6 +22,7 @@ const EliteserienFantasyView = lazy(() => import('./views/EliteserienFantasyView
 const AllsvenskanFantasyView = lazy(() => import('./views/AllsvenskanFantasyView'))
 const PremierLeagueFantasyView = lazy(() => import('./views/PremierLeagueFantasyView'))
 const ChampionsLeagueFantasyView = lazy(() => import('./views/ChampionsLeagueFantasyView'))
+const BundesligaFantasyView = lazy(() => import('./views/BundesligaFantasyView'))
 
 function FirebaseBanner() {
   const [dismissed, setDismissed] = useState(false)
@@ -58,6 +59,7 @@ const VIEWS = {
   allsvenskan: AllsvenskanFantasyView,
   fpl: PremierLeagueFantasyView,
   uclFantasy: ChampionsLeagueFantasyView,
+  bundesligaFantasy: BundesligaFantasyView,
   stats: StatsView,
 }
 

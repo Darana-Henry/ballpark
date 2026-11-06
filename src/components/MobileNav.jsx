@@ -5,10 +5,12 @@ const ALL_TABS = [
   ...LEAGUES,
   { id: 'europe', name: 'Europe', emoji: '🏆' },
   { id: 'deadlines', name: 'Deadlines', emoji: '⏰' },
-  { id: 'fpl', name: 'FPL', emoji: '👑' },
-  { id: 'eliteserien', name: 'Elite', emoji: '🇳🇴' },
+  // Fantasy leagues, alphabetical by full name
   { id: 'allsvenskan', name: 'Allsv', emoji: '🇸🇪' },
+  { id: 'bundesligaFantasy', name: 'Buli', emoji: '🇩🇪' },
   { id: 'uclFantasy', name: 'UCL', emoji: '⭐' },
+  { id: 'eliteserien', name: 'Elite', emoji: '🇳🇴' },
+  { id: 'fpl', name: 'FPL', emoji: '👑' },
   { id: 'stats', name: 'Stats', emoji: '📊' },
 ]
 

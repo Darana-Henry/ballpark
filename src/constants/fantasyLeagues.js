@@ -50,6 +50,8 @@ export const FANTASY_LEAGUES = [
   },
   {
     id: 'bundesliga',
+    roundShort: 'MD',
+    currency: '€',
     name: 'Bundesliga Fantasy',
     calendarName: 'Bundesliga',
     emoji: '🇩🇪',

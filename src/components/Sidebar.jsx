@@ -229,7 +229,8 @@ export default function Sidebar({ activeLeague, onLeagueChange }) {
           </span>
         </button>
         {/* [view id, fantasy league, label] */}
-        {[['fpl', 'premierLeague', 'Premier League'], ['eliteserien', 'eliteserien', 'Eliteserien'], ['allsvenskan', 'allsvenskan', 'Allsvenskan'], ['uclFantasy', 'championsLeague', 'Champions League']].map(([id, leagueId, name]) => (
+        {/* Alphabetical */}
+        {[['allsvenskan', 'allsvenskan', 'Allsvenskan'], ['bundesligaFantasy', 'bundesliga', 'Bundesliga'], ['uclFantasy', 'championsLeague', 'Champions League'], ['eliteserien', 'eliteserien', 'Eliteserien'], ['fpl', 'premierLeague', 'Premier League']].map(([id, leagueId, name]) => (
           <button
             key={id}
             onClick={() => onLeagueChange(id)}

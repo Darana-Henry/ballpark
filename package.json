@@ -19,6 +19,7 @@
     "allsvenskan:players": "node scripts/fetch-fantasy-players.mjs allsvenskan",
     "fpl:players": "node scripts/fetch-fantasy-players.mjs premierLeague",
     "ucl:players": "node scripts/fetch-ucl-fantasy.mjs",
+    "bundesliga:import": "node scripts/import-bundesliga-fantasy.mjs",
     "transfers": "node scripts/fetch-transfers.mjs"
   },
   "dependencies": {

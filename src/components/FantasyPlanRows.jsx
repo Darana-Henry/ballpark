@@ -1,4 +1,4 @@
-import { useFantasyData } from '../contexts/fantasyData'
+import { useFantasyData, useLabels } from '../contexts/fantasyData'
 import { POSITIONS } from '../utils/fantasyPlayers'
 import { DIFFICULTY } from '../utils/fantasyFixtures'
 import { derivePlan } from '../utils/fantasyPlan'
@@ -27,26 +27,28 @@ export function Fixtures({ games }) {
 
 export function PlayerSide({ player, price, total, games, muted }) {
   const { TEAMS } = derivePlan(useFantasyData().data)
+  const { C } = useLabels()
   return (
     <div className="min-w-0 flex-1">
       <p className={`text-sm font-semibold truncate ${muted ? 'text-slate-400' : 'text-slate-100'}`} title={player.fullName}>{player.name}</p>
       <p className="text-[11px] text-slate-500 truncate">
-        {POSITIONS[player.position]} · {TEAMS[player.team].short} · £{price.toFixed(1)} · {total.toFixed(1)} pts
+        {POSITIONS[player.position]} · {TEAMS[player.team].short} · {C}{price.toFixed(1)} · {total.toFixed(1)} pts
       </p>
       <div className="mt-1"><Fixtures games={games} /></div>
     </div>
   )
 }
 
-/** "Out → In · club · £ · fixtures · gain" on one line. */
+/** "Out → In · club · price · fixtures · gain" on one line. */
 export function SwapLine({ swap, games, showOut = true }) {
   const { TEAMS } = derivePlan(useFantasyData().data)
+  const { C } = useLabels()
   return (
     <div className="flex items-center gap-2 text-xs rounded-lg px-3 py-1.5" style={panelStyle}>
       <span className="flex-1 min-w-0 truncate">
         {showOut && <><span className="text-slate-400">{swap.out.name}</span><span className="text-slate-600"> → </span></>}
         <span className="text-slate-100 font-semibold">{swap.in.name}</span>
-        <span className="text-slate-500"> · {TEAMS[swap.in.team].short} · £{swap.in.price.toFixed(1)}</span>
+        <span className="text-slate-500"> · {TEAMS[swap.in.team].short} · {C}{swap.in.price.toFixed(1)}</span>
       </span>
       {games && <span className="hidden sm:flex"><Fixtures games={games} /></span>}
       {swap.gain != null && <span className={`w-12 text-right tabular-nums ${swap.gain >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>{fmt(swap.gain)}</span>}

@@ -1,4 +1,4 @@
-import { useFantasyData, perLeague } from '../contexts/fantasyData'
+import { useFantasyData, useLabels, perLeague } from '../contexts/fantasyData'
 import { DIFFICULTY } from '../utils/fantasyFixtures'
 
 // The pitch the squad panels draw (My team, Ideal team, chip squads): an XI
@@ -34,12 +34,14 @@ function fixtureLabel(games, TEAMS, rounds) {
  * `player` needs `games` and `projection.points` (plus form, fixture and
  * fitness for the hover breakdown). `badge` is `{ text, className, title }`.
  */
-export function PlayerCard({ player, captain, vice, badge, rounds = 1, onClick, selected }) {
+export function PlayerCard({ player, captain, vice, star, badge, rounds = 1, onClick, selected, price }) {
   const TEAMS = teamsOf(useFantasyData().data)
+  const { C } = useLabels()
   const { projection, games } = player
   const shirt = STATUS_SHIRT[player.availability] ?? '#6366f1'
   const hint = [
-    `${player.fullName} · ${TEAMS[player.team].name} · £${player.price.toFixed(1)}`,
+    `${player.fullName} · ${TEAMS[player.team].name} · ${C}${player.price.toFixed(1)}`,
+    star && 'Star player: scores 1.5×',
     projection.form != null && `Form ${projection.form.toFixed(1)} pts per round × fixture ${projection.fixture.toFixed(2)} × fitness ${Math.round(projection.fitness * 100)}%`,
     player.news,
   ].filter(Boolean).join('\n')
@@ -49,11 +51,14 @@ export function PlayerCard({ player, captain, vice, badge, rounds = 1, onClick, 
     <Tag
       type={onClick ? 'button' : undefined}
       onClick={onClick}
-      className={`relative flex flex-col items-center w-[4.25rem] sm:w-24 ${onClick ? 'cursor-pointer rounded-lg transition-transform hover:-translate-y-0.5' : ''} ${selected ? 'ring-2 ring-amber-300 ring-offset-2 ring-offset-emerald-800 rounded-lg' : ''}`}
+      className={`relative flex flex-col items-center w-[4.25rem] sm:w-28 ${onClick ? 'cursor-pointer rounded-lg transition-transform hover:-translate-y-0.5' : ''} ${selected ? 'ring-2 ring-amber-300 ring-offset-2 ring-offset-emerald-800 rounded-lg' : ''}`}
       title={hint}
     >
       <div className="relative">
         <Shirt color={shirt} />
+        {star && (
+          <span className="absolute -top-1 -right-2 w-5 h-5 rounded-full text-[11px] font-bold flex items-center justify-center border bg-amber-400 text-slate-900 border-amber-200" title="Star player (1.5×)">★</span>
+        )}
         {(captain || vice) && (
           <span className={`absolute -top-1 -right-2 w-5 h-5 rounded-full text-[10px] font-bold flex items-center justify-center border ${captain ? 'bg-amber-400 text-slate-900 border-amber-200' : 'bg-slate-200 text-slate-900 border-white'}`}>
             {captain ? 'C' : 'V'}
@@ -67,6 +72,21 @@ export function PlayerCard({ player, captain, vice, badge, rounds = 1, onClick, 
       </div>
       <div className="w-full mt-0.5 rounded-t-md bg-slate-950/90 px-1 py-0.5 text-center">
         <p className="text-[10px] sm:text-xs font-semibold text-slate-100 truncate">{player.shortName}</p>
+        {/* `price` = { now, sells }: "1,686 pts | € 10.2", the season's points so far
+            and the current price, plus what an owned player sells for when that's
+            less. On a phone the two halves stack. */}
+        {price && (
+          <p
+            className="flex flex-col items-center sm:flex-row sm:justify-center sm:gap-x-1 text-[9px] sm:text-[10px] leading-tight tabular-nums"
+            title={`Season points so far · price ${C}${price.now.toFixed(1)}m${price.sells != null && price.sells < price.now - 0.05 ? ` · you'd sell for ${C}${price.sells.toFixed(1)}m` : ''}`}
+          >
+            {player.total != null && <span className="text-slate-300 whitespace-nowrap">{Math.round(player.total).toLocaleString('en-US')} pts</span>}
+            {player.total != null && <span className="hidden sm:inline text-slate-600">|</span>}
+            <span className="text-slate-400 whitespace-nowrap">
+              {C} {price.now.toFixed(1)}{price.sells != null && price.sells < price.now - 0.05 && <span className="text-slate-500"> ({price.sells.toFixed(1)})</span>}
+            </span>
+          </p>
+        )}
       </div>
       <div className={`w-full px-1 py-0.5 text-center text-[9px] sm:text-[10px] font-semibold truncate ${difficulty}`}>
         {fixtureLabel(games, TEAMS, rounds)}
@@ -100,8 +120,8 @@ export function Pitch({ children }) {
  * adds a card's badge, onClick and selected state.
  */
 export function SquadPitch({ lineup, rounds = 1, cardProps = () => ({}) }) {
-  const { starters, bench, captain, vice } = lineup
-  const card = p => <PlayerCard key={p.id} player={p} captain={p === captain} vice={p === vice} rounds={rounds} {...cardProps(p)} />
+  const { starters, bench, captain, vice, stars = [] } = lineup
+  const card = p => <PlayerCard key={p.id} player={p} captain={p === captain} vice={p === vice} star={stars.includes(p)} rounds={rounds} {...cardProps(p)} />
   return (
     <>
       <Pitch>

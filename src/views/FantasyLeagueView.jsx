@@ -180,6 +180,13 @@ function RoundStrip({ player }) {
   )
 }
 
+// Any minutes in the last n rounds. A player whose recent rounds aren't known
+// at all (every one null: a Bundesliga export still being read) stays in.
+function playedInLast(p, n) {
+  const recent = (p.minutes ?? []).slice(-n)
+  return recent.every(v => v == null) || recent.some(v => v > 0)
+}
+
 function RoundCell({ pts, mins }) {
   return (
     <td className="px-1.5 py-1.5 text-center tabular-nums">
@@ -204,6 +211,10 @@ function PlayersPanel() {
   const [priceCap, setPriceCap] = useState('')
   const [query, setQuery] = useState('')
   const [playedOnly, setPlayedOnly] = useState(true)
+  // Hide anyone with no minutes in the last 7 / last 4 rounds (see
+  // playedInLast).
+  const [played7, setPlayed7] = useState(false)
+  const [played4, setPlayed4] = useState(false)
   const [onPens, setOnPens] = useState(false)
   const [mineOnly, setMineOnly] = useState(false)
   const [sort, setSort] = useState({ key: 'total', desc: true })
@@ -220,19 +231,21 @@ function PlayersPanel() {
       (!team || p.team === Number(team)) &&
       (Number.isNaN(cap) || p.price <= cap) &&
       (!playedOnly || p.minutesTotal > 0 || MY_PICKS.has(p.id)) &&
+      (!played7 || playedInLast(p, 7)) &&
+      (!played4 || playedInLast(p, 4)) &&
       (!onPens || p.penaltiesTaken > 0) &&
       (!mineOnly || MY_PICKS.has(p.id)) &&
       (!q || [p.name, p.fullName, p.shortName].some(n => n.toLowerCase().includes(q))),
     )
     const dir = sort.desc ? -1 : 1
     return filtered.sort((a, b) => dir * (a[sort.key] - b[sort.key]) || b.total - a.total)
-  }, [data, positions, statuses, banRisk, team, priceCap, query, playedOnly, onPens, mineOnly, sort])
+  }, [data, positions, statuses, banRisk, team, priceCap, query, playedOnly, played7, played4, onPens, mineOnly, sort])
 
   // Most columns sort highest first; difficulty sorts easiest first.
   const toggleSort = (key, ascFirst) => setSort(s => ({ key, desc: s.key === key ? !s.desc : !ascFirst }))
 
   // Back to the defaults above; the sort order is left alone.
-  const filtered = positions.size || statuses.size || banRisk || team || priceCap || query || !playedOnly || onPens || mineOnly
+  const filtered = positions.size || statuses.size || banRisk || team || priceCap || query || !playedOnly || played7 || played4 || onPens || mineOnly
   const resetFilters = () => {
     setPositions(new Set())
     setStatuses(new Set())
@@ -241,6 +254,8 @@ function PlayersPanel() {
     setPriceCap('')
     setQuery('')
     setPlayedOnly(true)
+    setPlayed7(false)
+    setPlayed4(false)
     setOnPens(false)
     setMineOnly(false)
   }
@@ -306,6 +321,8 @@ function PlayersPanel() {
           />
           <div className="flex flex-wrap gap-1">
             <Chip active={playedOnly} onClick={() => setPlayedOnly(v => !v)}>Played this season</Chip>
+            <Chip active={played7} onClick={() => setPlayed7(v => !v)}>Played in last 7</Chip>
+            <Chip active={played4} onClick={() => setPlayed4(v => !v)}>Played in last 4</Chip>
             {HAS_PENS && <Chip active={onPens} onClick={() => setOnPens(v => !v)}>Takes pens</Chip>}
             {data.mySquad && <Chip active={mineOnly} onClick={() => setMineOnly(v => !v)}>My team</Chip>}
           </div>

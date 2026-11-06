@@ -100,7 +100,8 @@ const derive = perLeague(data => {
 // The last-5 round columns sit between these two groups.
 const VALUE_COLUMNS = [
   { key: 'price', label: '£', title: 'Current price', format: p => p.price.toFixed(1) },
-  { key: 'ownership', label: 'Own %', title: 'Selected by % of managers', format: p => p.ownership.toFixed(1) },
+  // The Bundesliga app doesn't show ownership: empty, shown as a dash.
+  { key: 'ownership', label: 'Own %', title: 'Selected by % of managers', format: p => p.ownership?.toFixed(1) ?? '–' },
 ]
 // Only some games publish these (the Champions League's does); shown when present.
 const SEASON_STAT_COLUMNS = [
@@ -258,7 +259,7 @@ function PlayersPanel() {
       key={c.key}
       className={`px-2 py-2 text-right tabular-nums ${sort.key === c.key ? 'text-slate-100 font-semibold' : 'text-slate-300'}`}
     >
-      {c.format ? c.format(p) : p[c.key]}
+      {c.format ? c.format(p) : p[c.key] ?? '–'}
     </td>
   )
 
@@ -413,13 +414,19 @@ const PANELS = {
   // Without a squad, the ideal team is built from scratch instead.
   ideal:    { label: 'Ideal team',   Panel: FantasyIdealTeam },
   plan:     { label: 'Transfers',    Panel: FantasyPlanner, needs: 'mySquad' },
-  chips:    { label: 'Chips',        Panel: FantasyChips, needs: 'mySquad' },
+  chips:    { label: 'Chips',        Panel: FantasyChips, needs: 'chips' },
   best:     { label: 'Best by club', Panel: FantasyBestLads },
   fixtures: { label: 'Fixtures',     Panel: FantasyFixtures },
   top:      { label: 'Top managers', Panel: FantasyTopManagers, needs: 'topManagers' },
   history:  { label: 'Performance',  Panel: FantasyPerformance, needs: 'history' },
 }
-const hasData = (needs, data, history) => !needs || (needs === 'history' ? Boolean(history) : Boolean(data[needs]))
+// Chips also need a game that has some (the Bundesliga's has none).
+const hasData = (needs, data, history) => {
+  if (!needs) return true
+  if (needs === 'history') return Boolean(history)
+  if (needs === 'chips') return Boolean(data.mySquad && data.rules?.chips?.length)
+  return Boolean(data[needs])
+}
 
 /** `league` is the FANTASY_LEAGUE_MAP entry; `data` and `history` its two data files. */
 export default function FantasyLeagueView({ league, data, history }) {
@@ -437,11 +444,19 @@ export default function FantasyLeagueView({ league, data, history }) {
           <div>
             <h2 className="text-2xl font-bold text-slate-100 leading-tight">{league.name}</h2>
             <p className="text-sm text-slate-500 mt-0.5">
-              Through {R}{lastRound} · refreshed {new Date(data.generatedAt).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}
+              Through {R}{lastRound} · {data.source ? 'imported' : 'refreshed'} {new Date(data.generatedAt).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}
               {data.mySquad && <> · <span className="text-indigo-300">{data.mySquad.name}</span> as of {R}{data.mySquad.round}</>}
             </p>
           </div>
         </div>
+
+        {/* An imported league (the Bundesliga's app exports): say when the export was incomplete. */}
+        {(data.source?.warnings || data.source?.unread > 0) && (
+          <p className="text-xs text-amber-300/90 rounded-xl px-3 py-2 mb-4" style={{ background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.25)' }}>
+            {data.source.unread > 0 && `${data.source.unread} of ${data.players.length} players weren't read in detail in the last export: they show the app's season total and average, with no matchday breakdown. `}
+            {data.source.warnings && `Export warning: ${data.source.warnings}`}
+          </p>
+        )}
 
         {/* Swipes sideways on phones, where the tabs don't all fit */}
         <div className="flex mb-5 rounded-2xl p-1 gap-0.5 w-full sm:w-fit overflow-x-auto scrollbar-hide" style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.08)' }}>

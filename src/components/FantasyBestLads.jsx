@@ -1,6 +1,6 @@
 import { useState, useMemo } from 'react'
 import { useFantasyData, useLabels, perLeague } from '../contexts/fantasyData'
-import { POSITIONS, availability } from '../utils/fantasyPlayers'
+import { POSITIONS, availability, withForm } from '../utils/fantasyPlayers'
 import { leagueTable } from '../utils/fantasyFixtures'
 import Chip from './FilterChip'
 
@@ -8,7 +8,9 @@ import Chip from './FilterChip'
 // with the runner-up ("Second Best Lads") under it, over the season or the
 // last 7 or 4 rounds (the windows used everywhere else here), clubs in league
 // order. Below, the sheet's "Mean Ratio": the average best player per
-// position across the clubs. Best players above that average show in green.
+// position across the clubs. Best players above that average show in green,
+// and their price in yellow when they also cost less than the average best
+// player there: a cheap player scoring with the clubs' best.
 
 const derive = perLeague(data => {
   const LAST_ROUND = data.rounds.at(-1) ?? 0
@@ -18,25 +20,28 @@ const derive = perLeague(data => {
     TABLE,
     TEAMS: [...data.teams].sort((a, b) => (TABLE.get(a.id)?.rank ?? 99) - (TABLE.get(b.id)?.rank ?? 99)),
     MY_PICKS: new Set((data.mySquad?.picks ?? []).map(p => p.id)),
-    PLAYERS: data.players.map(p => ({ ...p, availability: availability(p) })),
+    PLAYERS: data.players.map(p => withForm({ ...p, availability: availability(p) })),
   }
 })
 
+// Points and minutes per window from withForm, which also covers Bundesliga
+// players the app export hasn't read in detail yet: their season total is
+// the app's own; their last 7 / last 4 are estimates (season average × rounds).
 const WINDOWS = {
-  season: { label: 'Season', rounds: Infinity },
-  last7:  { label: 'Last 7', rounds: 7 },
-  last4:  { label: 'Last 4', rounds: 4 },
+  season: { label: 'Season', points: 'total', minutes: 'minutesTotal' },
+  last7:  { label: 'Last 7', points: 'last7', minutes: 'minutes7' },
+  last4:  { label: 'Last 4', points: 'last4', minutes: 'minutes4' },
 }
 
-const sumLast = (values, n) => values.slice(-Math.min(n, values.length)).reduce((sum, v) => sum + (v ?? 0), 0)
+const unread = p => p.avgPoints != null && p.points.every(v => v == null)
 
 const STATUS_DOT = { doubtful: 'bg-amber-400', injured: 'bg-red-500', suspended: 'bg-red-500', unavailable: 'bg-slate-500' }
 
-function PlayerLine({ entry, second, aboveAverage }) {
+function PlayerLine({ entry, second, aboveAverage, cheap }) {
   const { MY_PICKS } = derive(useFantasyData().data)
   const { C } = useLabels()
   if (!entry) return <p className={`text-xs text-slate-600 ${second ? 'pl-2' : ''}`}>–</p>
-  const { player, points } = entry
+  const { player, points, estimate } = entry
   const mine = MY_PICKS.has(player.id)
   const dot = STATUS_DOT[player.availability]
   return (
@@ -49,8 +54,18 @@ function PlayerLine({ entry, second, aboveAverage }) {
         {player.name}
       </span>
       {dot && <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${dot}`} title={player.news ?? player.availability} />}
-      <span className="ml-auto tabular-nums text-slate-500 shrink-0">{C}{player.price.toFixed(1)}</span>
-      <span className={`w-8 text-right tabular-nums shrink-0 ${second ? '' : `font-bold ${aboveAverage ? 'text-emerald-400' : 'text-slate-100'}`}`}>{points}</span>
+      <span
+        className={`ml-auto tabular-nums shrink-0 ${cheap ? 'text-amber-300 font-semibold' : 'text-slate-500'}`}
+        title={cheap ? 'Above average and cheaper than the average best player at this position' : undefined}
+      >
+        {C}{player.price.toFixed(1)}
+      </span>
+      <span
+        className={`min-w-8 text-right tabular-nums shrink-0 ${second ? '' : `font-bold ${aboveAverage ? 'text-emerald-400' : 'text-slate-100'}`}`}
+        title={estimate ? 'Estimate: not read in detail by the app export yet, so season average × rounds' : undefined}
+      >
+        {estimate ? '~' : ''}{points}
+      </span>
     </div>
   )
 }
@@ -63,9 +78,14 @@ export default function FantasyBestLads() {
 
   const { byTeam, benchmark } = useMemo(() => {
     const { TEAMS, PLAYERS } = derive(data)
-    const n = WINDOWS[windowKey].rounds
+    const w = WINDOWS[windowKey]
     // Ties go to more minutes in the window, then the cheaper player.
-    const scored = PLAYERS.map(p => ({ player: p, points: sumLast(p.points, n), minutes: sumLast(p.minutes, n) }))
+    const scored = PLAYERS.map(p => ({
+      player: p,
+      points: Math.round(p[w.points]),
+      minutes: p[w.minutes],
+      estimate: windowKey !== 'season' && unread(p),
+    }))
       .sort((a, b) => b.points - a.points || b.minutes - a.minutes || a.player.price - b.player.price)
     const byTeam = new Map(TEAMS.map(t => [t.id, Object.fromEntries(Object.keys(POSITIONS).map(pos => [pos, []]))]))
     for (const s of scored) {
@@ -81,6 +101,7 @@ export default function FantasyBestLads() {
     return { byTeam, benchmark }
   }, [data, windowKey])
   const average = Object.fromEntries(benchmark.map(b => [b.pos, b.points]))
+  const averagePrice = Object.fromEntries(benchmark.map(b => [b.pos, b.price]))
 
   return (
     <>
@@ -90,7 +111,8 @@ export default function FantasyBestLads() {
         </div>
         <span className="text-xs text-slate-600 ml-auto">
           Clubs in league order after {R}{LAST_ROUND} · top scorer per position, runner-up below · <span className="text-indigo-300">your players</span> ·{' '}
-          <span className="text-emerald-400">above average</span>
+          <span className="text-emerald-400">above average</span> ·{' '}
+          <span className="text-amber-300">and cheaper than average</span>
         </span>
       </div>
 
@@ -111,7 +133,11 @@ export default function FantasyBestLads() {
                     <div key={pos} className="flex gap-2 py-1.5">
                       <span className="w-8 text-[10px] font-semibold text-slate-500 pt-0.5">{label}</span>
                       <div className="flex-1 min-w-0 flex flex-col gap-0.5">
-                        <PlayerLine entry={best} aboveAverage={best && best.points > average[pos]} />
+                        <PlayerLine
+                          entry={best}
+                          aboveAverage={best && best.points > average[pos]}
+                          cheap={best && best.points > average[pos] && best.player.price < averagePrice[pos]}
+                        />
                         <PlayerLine entry={second} second />
                       </div>
                     </div>
@@ -125,7 +151,7 @@ export default function FantasyBestLads() {
 
       <section className="mt-5 rounded-xl p-3 max-w-xl" style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.07)' }}>
         <h3 className="text-sm font-bold text-slate-100">Average best player</h3>
-        <p className="text-[11px] text-slate-500 mb-2">Across the {TEAMS.length} clubs' top scorers: what a club's best player at each position usually scores and costs. Best players above the points average are in green in the cards. +25% is the sheet's price ceiling.</p>
+        <p className="text-[11px] text-slate-500 mb-2">Across the {TEAMS.length} clubs' top scorers: what a club's best player at each position usually scores and costs. Best players above the points average are in green in the cards, with their price in yellow when it's under the average price. +25% is the sheet's price ceiling.</p>
         <table className="w-full text-xs tabular-nums">
           <thead>
             <tr className="text-[10px] uppercase tracking-wider text-slate-500">

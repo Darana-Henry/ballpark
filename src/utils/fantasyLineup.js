@@ -29,8 +29,11 @@ export function projectPoints(player, games) {
  * of each outfield position, then the best of the rest up to each maximum.
  * Taking the minimums first and filling greedily always finds the top total.
  * `squad` items need `position` and `projection.points`.
+ *
+ * With `scoring.stars` (the Bundesliga) there's no captain: `stars` are the
+ * best starting defender, midfielder and forward, who score 1.5×.
  */
-export function pickLineup(squad) {
+export function pickLineup(squad, scoring = {}) {
   const best = list => [...list].sort((a, b) => b.projection.points - a.projection.points)
   const byPosition = pos => best(squad.filter(p => p.position === pos))
   const starters = new Set()
@@ -44,11 +47,13 @@ export function pickLineup(squad) {
   // The game's bench: the spare keeper in the first slot, then outfielders by projection.
   const rest = squad.filter(p => !starters.has(p))
   const bench = [...rest.filter(p => p.position === 1), ...best(rest.filter(p => p.position !== 1))]
+  const stars = scoring.stars ? [2, 3, 4].map(pos => xi.find(p => p.position === pos)).filter(Boolean) : []
   return {
     starters: xi,
     bench,
-    captain: xi[0] ?? null,
-    vice: xi[1] ?? null,
+    captain: scoring.stars ? null : xi[0] ?? null,
+    vice: scoring.stars ? null : xi[1] ?? null,
+    stars,
     formation: [2, 3, 4].map(count).join('-'),
   }
 }

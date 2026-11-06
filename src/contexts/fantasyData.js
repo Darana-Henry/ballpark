@@ -7,10 +7,18 @@ export const FantasyDataContext = createContext(null)
 
 export const useFantasyData = () => useContext(FantasyDataContext)
 
-/** The league's round abbreviation and currency: "GW" and "£" unless it sets its own. */
+/**
+ * The league's round abbreviation and currency ("GW" and "£" unless it sets
+ * its own), and `K`, what its doubled players are called: "captain", or
+ * "star players" where three score 1.5× (the Bundesliga).
+ */
 export function useLabels() {
-  const { league } = useContext(FantasyDataContext)
-  return { R: league?.roundShort ?? 'GW', C: league?.currency ?? '£' }
+  const { league, data } = useContext(FantasyDataContext)
+  return {
+    R: league?.roundShort ?? 'GW',
+    C: league?.currency ?? '£',
+    K: data?.rules?.captaincy === 'stars' ? 'star players' : 'captain',
+  }
 }
 
 // Wraps a function of a league's data so it runs once per data file: panels

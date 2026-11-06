@@ -20,12 +20,20 @@ function sumLast(values, n) {
   return values.slice(-n).reduce((sum, v) => sum + (v ?? 0), 0)
 }
 
+// A Bundesliga player the app export hasn't read in detail yet has no
+// matchdays (all null), only the app's season total and average: those
+// stand in until the next import fills them.
 export function withForm(player) {
+  const unread = player.avgPoints != null && player.points.every(v => v == null)
+  // The app's average is per game played, which flatters a player with few
+  // games; the season total spread over every matchday so far isn't fooled.
+  const rounds = player.points.length
+  const recent = n => (unread ? (rounds ? ((player.totalPoints ?? 0) * Math.min(n, rounds)) / rounds : 0) : sumLast(player.points, n))
   return {
     ...player,
-    total: sumLast(player.points, player.points.length),
-    last7: sumLast(player.points, 7),
-    last4: sumLast(player.points, 4),
+    total: unread ? player.totalPoints ?? 0 : sumLast(player.points, player.points.length),
+    last7: recent(7),
+    last4: recent(4),
     minutesTotal: sumLast(player.minutes, player.minutes.length),
     minutes7: sumLast(player.minutes, 7),
     minutes4: sumLast(player.minutes, 4),

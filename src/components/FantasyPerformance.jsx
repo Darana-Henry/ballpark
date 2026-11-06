@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react'
-import { useFantasyData, perLeague } from '../contexts/fantasyData'
+import { useFantasyData, useLabels, perLeague } from '../contexts/fantasyData'
 
 // The user's seasons side by side: this one against the last one with
 // round-by-round data, and every season's final rank and points. The archive
@@ -141,6 +141,7 @@ const rankTicks = (values) => {
 
 export default function FantasyPerformance() {
   const { history } = useFantasyData()
+  const { R } = useLabels()
   const { SEASONS, ROUND_SEASONS, CURRENT, PREVIOUS, COLORS } = derive(history)
   if (!CURRENT) return <p className="text-sm text-slate-500 text-center py-10">No season history yet.</p>
 
@@ -150,18 +151,22 @@ export default function FantasyPerformance() {
   const then = last.find(r => r.round === round)
   const avg = rows => rows.reduce((s, r) => s + r.points, 0) / (rows.length || 1)
   const best = rows => rows.reduce((a, b) => (b.points > a.points ? b : a), rows[0])
-  const lineOf = (key, rows, field) => ({ key, label: key, color: COLORS[key], points: rows.map(r => ({ x: r.round, y: r[field] })) })
+  // A round without the value (the Bundesliga app only shows the latest overall rank) is left out of the line.
+  const lineOf = (key, rows, field) => ({ key, label: key, color: COLORS[key], points: rows.filter(r => r[field] != null).map(r => ({ x: r.round, y: r[field] })) })
   const roundSeries = [PREVIOUS && lineOf(PREVIOUS, last, 'total'), lineOf(CURRENT, now, 'total')].filter(Boolean)
   const rankSeries = [PREVIOUS && lineOf(PREVIOUS, last, 'overallRank'), lineOf(CURRENT, now, 'overallRank')].filter(Boolean)
+  // A line needs two points: a new league's first rounds or first season don't have them yet.
+  const rankPoints = rankSeries.reduce((n, s) => n + s.points.length, 0)
+  const latestRank = [...now].reverse().find(r => r.overallRank != null)?.overallRank
   const xs = Array.from({ length: Math.max(...[...now, ...last].map(r => r.round)) }, (_, i) => i + 1)
   const ranked = SEASONS.filter(s => s.rank)
   const bestSeason = ranked.reduce((a, b) => (b.rank < a.rank ? b : a), ranked[0])
 
   const tiles = [
-    [`${CURRENT} after GW${round}`, `${num(now.at(-1).total)} pts`, `#${num(now.at(-1).overallRank)} overall`],
-    ...(then ? [[`${PREVIOUS} after GW${round}`, `${num(then.total)} pts`, `#${num(then.overallRank)} overall`]] : []),
+    [`${CURRENT} after ${R}${round}`, `${num(now.at(-1).total)} pts`, latestRank != null ? `#${num(latestRank)} overall` : 'no overall rank yet'],
+    ...(then ? [[`${PREVIOUS} after ${R}${round}`, `${num(then.total)} pts`, `#${num(then.overallRank)} overall`]] : []),
     ...(then ? [['Difference', `${now.at(-1).total - then.total >= 0 ? '+' : '−'}${Math.abs(now.at(-1).total - then.total)} pts`, `${now.at(-1).overallRank < then.overallRank ? 'better' : 'worse'} rank than ${PREVIOUS}`]] : []),
-    ['Per round', `${avg(now).toFixed(1)} pts`, PREVIOUS ? `${avg(last).toFixed(1)} in ${PREVIOUS} · best GW${best(now).round} (${best(now).points})` : `best GW${best(now).round} (${best(now).points})`],
+    ['Per round', `${avg(now).toFixed(1)} pts`, PREVIOUS ? `${avg(last).toFixed(1)} in ${PREVIOUS} · best ${R}${best(now).round} (${best(now).points})` : `best ${R}${best(now).round} (${best(now).points})`],
   ]
 
   return (
@@ -181,7 +186,7 @@ export default function FantasyPerformance() {
           <h3 className="text-sm font-bold text-slate-100">Total points by round</h3>
           <Legend items={roundSeries} />
         </div>
-        <LineChart series={roundSeries} xs={xs} xLabel={v => `GW${v}`} format={v => num(Math.round(v))} />
+        <LineChart series={roundSeries} xs={xs} xLabel={v => `${R}${v}`} format={v => num(Math.round(v))} />
       </section>
 
       <section className="rounded-xl p-3 mb-3" style={panelStyle}>
@@ -189,7 +194,9 @@ export default function FantasyPerformance() {
           <h3 className="text-sm font-bold text-slate-100">Overall rank by round <span className="font-normal text-[11px] text-slate-500">· higher is better</span></h3>
           <Legend items={rankSeries} />
         </div>
-        <LineChart series={rankSeries} xs={xs} xLabel={v => `GW${v}`} format={v => `#${num(Math.round(v))}`} log invert ticks={rankTicks(rankSeries.flatMap(s => s.points.map(p => p.y)))} />
+        {rankPoints > 1
+          ? <LineChart series={rankSeries} xs={xs} xLabel={v => `${R}${v}`} format={v => `#${num(Math.round(v))}`} log invert ticks={rankTicks(rankSeries.flatMap(s => s.points.map(p => p.y)))} />
+          : <p className="text-xs text-slate-500 py-6 text-center">{latestRank != null ? `#${num(latestRank)} after ${R}${round}. ` : ''}The game only shows the latest overall rank, so this line builds up one round per update.</p>}
       </section>
 
       <section className="rounded-xl p-3" style={panelStyle}>
@@ -197,7 +204,7 @@ export default function FantasyPerformance() {
           <h3 className="text-sm font-bold text-slate-100">Every season <span className="font-normal text-[11px] text-slate-500">· final overall rank, higher is better</span></h3>
           <span className="text-[11px] text-slate-500">Best: {bestSeason.season} (#{num(bestSeason.rank)}) · * so far</span>
         </div>
-        <LineChart
+        {ranked.length > 1 && <LineChart
           series={[{ key: 'final', label: 'Final rank', color: COLORS[CURRENT], points: ranked.map(s => ({ x: startYear(s), y: s.rank })) }]}
           everyX
           markers
@@ -211,7 +218,7 @@ export default function FantasyPerformance() {
           invert
           height={180}
           ticks={rankTicks(ranked.map(s => s.rank))}
-        />
+        />}
         <table className="w-full text-xs tabular-nums mt-3">
           <thead>
             <tr className="text-[10px] uppercase tracking-wider text-slate-500">
@@ -227,7 +234,7 @@ export default function FantasyPerformance() {
               const change = before && s.rank && before.rank ? before.rank - s.rank : null
               return (
                 <tr key={s.season} className="border-t border-white/5">
-                  <td className="py-1.5 text-slate-300">{s.season}{s.live && <span className="text-slate-500"> · so far, GW{round}</span>}</td>
+                  <td className="py-1.5 text-slate-300">{s.season}{s.live && <span className="text-slate-500"> · so far, {R}{round}</span>}</td>
                   <td className="py-1.5 text-right text-slate-100 font-semibold">{num(s.points)}</td>
                   <td className="py-1.5 text-right text-slate-300">#{num(s.rank)}</td>
                   <td className={`py-1.5 text-right ${change == null || s.live ? 'text-slate-600' : change > 0 ? 'text-emerald-400' : 'text-red-400'}`}>

@@ -95,7 +95,14 @@ export default function FantasyMyTeam() {
   const lastStars = new Set(lineup.squad.filter(p => p.pick.star).map(p => p.id))
   const newStars = stars.filter(p => !lastStars.has(p.id))
   const short = list => list.map(p => p.shortName).join(', ')
-  const canReplace = Boolean(derivePlan(data).plan)
+  const { plan: squadPlan, RULES: squadRules } = derivePlan(data)
+  const canReplace = Boolean(squadPlan)
+  // What one of these players would sell for, when the sell-on fee makes it
+  // less than the price (shown in brackets, as in Ideal team).
+  const sellsFor = p => {
+    const owned = squadPlan?.squad.find(x => x.id === p.id)
+    return owned ? sellPrice(owned, squadRules.sellOnFee) : null
+  }
 
   return (
     <div className="max-w-3xl lg:max-w-none">
@@ -130,6 +137,8 @@ export default function FantasyMyTeam() {
         <SquadPitch
           lineup={lineup}
           cardProps={p => ({
+            // "season points | price", as on the Ideal team pitch.
+            price: { now: p.price, sells: sellsFor(p) },
             badge: CHANGE_BADGE[changeOf(p)],
             selected: selected?.id === p.id,
             onClick: canReplace ? () => setSelected(s => (s?.id === p.id ? null : p)) : undefined,
@@ -138,7 +147,7 @@ export default function FantasyMyTeam() {
       </WithSidePanel>
 
       <p className="text-[11px] text-slate-600 mt-3 leading-relaxed">
-        The white number is projected points: form (points per round, mostly the last 4) × fixture (easier opponents score more, double rounds count twice) × chance of playing.
+        Under each name are the player's season points so far and their current price{squadRules?.sellOnFee ? ' (in brackets, what he\'d sell for when that\'s less)' : ''}. The white number is projected points: form (points per round, mostly the last 4) × fixture (easier opponents score more, double rounds count twice) × chance of playing.
         Hover a player for the breakdown. {data.source
           ? `Built from your last app export (${R}${data.mySquad.round}), so changes since then show after the next import.`
           : `Built from the squad the game shows publicly, so transfers you've made since ${R}${data.mySquad.round} won't appear until that round's deadline passes.`}

@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-11-06T14:00:10.086Z",
+  "generatedAt": "2026-11-07T06:48:32.038Z",
   "note": "The user's Bundesliga Fantasy seasons, imported from the app exports by scripts/import-bundesliga-fantasy.mjs; matchdays are kept once imported.",
   "seasons": [
     {"season":"2026/27","points":18036,"rank":1840,"live":true}

@@ -156,6 +156,7 @@ function readExports() {
   if (!folders.length) throw new Error(`no dated export folders in ${DIR}`)
   const players = new Map()
   const rounds = new Map()
+  const actions = new Map()
   const myRounds = new Map()
   const lineups = new Map()
   let myTeam = null
@@ -173,6 +174,14 @@ function readExports() {
       players.set(p.player_key, merged)
     }
     for (const r of readCsv(folder, 'player_rounds.csv') ?? []) rounds.set(`${r.player_key}|${r.round}`, r)
+    // A player's matchday breakdown is replaced whole by a newer folder's.
+    const fresh = new Map()
+    for (const r of readCsv(folder, 'player_actions.csv') ?? []) {
+      const key = `${r.player_key}|${r.round}`
+      if (!fresh.has(key)) fresh.set(key, [])
+      fresh.get(key).push(r)
+    }
+    for (const [key, rows] of fresh) actions.set(key, rows)
     for (const r of readCsv(folder, 'my_rounds.csv') ?? []) {
       const before = myRounds.get(r.round) ?? {}
       // Overall rank is only known for each run's newest matchday: keep it.
@@ -184,7 +193,7 @@ function readExports() {
     info = readCsv(folder, 'my_team_info.csv')?.[0] ?? info
     run = { ...(readCsv(folder, 'run_info.csv')?.[0] ?? {}), folder: name }
   }
-  return { folders, players, rounds, myRounds, lineups, myTeam, info, run }
+  return { folders, players, rounds, actions, myRounds, lineups, myTeam, info, run }
 }
 
 // ── History archive (as the other leagues keep it) ───────────────────────
@@ -302,6 +311,25 @@ try {
     transfermarktNote = `Transfermarkt failed (${err.message})`
   }
 
+  // Every scoring action the exports name, each in a group: playing time,
+  // returns (goals, assists and the team's goals, clean sheets and goals
+  // conceded: rare or not the player's own doing) and underlying (the
+  // repeatable rest: duels, passes, recoveries, shots, saves, fouls…).
+  const actionTypes = []
+  const actionIndex = new Map()
+  const groupOf = (category, action) => {
+    if (action === 'Playing time') return 'minutes'
+    if (category === 'Goals & Assists' || category === 'Playing Time & Team' || action === 'Penalty saved') return 'returns'
+    return 'underlying'
+  }
+  const typeOf = r => {
+    if (!actionIndex.has(r.action)) {
+      actionIndex.set(r.action, actionTypes.length)
+      actionTypes.push({ name: r.action, category: r.category, group: groupOf(r.category, r.action) })
+    }
+    return actionIndex.get(r.action)
+  }
+
   let unread = 0
   const players = [...ex.players.values()].map(p => {
     const read = p.everRead
@@ -335,6 +363,15 @@ try {
       avgPoints: num(p.avg_points),
       points: perRound('points'),
       minutes: perRound('minutes'),
+      // Per matchday, [actionType, count, points] for each scoring action
+      // (they add up to the matchday's points); [] for a matchday not played,
+      // null where the export hasn't broken it down.
+      actions: roundList.map(r => {
+        const rows = ex.actions.get(`${p.player_key}|${r}`)
+        if (rows) return rows.map(a => [typeOf(a), num(a.count) ?? 0, num(a.points) ?? 0])
+        const row = ex.rounds.get(`${p.player_key}|${r}`)
+        return (row ? !num(row.points) && !num(row.minutes) : read) ? [] : null
+      }),
     }
   })
 
@@ -382,6 +419,7 @@ try {
   "source": ${JSON.stringify({ exportedAt: ex.run.exported_at || null, folders: ex.folders, warnings: ex.run.warnings || null, unread })},
   "rounds": ${JSON.stringify(roundList)},
   "rules": ${JSON.stringify(rules)},
+  "actionTypes": [\n${lines(actionTypes)}\n  ],
   "mySquad": ${JSON.stringify(mySquad)},
   "topManagers": null,
   "teams": [\n${lines(teamRows)}\n  ],

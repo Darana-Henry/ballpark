@@ -13,15 +13,66 @@ const derive = perLeague(data => {
     const team = data.players.find(p => p.id === pick.id)?.team
     if (team) MINE.set(team, (MINE.get(team) ?? 0) + 1)
   }
+  const FROM_ROUND = nextRound(data.fixtures)
   return {
     TEAMS: Object.fromEntries(data.teams.map(t => [t.id, t])),
     LAST_ROUND,
     TABLE: leagueTable(data.fixtures, data.teams, LAST_ROUND),
     PREVIOUS: leagueTable(data.fixtures, data.teams, LAST_ROUND - 1),
-    FROM_ROUND: nextRound(data.fixtures),
+    FROM_ROUND,
     MINE,
+    SHADES: Number.isFinite(FROM_ROUND) ? shadeBands(data, FROM_ROUND) : null,
   }
 })
+
+// The two halves of a fixture cell: attack (the team's projected goals) on
+// the left, clean-sheet chance on the right, each rated 1 (best, dark green)
+// to 5 (worst, dark red) against this league's own upcoming fixtures (the
+// next 7 rounds) cut into fifths, so the colours spread out in a
+// high-scoring league as in a low one.
+const SHADE = {
+  1: 'rgba(5, 150, 105, 0.85)',
+  2: 'rgba(16, 185, 129, 0.35)',
+  3: 'rgba(71, 85, 105, 0.55)',
+  4: 'rgba(239, 68, 68, 0.4)',
+  5: 'rgba(185, 28, 28, 0.85)',
+}
+const SHADE_LABEL = { 1: 'top fifth', 2: 'second fifth', 3: 'middle fifth', 4: 'fourth fifth', 5: 'bottom fifth' }
+
+function shadeBands(data, from) {
+  const games = [...upcomingFixtures(data.fixtures, data.teams, from, 7).byTeam.values()].flat(2)
+  // The 80th, 60th, 40th and 20th percentiles, highest first.
+  const cuts = values => {
+    const sorted = [...values].sort((a, b) => b - a)
+    return [1, 2, 3, 4].map(k => sorted[Math.min(sorted.length - 1, Math.floor((k * sorted.length) / 5))] ?? 0)
+  }
+  return { attack: cuts(games.map(g => g.goalsFor)), defence: cuts(games.map(g => g.cleanSheet)) }
+}
+
+const levelOf = (value, cuts) => {
+  const i = cuts.findIndex(c => value >= c)
+  return i === -1 ? 5 : i + 1
+}
+
+/** A fixture's attack and clean-sheet ratings, 1 (best) to 5. */
+function useShades() {
+  const { SHADES } = derive(useFantasyData().data)
+  return g => (SHADES ? { attack: levelOf(g.goalsFor, SHADES.attack), defence: levelOf(g.cleanSheet, SHADES.defence) } : null)
+}
+
+/** The key above a table of split fixture cells. */
+export function ShadeLegend() {
+  return (
+    <span className="flex items-center gap-1 text-[10px] text-slate-500" title="Each fixture cell: left half the team's projected goals, right half its clean-sheet chance, against this league's next 7 rounds of fixtures in fifths">
+      <span className="inline-flex rounded overflow-hidden">
+        <span className="px-1.5 py-0.5 text-white" style={{ background: SHADE[1] }}>attack</span>
+        <span className="px-1.5 py-0.5 text-white" style={{ background: SHADE[5] }}>CS</span>
+      </span>
+      {[1, 2, 3, 4, 5].map(n => <span key={n} className="w-3 h-3 rounded-sm" style={{ background: SHADE[n] }} title={SHADE_LABEL[n]} />)}
+      <span>best → worst for the league</span>
+    </span>
+  )
+}
 
 function Movement({ team }) {
   const { TABLE, PREVIOUS, LAST_ROUND } = derive(useFantasyData().data)
@@ -41,19 +92,28 @@ function Movement({ team }) {
 // Also used for the players table's next-fixture columns, where
 // `projections` adds the team's projected goals and clean-sheet chance under
 // each opponent.
-export function FixtureCell({ games, projections = false }) {
-  const { TEAMS } = derive(useFantasyData().data)
+export function FixtureCell({ games, projections = false, dim = false }) {
+  const { TEAMS, TABLE } = derive(useFantasyData().data)
+  const shades = useShades()
   if (!games.length) return <td className="px-1 py-1.5"><div className="h-8 rounded-md bg-slate-900/60 text-slate-600 text-[11px] flex items-center justify-center">—</div></td>
   return (
-    <td className="px-1 py-1.5">
+    <td className={`px-1 py-1.5 ${dim ? 'opacity-40' : ''}`}>
       <div className="flex flex-col gap-0.5">
-        {games.map((g, i) => (
+        {games.map((g, i) => {
+          const shade = shades(g)
+          const rank = TABLE.get(g.opponent)?.rank
+          return (
           <div key={i}>
             <div
-              className={`rounded-md text-center font-semibold whitespace-nowrap ${games.length > 1 ? 'text-[10px] py-0.5' : 'text-xs h-8 flex items-center justify-center'} ${DIFFICULTY[g.difficulty].className}`}
-              title={`${g.home ? 'Home' : 'Away'} vs ${TEAMS[g.opponent].name} · ${DIFFICULTY[g.difficulty].label} (${g.difficulty}) · they average ${g.strength.toFixed(2)} pts per game\nProjected score ${g.goalsFor.toFixed(1)}–${g.goalsAgainst.toFixed(1)} · ${Math.round(g.cleanSheet * 100)}% clean-sheet chance`}
+              className={`rounded-md text-center font-semibold whitespace-nowrap ${games.length > 1 ? 'text-[10px] py-0.5' : 'text-xs h-8 flex items-center justify-center'} ${shade ? 'text-white [text-shadow:0_1px_2px_rgba(0,0,0,0.6)]' : DIFFICULTY[g.difficulty].className}`}
+              style={shade ? { background: `linear-gradient(90deg, ${SHADE[shade.attack]} 0 50%, ${SHADE[shade.defence]} 50% 100%)` } : undefined}
+              title={[
+                `${g.home ? 'Home' : 'Away'} vs ${TEAMS[g.opponent].name}${rank ? ` (${rank} in the table)` : ''} · ${DIFFICULTY[g.difficulty].label} (${g.difficulty}) · they average ${g.strength.toFixed(2)} pts per game`,
+                `Projected score ${g.goalsFor.toFixed(1)}–${g.goalsAgainst.toFixed(1)} · ${Math.round(g.cleanSheet * 100)}% clean-sheet chance`,
+                shade && `Attack (left): ${SHADE_LABEL[shade.attack]} · clean sheet (right): ${SHADE_LABEL[shade.defence]} of the league's upcoming fixtures`,
+              ].filter(Boolean).join('\n')}
             >
-              {TEAMS[g.opponent].short} <span className="font-normal opacity-75">({g.home ? 'H' : 'A'})</span>
+              {TEAMS[g.opponent].short} <span className="font-normal opacity-80">({g.home ? 'H' : 'A'}){rank ? ` · ${rank}` : ''}</span>
             </div>
             {projections && (
               <p className="text-[10px] text-center tabular-nums text-slate-400 whitespace-nowrap mt-0.5" title="Team's projected goals · clean-sheet chance">
@@ -61,7 +121,8 @@ export function FixtureCell({ games, projections = false }) {
               </p>
             )}
           </div>
-        ))}
+          )
+        })}
       </div>
     </td>
   )
@@ -112,12 +173,7 @@ export default function FantasyFixtures() {
         <div className="flex gap-1">
           {WINDOWS.map(n => <Chip key={n} active={count === n} onClick={() => setCount(n)}>{n} rounds</Chip>)}
         </div>
-        <div className="flex items-center gap-1 ml-auto text-[10px] text-slate-500">
-          {Object.entries(DIFFICULTY).map(([n, d]) => (
-            <span key={n} className={`px-1.5 py-0.5 rounded ${d.className}`} title={d.label}>{n}</span>
-          ))}
-          <span className="ml-1">easy → hard</span>
-        </div>
+        <span className="ml-auto"><ShadeLegend /></span>
       </div>
 
       <div className="rounded-xl overflow-x-auto" style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.07)' }}>

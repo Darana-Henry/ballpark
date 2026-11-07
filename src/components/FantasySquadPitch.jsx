@@ -80,7 +80,7 @@ export function PlayerCard({ player, captain, vice, star, badge, rounds = 1, onC
             className="flex flex-col items-center sm:flex-row sm:justify-center sm:gap-x-1 text-[9px] sm:text-[10px] leading-tight tabular-nums"
             title={`Season points so far · price ${C}${price.now.toFixed(1)}m${price.sells != null && price.sells < price.now - 0.05 ? ` · you'd sell for ${C}${price.sells.toFixed(1)}m` : ''}`}
           >
-            {player.total != null && <span className="text-slate-300 whitespace-nowrap">{Math.round(player.total).toLocaleString('en-US')} pts</span>}
+            {player.total != null && <span className="text-slate-300 whitespace-nowrap">{Math.round(player.seasonPoints ?? player.total).toLocaleString('en-US')} pts</span>}
             {player.total != null && <span className="hidden sm:inline text-slate-600">|</span>}
             <span className="text-slate-400 whitespace-nowrap">
               {C} {price.now.toFixed(1)}{price.sells != null && price.sells < price.now - 0.05 && <span className="text-slate-500"> ({price.sells.toFixed(1)})</span>}

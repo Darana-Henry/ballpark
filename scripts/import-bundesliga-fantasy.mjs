@@ -240,6 +240,12 @@ function writeHistory(season, myRounds, lineups, info) {
 
 const POSITION = { GK: 1, DEF: 2, MID: 3, FWD: 4 }
 const STATUS = { fit: 'a', doubtful: 'd', injured: 'i', suspended: 's', unavailable: 'u' }
+// Notes about a player's last match that the export tool doesn't know as a
+// status: they say nothing about fitness (the player stays available), so
+// they're left out of the warnings the tab shows.
+const LINEUP_NOTES = /^unknown status text for .*: "(Player was substituted in|Not in starting lineup|Player was substituted off)"$/
+
+const exportWarnings = text => (text || '').split(' | ').map(w => w.trim()).filter(w => w && !LINEUP_NOTES.test(w)).join(' | ') || null
 
 try {
   const ex = readExports()
@@ -411,12 +417,15 @@ try {
   }
 
   const historyRounds = writeHistory(season, ex.myRounds, ex.lineups, info)
-  const teamRows = [...clubs].map(([club, t]) => ({ id: Number(t.id), name: club, short: t.abbreviation }))
+  // Short names for the tables ("Bayern", "Gladbach"), as the other leagues'
+  // feeds give; the app's full club name stays as fullName.
+  const SHORT = { Cologne: 'Köln' }
+  const teamRows = [...clubs].map(([club, t]) => ({ id: Number(t.id), name: SHORT[t.shortDisplayName] ?? t.shortDisplayName ?? club, fullName: club, short: t.abbreviation }))
     .sort((a, b) => a.name.localeCompare(b.name))
   const lines = rows => rows.map(r => `    ${JSON.stringify(r)}`).join(',\n')
   const json = `{
   "generatedAt": ${JSON.stringify(new Date().toISOString())},
-  "source": ${JSON.stringify({ exportedAt: ex.run.exported_at || null, folders: ex.folders, warnings: ex.run.warnings || null, unread })},
+  "source": ${JSON.stringify({ exportedAt: ex.run.exported_at || null, folders: ex.folders, warnings: exportWarnings(ex.run.warnings), unread })},
   "rounds": ${JSON.stringify(roundList)},
   "rules": ${JSON.stringify(rules)},
   "actionTypes": [\n${lines(actionTypes)}\n  ],
@@ -428,7 +437,7 @@ try {
 }`
   writeFileSync(OUT, json + '\n')
   const mismatched = [...knownRounds].filter(([pair, r]) => fixtures.find(f => `${f.home}-${f.away}` === pair)?.round !== r).length
-  console.log(`${LOG} ${players.length} players (${unread} not read in detail yet), ${teamRows.length} clubs, through matchday ${lastRound} from ${ex.folders.length} export folder(s); ${fixtures.length} fixtures${mismatched ? ` (${mismatched} disagree with the export's matchdays)` : ''}; ${penaltyNote}; ${transfermarktNote}; history: ${historyRounds} matchdays of ${season}${ex.run.warnings ? `; export warnings: ${ex.run.warnings}` : ''}`)
+  console.log(`${LOG} ${players.length} players (${unread} not read in detail yet), ${teamRows.length} clubs, through matchday ${lastRound} from ${ex.folders.length} export folder(s); ${fixtures.length} fixtures${mismatched ? ` (${mismatched} disagree with the export's matchdays)` : ''}; ${penaltyNote}; ${transfermarktNote}; history: ${historyRounds} matchdays of ${season}${exportWarnings(ex.run.warnings) ? `; export warnings: ${exportWarnings(ex.run.warnings)}` : ''}`)
 } catch (err) {
   console.log(`${LOG} failed (${err.message}); keeping the existing ${OUT}`)
   process.exitCode = 1

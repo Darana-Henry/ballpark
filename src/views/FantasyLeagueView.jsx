@@ -330,9 +330,20 @@ function PlayersPanel() {
           </div>
           <div className="flex items-center gap-3 ml-auto">
             <ShadeLegend />
-            <span className="flex items-center gap-1" title="How many of the next rounds Avg, Proj G and CS % cover">
-              <span className="text-xs text-slate-500">Fixtures: next</span>
-              {[1, 2, 3].map(n => <Chip key={n} active={nextCount === n} onClick={() => setNextCount(n)}>{n}</Chip>)}
+            <span className="flex items-center gap-1.5" title="How many of the next rounds Avg, Proj G and CS % cover">
+              <span className="text-xs text-slate-500">Next</span>
+              <span className="inline-flex rounded-lg border border-slate-700/60 overflow-hidden divide-x divide-slate-700/60">
+                {[1, 2, 3].map(n => (
+                  <button
+                    key={n}
+                    onClick={() => setNextCount(n)}
+                    aria-pressed={nextCount === n}
+                    className={`px-2.5 py-1.5 text-xs font-semibold transition-colors ${nextCount === n ? 'bg-indigo-500/20 text-indigo-300' : 'text-slate-400 hover:text-slate-200 hover:bg-white/5'}`}
+                  >
+                    {n}
+                  </button>
+                ))}
+              </span>
             </span>
             {filtered && (
               <button onClick={resetFilters} className="px-2.5 py-1.5 rounded-lg text-xs font-semibold text-slate-300 border border-slate-700/60 hover:text-slate-100 hover:bg-white/5">
@@ -382,14 +393,14 @@ function PlayersPanel() {
                       {POSITIONS[p.position]}
                     </td>
                     <td className={`sticky md:static left-12 ${stickyBg} px-2 py-2`}>
-                      <div className="flex items-center gap-1.5 max-w-56">
+                      <div className="flex items-center gap-1.5 max-w-44">
                         <span className="font-semibold text-slate-100 truncate" title={p.fullName}>{p.name}</span>
                         {pick?.captain && <span className={`${badgeClass} bg-indigo-500/20 text-indigo-200 border-indigo-400/40`}>C</span>}
                         {pick?.vice && <span className={`${badgeClass} bg-indigo-500/10 text-indigo-300 border-indigo-400/30`}>VC</span>}
                         {pick?.purchasePrice != null && <ValueChange player={p} bought={pick.purchasePrice} />}
                       </div>
                     </td>
-                    <td className="px-2 py-2 text-xs text-slate-400 whitespace-nowrap">{TEAMS[p.team]?.name}</td>
+                    <td className="px-2 py-2 text-xs text-slate-400 whitespace-nowrap" title={TEAMS[p.team]?.fullName}>{TEAMS[p.team]?.name}</td>
                     <td className={`px-2 py-2 text-right tabular-nums ${sort.key === 'teamRank' ? 'text-slate-100 font-semibold' : 'text-slate-400'}`}>
                       {Number.isFinite(p.teamRank) ? p.teamRank : '–'}
                     </td>

@@ -65,11 +65,9 @@ export function ShadeLegend() {
   return (
     <span className="flex items-center gap-1 text-[10px] text-slate-500" title="Each fixture cell: left half the team's projected goals, right half its clean-sheet chance, against this league's next 7 rounds of fixtures in fifths">
       <span className="inline-flex rounded overflow-hidden">
-        <span className="px-1.5 py-0.5 text-white" style={{ background: SHADE[1] }}>attack</span>
-        <span className="px-1.5 py-0.5 text-white" style={{ background: SHADE[5] }}>CS</span>
+        <span className="px-1.5 py-0.5 text-white" style={{ background: SHADE[1] }}>OFF</span>
+        <span className="px-1.5 py-0.5 text-white" style={{ background: SHADE[5] }}>DEF</span>
       </span>
-      {[1, 2, 3, 4, 5].map(n => <span key={n} className="w-3 h-3 rounded-sm" style={{ background: SHADE[n] }} title={SHADE_LABEL[n]} />)}
-      <span>best → worst for the league</span>
     </span>
   )
 }

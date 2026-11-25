@@ -16,6 +16,7 @@ Personal sports tracker web app. React + Tailwind + Firebase Firestore, deployed
 | NBA 🏀 | LA Lakers + all playoffs | ESPN: `https://site.api.espn.com/apis/site/v2/sports/basketball/nba` | Lakers ESPN ID: 13 |
 | NFL 🏈 | All games + all playoffs | ESPN: `https://site.api.espn.com/apis/site/v2/sports/football/nfl` | All teams |
 | BBL 🏏 | All games + playoffs | CricAPI (free key, user provides) | — |
+| MLS ⚽ | Inter Miami (all competitions) + every MLS Cup Playoffs game | ESPN `soccer/usa.1` (+ cups) | Inter Miami ESPN ID: 20232 |
 
 ## File Structure
 
@@ -47,6 +48,10 @@ src/
     BBLView.jsx                BBL placeholder — prompts for CricAPI key, stores in localStorage
     StatsView.jsx              Stats dashboard — per-league watched counts + W/L records
 ```
+
+## MLS Playoffs
+
+MLS playoff games are found by `season.slug` (`eastern-conference-playoffs---round-one`, …; `playoffRound` in `src/api/mls.js`), not season type 3, which ESPN no longer uses. The Playoffs tab groups them by that round and hides each score until the game is marked watched.
 
 ## Normalized Game Object
 

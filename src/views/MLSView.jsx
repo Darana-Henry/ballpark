@@ -431,43 +431,46 @@ function StatsTab({ games }) {
 
 // ─── Playoffs ─────────────────────────────────────────────────────────────────
 
+// A playoff game's score only shows once it's marked watched: every playoff
+// game is in the queue, so the bracket mustn't give results away.
 function MLSPlayoffGame({ game }) {
+  const { isWatched } = useWatched()
   const [homeErr, setHomeErr] = useState(false)
   const [awayErr, setAwayErr] = useState(false)
+  const seen = isWatched(game.id, 'mls')
   const isFinal = game.status === 'final'
-  const homeLogo = game.homeTeam.logo
-  const awayLogo = game.awayTeam.logo
+  const showScore = seen && game.homeScore !== null && game.awayScore !== null
 
-  const homeName = game.homeTeam.name
-  const awayName = game.awayTeam.name
-  const homeScore = game.homeScore
-  const awayScore = game.awayScore
-  const homeWon = isFinal && homeScore > awayScore
-  const awayWon = isFinal && awayScore > homeScore
+  const homeWon = showScore && isFinal && game.homeScore > game.awayScore
+  const awayWon = showScore && isFinal && game.awayScore > game.homeScore
 
   const isMiamiHome = game.homeTeam.id === INTER_MIAMI_ID
   const isMiamiAway = game.awayTeam.id === INTER_MIAMI_ID
   const miamiWon = (isMiamiHome && homeWon) || (isMiamiAway && awayWon)
+
+  const status = !isFinal ? (game.status === 'live' ? 'Live' : game.statusDetail || 'Scheduled')
+    : !seen ? 'Not watched'
+    : (isMiamiHome || isMiamiAway) ? (miamiWon ? 'WIN' : homeWon || awayWon ? 'LOSS' : 'DRAW')
+    : 'Watched'
 
   return (
     <div className="rounded-xl overflow-hidden" style={{ background: 'rgba(255,255,255,0.04)', border: `1px solid ${miamiWon ? 'rgba(236,72,153,0.3)' : 'rgba(255,255,255,0.08)'}` }}>
       <div className="px-3 py-2 flex items-center justify-between" style={{ borderBottom: '1px solid rgba(255,255,255,0.06)', background: 'rgba(0,0,0,0.2)' }}>
         <span className="text-[10px] text-slate-500">
           {game.gameDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+          {game.conference && ` · ${game.conference}`}
         </span>
-        <span className={`text-[10px] font-semibold ${isFinal ? (miamiWon ? 'text-pink-400' : 'text-slate-500') : 'text-slate-500'}`}>
-          {isFinal ? (miamiWon ? 'WIN' : 'LOSS') : game.statusDetail || 'Scheduled'}
-        </span>
+        <span className={`text-[10px] font-semibold ${miamiWon ? 'text-pink-400' : 'text-slate-500'}`}>{status}</span>
       </div>
       {[
-        { team: game.awayTeam, score: awayScore, won: awayWon, logo: awayLogo, err: awayErr, setErr: setAwayErr },
-        { team: game.homeTeam, score: homeScore, won: homeWon, logo: homeLogo, err: homeErr, setErr: setHomeErr },
-      ].map(({ team, score, won, logo, err, setErr }, i) => {
+        { team: game.awayTeam, score: game.awayScore, won: awayWon, err: awayErr, setErr: setAwayErr },
+        { team: game.homeTeam, score: game.homeScore, won: homeWon, err: homeErr, setErr: setHomeErr },
+      ].map(({ team, score, won, err, setErr }, i) => {
         const isMiami = team.id === INTER_MIAMI_ID
         return (
           <div key={team.id} className="flex items-center gap-3 px-3 py-2" style={{ borderTop: i > 0 ? '1px solid rgba(255,255,255,0.05)' : 'none' }}>
-            {logo && !err ? (
-              <img src={logo} alt={team.abbreviation} width={24} height={24}
+            {team.logo && !err ? (
+              <img src={team.logo} alt={team.abbreviation} width={24} height={24}
                 className="rounded-full object-contain bg-slate-800/50 p-0.5 shrink-0"
                 onError={() => setErr(true)} />
             ) : (
@@ -478,7 +481,7 @@ function MLSPlayoffGame({ game }) {
             <span className={`text-sm font-medium flex-1 ${isMiami ? 'text-pink-300' : won ? 'text-slate-100' : 'text-slate-400'}`}>
               {team.name}
             </span>
-            {score !== null && (
+            {showScore && (
               <span className={`text-lg font-bold tabular-nums ${won ? 'text-slate-100' : 'text-slate-500'}`}>{score}</span>
             )}
           </div>
@@ -493,15 +496,36 @@ function MLSPlayoffGame({ game }) {
   )
 }
 
+// Rounds come from ESPN's round of each game (`playoffRound`), in the order
+// they start; within one, each pairing's games (Round One is best of three)
+// sit together, Eastern Conference first.
 function MLSBracketTab({ games }) {
-  const playoffGames = useMemo(() =>
-    games
-      .filter(g => g.gameType === 'MLS Cup Playoffs')
-      .sort((a, b) => a.gameDate - b.gameDate),
-    [games]
-  )
+  const { isWatched } = useWatched()
+  const rounds = useMemo(() => {
+    const byRound = new Map()
+    for (const g of games) {
+      if (g.gameType !== 'MLS Cup Playoffs') continue
+      const name = g.playoffRound ?? 'Playoffs'
+      if (!byRound.has(name)) byRound.set(name, [])
+      byRound.get(name).push(g)
+    }
+    const pair = g => [g.homeTeam.id, g.awayTeam.id].sort().join('-')
+    return [...byRound].map(([name, list]) => {
+      const first = new Map()
+      for (const g of list) {
+        const k = pair(g)
+        if (!first.has(k) || g.gameDate < first.get(k)) first.set(k, g.gameDate)
+      }
+      const confOrder = g => (g.conference === 'Eastern' ? 0 : g.conference === 'Western' ? 1 : 2)
+      list.sort((a, b) => confOrder(a) - confOrder(b)
+        || first.get(pair(a)) - first.get(pair(b))
+        || pair(a).localeCompare(pair(b))
+        || a.gameDate - b.gameDate)
+      return { name, games: list, start: Math.min(...list.map(g => g.gameDate)) }
+    }).sort((a, b) => a.start - b.start)
+  }, [games])
 
-  if (playoffGames.length === 0) {
+  if (rounds.length === 0) {
     return (
       <div className="text-center py-12">
         <p className="text-3xl mb-3">⚽</p>
@@ -511,35 +535,22 @@ function MLSBracketTab({ games }) {
     )
   }
 
-  // Group into rounds by sequence (each round is roughly 1–2 weeks apart)
-  const rounds = []
-  let currentRound = []
-  let lastDate = null
-  for (const g of playoffGames) {
-    if (lastDate && (g.gameDate - lastDate) > 12 * 24 * 60 * 60 * 1000) {
-      if (currentRound.length) rounds.push(currentRound)
-      currentRound = []
-    }
-    currentRound.push(g)
-    lastDate = g.gameDate
-  }
-  if (currentRound.length) rounds.push(currentRound)
-
-  const roundLabels = ['Round One', 'Round of 16', 'Quarter-finals', 'Semi-finals', 'MLS Cup Final']
-
   return (
     <div className="flex flex-col gap-8">
-      <p className="text-xs text-slate-500">Inter Miami's MLS Cup Playoffs run · rounds inferred from match dates</p>
-      {rounds.map((roundGames, ri) => (
-        <section key={ri}>
-          <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-3">
-            {roundLabels[ri] ?? `Round ${ri + 1}`}
-          </p>
-          <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3">
-            {roundGames.map(g => <MLSPlayoffGame key={g.id} game={g} />)}
-          </div>
-        </section>
-      ))}
+      <p className="text-xs text-slate-500">Every MLS Cup Playoffs game · scores show once a game is marked watched</p>
+      {rounds.map(round => {
+        const seen = round.games.filter(g => isWatched(g.id, 'mls')).length
+        return (
+          <section key={round.name}>
+            <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-3">
+              {round.name} · {seen}/{round.games.length} watched
+            </p>
+            <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3">
+              {round.games.map(g => <MLSPlayoffGame key={g.id} game={g} />)}
+            </div>
+          </section>
+        )
+      })}
     </div>
   )
 }
@@ -578,7 +589,7 @@ export default function MLSView() {
         />
         <div>
           <h2 className="text-2xl font-bold text-slate-100 leading-tight">MLS · Inter Miami</h2>
-          <p className="text-sm text-slate-500 mt-0.5">Inter Miami CF · All Competitions</p>
+          <p className="text-sm text-slate-500 mt-0.5">Inter Miami CF · All Competitions · every MLS Cup Playoffs game</p>
         </div>
       </div>
 
@@ -595,7 +606,7 @@ export default function MLSView() {
         ))}
       </div>
 
-      {loading && <LoadingSpinner message="Loading Inter Miami matches..." />}
+      {loading && <LoadingSpinner message="Loading MLS matches..." />}
       {error && (
         <div className="rounded-xl bg-red-900/20 border border-red-800 p-4 text-red-400 text-sm">
           Failed to load: {error}

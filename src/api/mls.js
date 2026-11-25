@@ -20,8 +20,8 @@ function normalizeEvent(event, overrideGameType, teamStandingsMap) {
   const isLive = state === 'in'
   const isFinal = state === 'post'
 
-  const seasonType = event.season?.type ?? 2
-  const gameType   = overrideGameType ?? (seasonType === 3 ? 'MLS Cup Playoffs' : 'MLS Regular Season')
+  const playoff  = overrideGameType ? null : playoffRound(event)
+  const gameType = overrideGameType ?? (playoff ? 'MLS Cup Playoffs' : 'MLS Regular Season')
 
   // Difficulty is the opponent's points-per-game (3 pts/win is the standard
   // soccer convention), normalized to the same 0-1 scale win-pct uses
@@ -61,14 +61,32 @@ function normalizeEvent(event, overrideGameType, teamStandingsMap) {
       ? youtubeUrl(away.team.displayName, home.team.displayName, event.date, gameType)
       : isLive ? `https://www.espn.com/soccer/match/_/gameId/${event.id}` : null,
     venue: comp.venue?.fullName ?? null,
+    ...(playoff && { playoffRound: playoff.round, conference: playoff.conference }),
   }
+}
+
+// ESPN gives each playoff round its own season, named by slug:
+// "eastern-conference-playoffs---wild-card", "western-conference-playoffs---
+// round-one", … ("type" is a per-round id now, not 3). Anything naming the
+// playoffs or the MLS Cup counts; the round is the part after "---".
+const titleCase = s => s.split('-').filter(Boolean).map(w => w[0].toUpperCase() + w.slice(1)).join(' ')
+
+export function playoffRound(event) {
+  const slug = event.season?.slug ?? ''
+  if (!/playoff|mls-cup/.test(slug)) return null
+  const [head, tail] = slug.split('---')
+  const conference = /eastern/.test(head) ? 'Eastern' : /western/.test(head) ? 'Western' : null
+  const round = tail ? titleCase(tail) : /mls-cup/.test(head) ? 'MLS Cup' : titleCase(head)
+  return { round, conference }
 }
 
 async function fetchGamesForSlug(slug, startDate, endDate, overrideGameType = null, teamStandingsMap = null) {
   try {
     const events = await fetchScoreboardMonths(`soccer/${slug}`, startDate, endDate)
     return events
-      .filter(e => e.competitions?.[0]?.competitors?.some(c => c.team?.id === INTER_MIAMI_ID))
+      // Inter Miami's games, plus every MLS Cup Playoffs game.
+      .filter(e => e.competitions?.[0]?.competitors?.some(c => c.team?.id === INTER_MIAMI_ID)
+        || (!overrideGameType && playoffRound(e)))
       .map(e => normalizeEvent(e, overrideGameType, teamStandingsMap))
       .filter(Boolean)
   } catch {
@@ -85,9 +103,8 @@ export async function fetchMLSGames() {
   )
 
   const results = await Promise.allSettled([
-    // MLS regular season + playoffs in two chunks to avoid API result limits
-    fetchGamesForSlug('usa.1', `${year}0201`, `${year}0630`, null, teamStandingsMap),
-    fetchGamesForSlug('usa.1', `${year}0701`, `${year}1130`, null, teamStandingsMap),
+    // MLS regular season + playoffs (which run into December)
+    fetchGamesForSlug('usa.1', `${year}0201`, `${year}1231`, null, teamStandingsMap),
     // Domestic & international cup competitions
     fetchGamesForSlug('usa.open',            `${year}0401`, `${year}0930`, 'US Open Cup', teamStandingsMap),
     fetchGamesForSlug('concacaf.champions',  `${year}0101`, `${year}0630`, 'CONCACAF Champions Cup', teamStandingsMap),

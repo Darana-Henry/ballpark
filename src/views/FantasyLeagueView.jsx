@@ -491,10 +491,20 @@ export default function FantasyLeagueView({ league, data, history }) {
 
         {/* An imported league (the Bundesliga's app exports): say when the export was incomplete. */}
         {(data.source?.warnings || data.source?.unread > 0) && (
-          <p className="text-xs text-amber-300/90 rounded-xl px-3 py-2 mb-4" style={{ background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.25)' }}>
+          <div className="text-xs text-amber-300/90 rounded-xl px-3 py-2 mb-4" style={{ background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.25)' }}>
             {data.source.unread > 0 && `${data.source.unread} of ${data.players.length} players weren't read in detail in the last export: they show the app's season total and average, with no matchday breakdown. `}
-            {data.source.warnings && `Export warning: ${data.source.warnings}`}
-          </p>
+            {data.source.warnings && (
+              <details className="inline">
+                <summary className="cursor-pointer">
+                  Export warnings ({data.source.warnings.split(' | ').length})
+                  {data.source.breakdownGaps && `: ${data.source.breakdownGaps.length} matchday breakdowns didn't add up to the score, so the score counts and a "Breakdown gap" line makes up the difference`}
+                </summary>
+                <ul className="mt-1 ml-4 list-disc text-amber-200/80">
+                  {data.source.warnings.split(' | ').map(w => <li key={w}>{w}</li>)}
+                </ul>
+              </details>
+            )}
+          </div>
         )}
 
         {/* Swipes sideways on phones, where the tabs don't all fit */}

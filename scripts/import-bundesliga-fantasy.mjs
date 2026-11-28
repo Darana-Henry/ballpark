@@ -164,14 +164,14 @@ function readExports() {
   let run = null
   for (const name of folders) {
     const folder = join(DIR, name)
-    for (const p of readCsv(folder, 'players.csv') ?? []) {
-      // A row the run hadn't read in detail only carries name, club,
-      // position, price and totals: keep earlier details.
-      const before = players.get(p.player_key) ?? {}
-      const merged = { ...before }
-      for (const [k, v] of Object.entries(p)) if (v !== '') merged[k] = v
-      merged.everRead = before.everRead || p.details_read === 'true'
-      players.set(p.player_key, merged)
+    // The player list (price, status, totals…) is the newest run's alone; a
+    // player it no longer lists is dropped. Whether a player was ever read in
+    // detail carries over, since a run in progress writes thin rows.
+    const list = readCsv(folder, 'players.csv')
+    if (list) {
+      const everRead = new Set([...players.values()].filter(p => p.everRead).map(p => p.player_key))
+      players.clear()
+      for (const p of list) players.set(p.player_key, { ...p, everRead: everRead.has(p.player_key) || p.details_read === 'true' })
     }
     for (const r of readCsv(folder, 'player_rounds.csv') ?? []) rounds.set(`${r.player_key}|${r.round}`, r)
     // A player's matchday breakdown is replaced whole by a newer folder's.
@@ -325,6 +325,7 @@ try {
   const actionIndex = new Map()
   const groupOf = (category, action) => {
     if (action === 'Playing time') return 'minutes'
+    if (action === 'Breakdown gap') return 'underlying'
     if (category === 'Goals & Assists' || category === 'Playing Time & Team' || action === 'Penalty saved') return 'returns'
     return 'underlying'
   }
@@ -336,6 +337,8 @@ try {
     return actionIndex.get(r.action)
   }
 
+  const GAP_ACTION = 'Breakdown gap'
+  const gaps = []
   let unread = 0
   const players = [...ex.players.values()].map(p => {
     const read = p.everRead
@@ -374,7 +377,18 @@ try {
       // null where the export hasn't broken it down.
       actions: roundList.map(r => {
         const rows = ex.actions.get(`${p.player_key}|${r}`)
-        if (rows) return rows.map(a => [typeOf(a), num(a.count) ?? 0, num(a.points) ?? 0])
+        if (rows) {
+          const list = rows.map(a => [typeOf(a), num(a.count) ?? 0, num(a.points) ?? 0])
+          // player_rounds.csv is the true score: where the app's breakdown
+          // doesn't add up to it, a balancing line makes up the difference.
+          const row = ex.rounds.get(`${p.player_key}|${r}`)
+          const gap = row ? (num(row.points) ?? 0) - list.reduce((sum, a) => sum + a[2], 0) : 0
+          if (Math.abs(gap) > 0.01) {
+            gaps.push(`${p.name} ${r}: ${gap > 0 ? '+' : ''}${Math.round(gap * 10) / 10}`)
+            list.push([typeOf({ action: GAP_ACTION, category: 'Export' }), 1, gap])
+          }
+          return list
+        }
         const row = ex.rounds.get(`${p.player_key}|${r}`)
         return (row ? !num(row.points) && !num(row.minutes) : read) ? [] : null
       }),
@@ -425,7 +439,7 @@ try {
   const lines = rows => rows.map(r => `    ${JSON.stringify(r)}`).join(',\n')
   const json = `{
   "generatedAt": ${JSON.stringify(new Date().toISOString())},
-  "source": ${JSON.stringify({ exportedAt: ex.run.exported_at || null, folders: ex.folders, warnings: exportWarnings(ex.run.warnings), unread })},
+  "source": ${JSON.stringify({ exportedAt: ex.run.exported_at || null, folders: ex.folders, warnings: exportWarnings(ex.run.warnings), breakdownGaps: gaps.length ? gaps : null, unread })},
   "rounds": ${JSON.stringify(roundList)},
   "rules": ${JSON.stringify(rules)},
   "actionTypes": [\n${lines(actionTypes)}\n  ],
@@ -437,7 +451,7 @@ try {
 }`
   writeFileSync(OUT, json + '\n')
   const mismatched = [...knownRounds].filter(([pair, r]) => fixtures.find(f => `${f.home}-${f.away}` === pair)?.round !== r).length
-  console.log(`${LOG} ${players.length} players (${unread} not read in detail yet), ${teamRows.length} clubs, through matchday ${lastRound} from ${ex.folders.length} export folder(s); ${fixtures.length} fixtures${mismatched ? ` (${mismatched} disagree with the export's matchdays)` : ''}; ${penaltyNote}; ${transfermarktNote}; history: ${historyRounds} matchdays of ${season}${exportWarnings(ex.run.warnings) ? `; export warnings: ${exportWarnings(ex.run.warnings)}` : ''}`)
+  console.log(`${LOG} ${players.length} players (${unread} not read in detail yet), ${teamRows.length} clubs, through matchday ${lastRound} from ${ex.folders.length} export folder(s); ${fixtures.length} fixtures${mismatched ? ` (${mismatched} disagree with the export's matchdays)` : ''}; ${penaltyNote}; ${transfermarktNote}; history: ${historyRounds} matchdays of ${season}${gaps.length ? `; ${gaps.length} matchday breakdown(s) balanced to player_rounds: ${gaps.join(', ')}` : ''}${exportWarnings(ex.run.warnings) ? `; export warnings: ${exportWarnings(ex.run.warnings)}` : ''}`)
 } catch (err) {
   console.log(`${LOG} failed (${err.message}); keeping the existing ${OUT}`)
   process.exitCode = 1

@@ -1,8 +1,8 @@
 {
-  "generatedAt": "2026-11-10T04:08:17.626Z",
+  "generatedAt": "2026-11-28T08:46:22.377Z",
   "note": "The user's Bundesliga Fantasy seasons, imported from the app exports by scripts/import-bundesliga-fantasy.mjs; matchdays are kept once imported.",
   "seasons": [
-    {"season":"2026/27","points":20468,"rank":1657,"live":true}
+    {"season":"2026/27","points":22220,"rank":2215,"live":true}
   ],
   "rounds": {
     "2026/27": [
@@ -14,7 +14,8 @@
       {"round":6,"points":2799,"total":14704,"rank":2175,"overallRank":null,"hits":0,"bench":242},
       {"round":7,"points":1713,"total":16417,"rank":21619,"overallRank":null,"hits":0,"bench":144},
       {"round":8,"points":1619,"total":18036,"rank":50371,"overallRank":1840,"hits":0,"bench":101},
-      {"round":9,"points":2432,"total":20468,"rank":5560,"overallRank":1657,"hits":0,"bench":123}
+      {"round":9,"points":2432,"total":20468,"rank":5560,"overallRank":1657,"hits":0,"bench":123},
+      {"round":10,"points":1752,"total":22220,"rank":43913,"overallRank":2215,"hits":0,"bench":83}
     ]
   }
 }
